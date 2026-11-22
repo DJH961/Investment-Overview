@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy.orm import Session
 
@@ -300,11 +300,11 @@ def _effect_tiles(
     if ccy == "USD" and eur_payload is not None:
         investing = _investing_tiles(session, payload, eur_payload)
         if investing:
-            return investing + _trend_tile(session)
+            return investing + _trend_tile(session, ccy)
         figures = currency_effect.strip_figures(session, ccy)
         if not figures.effect_lifetime:
             out.extend(_gap_tiles(session, payload, eur_payload))
-            out.extend(_trend_tile(session))
+            out.extend(_trend_tile(session, ccy))
             return out
     if ccy == "USD":
         split = payload.get("day_split") or {}
@@ -323,14 +323,16 @@ def _effect_tiles(
         if gap is not None:
             extra |= {"secondary": dec(gap), "secondary_unit": "fraction"}
         out.append(_stat("effect_lifetime", figures.effect_lifetime.quantize(Q6), "money", **extra))
-    out.extend(_trend_tile(session))
+    out.extend(_trend_tile(session, ccy))
     return out
 
 
-def _trend_tile(session: Session) -> list[dict[str, Any]]:
+def _trend_tile(session: Session, ccy: str) -> list[dict[str, Any]]:
+    """The trend tile: the dollar's in the EUR view, the euro's in the USD view."""
     from investment_dashboard.readmodels import currency_effect  # noqa: PLC0415
 
-    trend = currency_effect.dollar_trend(session=session)
+    of: Literal["dollar", "euro"] = "dollar" if ccy == "EUR" else "euro"
+    trend = currency_effect.dollar_trend(session=session, of=of)
     if trend is None:
         return []
     return [

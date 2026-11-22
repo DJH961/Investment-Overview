@@ -180,9 +180,16 @@ def _next_euro(
 # -- the trend block -----------------------------------------------------------
 
 
-def _normal(daily: list[tuple[date, Decimal]], window: str, rows: int) -> dict[str, Any] | None:
-    move = fx_trend.move_normality(daily, rows)
-    band = fx_trend.move_band(daily, rows)
+def _asset(ccy: str) -> fx_trend.Asset:
+    """Whose trend a side reads: EUR (value) the dollar's, USD (investing) the euro's."""
+    return "dollar" if ccy == "EUR" else "euro"
+
+
+def _normal(
+    daily: list[tuple[date, Decimal]], window: str, rows: int, of: fx_trend.Asset = "dollar"
+) -> dict[str, Any] | None:
+    move = fx_trend.move_normality(daily, rows, of=of)
+    band = fx_trend.move_band(daily, rows, of=of)
     if move is None or band is None:
         return None
     return {
@@ -196,13 +203,16 @@ def _normal(daily: list[tuple[date, Decimal]], window: str, rows: int) -> dict[s
     }
 
 
-def _ma200(daily: list[tuple[date, Decimal]]) -> dict[str, Any] | None:
-    s = fx_trend.ma_slope(daily)
-    if s is None:
+def _ma200(
+    daily: list[tuple[date, Decimal]], of: fx_trend.Asset = "dollar"
+) -> dict[str, Any] | None:
+    s = fx_trend.ma_slope(daily, of=of)
+    dollar = s if of == "dollar" else fx_trend.ma_slope(daily)
+    if s is None or dollar is None:
         return None
     return {
         "side": s.side,
-        "ma200": {"rate": dec(s.ma_rate_now), "inverse": dec(s.ma_now.quantize(SIX_DP))},
+        "ma200": {"rate": dec(s.ma_rate_now), "inverse": dec(dollar.ma_now.quantize(SIX_DP))},
         "distance_pct": dec(s.distance_pct),
         "slope": s.label,
         "slope_pct": dec(s.slope_pct),
@@ -232,9 +242,11 @@ def _trend(
     today: date,
     first: date | None,
     avg: Decimal | None,
+    of: fx_trend.Asset = "dollar",
 ) -> dict[str, Any]:
-    reg = fx_trend.regime(daily)
-    run = fx_trend.monthly_run(daily)
+    """The trend block in ``of``'s terms (the dollar's or the euro's own moves)."""
+    reg = fx_trend.regime(daily, of=of)
+    run = fx_trend.monthly_run(daily, of=of)
     mean = fx_trend.series_mean(daily, fx_service.HISTORY_START)
     rate_now = spot if spot is not None and spot > 0 else (daily[-1][1] if daily else None)
     percentiles: dict[str, Any] = dict.fromkeys(("since_start", "y5", "y10", "since_1999"))
@@ -248,9 +260,11 @@ def _trend(
                 "y10": _minus_months(today, 120),
                 "since_1999": fx_service.HISTORY_START,
             },
+            of=of,
         )
         percentiles = {k: dec(v) for k, v in raw.items()}
     return {
+        "asset": of,
         "regime": (
             {
                 "direction": reg.direction,
@@ -260,9 +274,9 @@ def _trend(
             if reg is not None
             else None
         ),
-        "ma200": _ma200(daily),
-        "normal_month": _normal(daily, "month", fx_trend.MONTH_ROWS),
-        "normal_year": _normal(daily, "year", fx_trend.YEAR_ROWS),
+        "ma200": _ma200(daily, of),
+        "normal_month": _normal(daily, "month", fx_trend.MONTH_ROWS, of),
+        "normal_year": _normal(daily, "year", fx_trend.YEAR_ROWS, of),
         "percentiles": percentiles,
         "week52": _week52(daily, today),
         "run": (
@@ -284,12 +298,24 @@ def _trend(
                 "since": mean.since.isoformat(),
                 "mean": {"rate": dec(mean.rate), "inverse": dec(mean.inverse.quantize(SIX_DP))},
                 "distance_inverse_pct": dec((ONE / rate_now) / mean.inverse - ONE),
+                # The asset's own distance: the euro's on the rate's own mean.
+                "distance_pct": dec(
+                    (ONE / rate_now) / mean.inverse - ONE
+                    if of == "dollar"
+                    else rate_now / mean.rate - ONE
+                ),
             }
             if mean is not None and rate_now is not None
             else None
         ),
+        # Days the asset stood above your average conversion rate: the dollar when
+        # the rate was below it, the euro when the rate was above it.
         "above_entry_share": (
-            dec(fx_trend.share_below(daily, avg, first))
+            dec(
+                fx_trend.share_below(daily, avg, first)
+                if of == "dollar"
+                else fx_trend.share_above(daily, avg, first)
+            )
             if avg is not None and avg > 0 and first is not None
             else None
         ),
@@ -310,13 +336,17 @@ def _thin_weekly(rows: list[tuple[date, Decimal]]) -> list[tuple[date, Decimal]]
 
 
 def _rolling(
-    daily: list[tuple[date, Decimal]], range_key: str, today: date
+    daily: list[tuple[date, Decimal]],
+    range_key: str,
+    today: date,
+    of: fx_trend.Asset = "dollar",
 ) -> list[dict[str, Any]]:
+    """Trailing changes and their normal band, in ``of``'s terms (each side its own)."""
     start = range_start("1m" if range_key in INTRADAY_RANGES else range_key, today)
     out: list[dict[str, Any]] = []
     for window, rows in ROLLING_WINDOWS:
-        moves = fx_trend.trailing_moves(daily, rows)
-        band = fx_trend.move_band(daily, rows)
+        moves = fx_trend.trailing_moves(daily, rows, of=of)
+        band = fx_trend.move_band(daily, rows, of=of)
         shown = [(d, m) for d, m in moves if d >= start]
         if range_key in WEEKLY_RANGES:
             shown = _thin_weekly(shown)
@@ -325,11 +355,11 @@ def _rolling(
                 "window": window,
                 "window_days": rows,
                 "points": [
-                    # rate change = 1 / (1 + inverse change) - 1
+                    # the other side's change = 1 / (1 + this change) - 1
                     {
                         "t": d.isoformat(),
-                        "inverse_pct": dec(m),
-                        "rate_pct": dec(ONE / (ONE + m) - ONE),
+                        "inverse_pct": dec(m if of == "dollar" else ONE / (ONE + m) - ONE),
+                        "rate_pct": dec(ONE / (ONE + m) - ONE if of == "dollar" else m),
                     }
                     for d, m in shown
                 ],
@@ -469,19 +499,21 @@ def build_dollar_both(
     on_raw = overview["EUR"].get("kpis", {}).get("daily_growth_as_of")
     on = date.fromisoformat(str(on_raw)[:10]) if on_raw else today
     positions = positions_service.compute_positions(session, as_of=on)
-    rolling = _rolling(daily, range_key, today)
+    assets: tuple[fx_trend.Asset, ...] = ("dollar", "euro")
+    rolling = {of: _rolling(daily, range_key, today, of) for of in assets}
     range_change = _range_change(daily, range_key, today, first)
     out: dict[str, dict[str, Any]] = {}
     # Both sides normally share the spot and the average rate: compute the block once.
-    trends: dict[tuple[Decimal | None, Decimal | None], dict[str, Any]] = {}
+    trends: dict[tuple[Decimal | None, Decimal | None, str], dict[str, Any]] = {}
     for ccy in ("EUR", "USD"):
         cur = overview[ccy]["currency"]
         life, today_block = cur["lifetime"], cur["today"]
         spot = _d(today_block.get("spot"))
         avg = _d(life.get("avg_invest_rate"))
-        if (spot, avg) not in trends:
-            trends[spot, avg] = _trend(daily, spot, today, first, avg)
-        trend = trends[spot, avg]
+        of = _asset(ccy)
+        if (spot, avg, of) not in trends:
+            trends[spot, avg, of] = _trend(daily, spot, today, first, avg, of)
+        trend = trends[spot, avg, of]
         out[ccy] = {
             "ccy": ccy,
             "as_of": overview[ccy].get("as_of"),
@@ -492,7 +524,7 @@ def build_dollar_both(
             | {"range_change": range_change},
             "next_euro": _next_euro(daily, spot, today, first),
             "trend": trend,
-            "rolling": rolling,
+            "rolling": rolling[of],
             "stats": _stats(ccy, daily, trend, first, avg),
         }
     return out

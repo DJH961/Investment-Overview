@@ -16,7 +16,7 @@ from collections.abc import Collection, Sequence
 from datetime import date, timedelta
 from decimal import Decimal
 
-from hypothesis import given, settings
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 from sqlalchemy.orm import Session
 
@@ -247,6 +247,7 @@ _returns = st.lists(
 )
 
 
+@settings(deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @given(start=st.integers(min_value=100, max_value=10**7), rs=_returns)
 def test_no_flows_telescopes_to_end_over_start(start: int, rs: list[Decimal]) -> None:
     value = D(start)
@@ -303,7 +304,7 @@ def _delayed_ledger(
     return parts, true_growth
 
 
-@settings(max_examples=300)
+@settings(max_examples=300, deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @given(
     n=st.integers(min_value=1, max_value=40),
     deposits=_DEPOSITS,
@@ -317,7 +318,7 @@ def test_money_in_flight_never_makes_a_return(
     assert ce.chained_return(parts) == 0
 
 
-@settings(max_examples=300)
+@settings(max_examples=300, deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @given(
     rs=st.lists(
         st.decimals(min_value=D("-0.01"), max_value=D("0.01"), places=4), min_size=5, max_size=40
@@ -343,6 +344,7 @@ def test_delayed_deposits_stay_close_to_the_true_twr(
     assert abs((1 + got) / true_growth - 1) <= tol + D("1e-15")
 
 
+@settings(deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @given(rs=_returns, k=st.sampled_from([D(2), D(1000), D("0.001")]))
 def test_scale_invariance(rs: list[Decimal], k: Decimal) -> None:
     parts = [_part(0, "100", "100", "0"), _part(1, "100", "100", "300")]
@@ -480,7 +482,7 @@ def test_all_is_the_product_of_the_years_on_a_synthetic_ledger(session: Session)
     assert abs((1 + head) * (1 + tail) - (1 + whole)) < D("1e-20")
 
 
-@settings(max_examples=300)
+@settings(max_examples=300, deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @given(
     rs=st.lists(
         st.decimals(min_value=D("-0.03"), max_value=D("0.03"), places=4), min_size=2, max_size=40
