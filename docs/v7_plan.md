@@ -832,6 +832,14 @@ nothing itself (audit B-021, fixed in fix round 5). The new write paths
 (statement import, the prefilled add) log a proper domain line there too. The cost report is read-only and
 needs no line.
 
+**Idea for later (owner, 2026-11-22): "Your next euro" from your own conversions.**
+The Currency page's "Your next euro" panel (The dollar section, 7.2) uses only the
+reference rate. Once 7.3's conversions are on the page, it can tie in your own
+history: what your last conversion got against the reference that day, your
+typical spread, how many dollars €1,000 bought on your conversion days compared
+with today, and (with P14 recurring plans) when the next one is due. Not planned
+into a push yet.
+
 ---
 
 ## 6. Theme D — finishing the US-taxed-abroad story

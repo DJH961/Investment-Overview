@@ -694,7 +694,7 @@ def effect_stats(
                     "tailwind_share",
                     share_up,
                     "fraction",
-                    secondary=Decimal(len(months)),
+                    secondary=dec(Decimal(len(months))),
                     secondary_unit="count",
                 )
             )

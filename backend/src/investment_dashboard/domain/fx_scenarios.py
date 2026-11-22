@@ -39,6 +39,11 @@ ONE_CENT = Decimal("0.01")
 SLIDER_MIN = Decimal("0.90")
 SLIDER_MAX = Decimal("1.60")
 SLIDER_STEP = Decimal("0.005")
+#: The slider's grid when the page shows the inverse quote (USD/EUR: euros per dollar):
+#: it covers the same 0.90..1.60 EUR/USD span, evenly spaced in the quote shown.
+INVERSE_SLIDER_MIN = Decimal("0.62")
+INVERSE_SLIDER_MAX = Decimal("1.12")
+RATE_DP = Decimal("0.000000000001")
 STRESS_SHIFTS: tuple[Decimal, ...] = (
     Decimal("-0.15"),
     Decimal("-0.10"),
@@ -121,10 +126,40 @@ def nearest_index(rates: Sequence[Decimal], rate: Decimal) -> int:
     return min(range(len(rates)), key=lambda i: (abs(rates[i] - rate), i))
 
 
-def stress_rates(rate: Decimal, shifts: Sequence[Decimal] = STRESS_SHIFTS) -> list[Decimal]:
-    """``rate · (1 + s)`` per shift (EUR/USD ±5 / 10 / 15 %)."""
+def stress_rates(
+    rate: Decimal, shifts: Sequence[Decimal] = STRESS_SHIFTS, *, inverse: bool = False
+) -> list[Decimal]:
+    """The EUR/USD rate (USD per 1 EUR) after each shift of the quote shown.
+
+    ``inverse = False``: the quote is EUR/USD, so ``rate · (1 + s)``. ``inverse = True``:
+    the quote is USD/EUR (``1 / rate``) moved by ``s``, i.e. ``rate / (1 + s)``.
+    """
     _check(rate)
+    if inverse:
+        return [rate / (ONE + s) for s in shifts]
     return [rate * (ONE + s) for s in shifts]
+
+
+def quote_slider(inverse: bool = False) -> list[tuple[Decimal, Decimal]]:
+    """``[(quote value, EUR/USD rate)]`` on the grid of the quote shown, ascending in the quote.
+
+    EUR/USD: the 0.90..1.60 grid itself. USD/EUR (``inverse``): 0.62..1.12 in steps of
+    0.005, each paired with its EUR/USD rate ``1 / quote``.
+    """
+    if not inverse:
+        return [(r, r) for r in slider_rates()]
+    return [
+        (q, (ONE / q).quantize(RATE_DP))
+        for q in slider_rates(INVERSE_SLIDER_MIN, INVERSE_SLIDER_MAX, SLIDER_STEP)
+    ]
+
+
+def one_cent_rate(rate: Decimal, *, inverse: bool = False) -> Decimal:
+    """The EUR/USD rate after the quote shown rises by one cent (0.01 of the quote)."""
+    _check(rate)
+    if inverse:
+        return ONE / (ONE / rate + ONE_CENT)
+    return rate + ONE_CENT
 
 
 def weekday_returns(
@@ -172,6 +207,8 @@ def dollar_on_down_days(
 
 
 __all__ = [
+    "INVERSE_SLIDER_MAX",
+    "INVERSE_SLIDER_MIN",
     "SLIDER_MAX",
     "SLIDER_MIN",
     "SLIDER_STEP",
@@ -183,6 +220,8 @@ __all__ = [
     "dollar_on_down_days",
     "gain_at",
     "nearest_index",
+    "one_cent_rate",
+    "quote_slider",
     "slider_rates",
     "stress_rates",
     "value_at",

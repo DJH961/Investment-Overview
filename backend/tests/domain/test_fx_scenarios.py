@@ -176,3 +176,33 @@ def test_usd_value_never_moves_for_a_dollar_book(usd: Decimal, eur: Decimal, rat
     book = fs.Book(usd=usd, eur=Decimal(0))
     assert fs.value_at(book, rate, "USD") == usd
     assert fs.value_at(book, rate + Decimal("0.1"), "USD") == usd
+
+
+def test_inverse_quote_stress_one_cent_and_grid_golden() -> None:
+    """USD/EUR view: the shifts and the cent are applied to the quote shown (0.80 here)."""
+    spot = Decimal("1.25")  # EUR/USD; USD/EUR = 0.80
+    stressed = fs.stress_rates(spot, inverse=True)
+    quote_after = [Decimal(1) / r for r in stressed]
+    for shown, shift in zip(quote_after, fs.STRESS_SHIFTS, strict=True):
+        assert shown.quantize(Decimal("0.0000001")) == (Decimal("0.80") * (1 + shift)).quantize(
+            Decimal("0.0000001")
+        )
+    # The dollar gets stronger (USD/EUR up) -> the dollar book is worth more euros.
+    book = fs.Book(usd=Decimal(10000), eur=Decimal(0))
+    values = [fs.value_at(book, r, "EUR") for r in stressed]
+    assert values == sorted(values)
+    # One cent on USD/EUR: 0.80 -> 0.81 turns $10,000 from €8,000 into €8,100.
+    plus = fs.one_cent_rate(spot, inverse=True)
+    assert (fs.value_at(book, plus, "EUR") - fs.value_at(book, spot, "EUR")).quantize(
+        Decimal("0.0001")
+    ) == Decimal("100.0000")
+    assert fs.one_cent_rate(spot) == Decimal("1.26")
+
+    grid = fs.quote_slider(inverse=True)
+    assert len(grid) == 101
+    assert [q for q, _r in grid] == sorted(q for q, _r in grid)
+    assert grid[0][0] == Decimal("0.62")
+    assert grid[-1][0] == Decimal("1.12")
+    first_q, first_r = grid[0]
+    assert (first_r * first_q).quantize(Decimal("0.000000001")) == 1
+    assert fs.quote_slider() == [(r, r) for r in fs.slider_rates()]
