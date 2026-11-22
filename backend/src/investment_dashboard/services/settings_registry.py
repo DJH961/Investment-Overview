@@ -439,6 +439,19 @@ DEFS: tuple[SettingDef, ...] = (
         level="advanced",
     ),
     SettingDef(
+        "import.ignore_non_usd_conversions",
+        SettingType.BOOL,
+        True,
+        "imports",
+        "Import: ignore conversions not into USD",
+        help=(
+            "A Wise statement can hold conversions into other currencies (for example "
+            "EUR to GBP). 7.3 only supports EUR to USD, so with this on those rows are "
+            "left out of the preview without a fuss; with it off they are listed but "
+            "cannot be imported."
+        ),
+    ),
+    SettingDef(
         "import.column_profiles",
         SettingType.JSON_MAP,
         {},

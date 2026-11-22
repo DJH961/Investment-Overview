@@ -155766,6 +155766,15 @@
     "kind": null,
     "rate": "1.1604562914",
     "to_ccy": "USD"
+   },
+   {
+    "amount_from": "689.390000",
+    "conversion_id": 7,
+    "date": "2026-06-27",
+    "from_ccy": "EUR",
+    "kind": null,
+    "rate": "1.1604461916",
+    "to_ccy": "USD"
    }
   ],
   "percentiles": {
@@ -157193,6 +157202,15 @@
     "kind": null,
     "rate": "1.1604562914",
     "to_ccy": "USD"
+   },
+   {
+    "amount_from": "689.390000",
+    "conversion_id": 7,
+    "date": "2026-06-27",
+    "from_ccy": "EUR",
+    "kind": null,
+    "rate": "1.1604461916",
+    "to_ccy": "USD"
    }
   ],
   "percentiles": {
@@ -157361,6 +157379,15 @@
     "from_ccy": "EUR",
     "kind": null,
     "rate": "1.1604562914",
+    "to_ccy": "USD"
+   },
+   {
+    "amount_from": "689.390000",
+    "conversion_id": 7,
+    "date": "2026-06-27",
+    "from_ccy": "EUR",
+    "kind": null,
+    "rate": "1.1604461916",
     "to_ccy": "USD"
    }
   ],
@@ -161160,6 +161187,15 @@
     "kind": null,
     "rate": "1.1604562914",
     "to_ccy": "USD"
+   },
+   {
+    "amount_from": "689.390000",
+    "conversion_id": 7,
+    "date": "2026-06-27",
+    "from_ccy": "EUR",
+    "kind": null,
+    "rate": "1.1604461916",
+    "to_ccy": "USD"
    }
   ],
   "percentiles": {
@@ -162564,6 +162600,15 @@
     "from_ccy": "EUR",
     "kind": null,
     "rate": "1.1604562914",
+    "to_ccy": "USD"
+   },
+   {
+    "amount_from": "689.390000",
+    "conversion_id": 7,
+    "date": "2026-06-27",
+    "from_ccy": "EUR",
+    "kind": null,
+    "rate": "1.1604461916",
     "to_ccy": "USD"
    }
   ],
@@ -166369,6 +166414,15 @@
     "from_ccy": "EUR",
     "kind": null,
     "rate": "1.1604562914",
+    "to_ccy": "USD"
+   },
+   {
+    "amount_from": "689.390000",
+    "conversion_id": 7,
+    "date": "2026-06-27",
+    "from_ccy": "EUR",
+    "kind": null,
+    "rate": "1.1604461916",
     "to_ccy": "USD"
    }
   ],
@@ -171515,6 +171569,15 @@
     "kind": null,
     "rate": "1.1604562914",
     "to_ccy": "USD"
+   },
+   {
+    "amount_from": "689.390000",
+    "conversion_id": 7,
+    "date": "2026-06-27",
+    "from_ccy": "EUR",
+    "kind": null,
+    "rate": "1.1604461916",
+    "to_ccy": "USD"
    }
   ],
   "percentiles": {
@@ -173175,6 +173238,15 @@
     "kind": null,
     "rate": "1.1604562914",
     "to_ccy": "USD"
+   },
+   {
+    "amount_from": "689.390000",
+    "conversion_id": 7,
+    "date": "2026-06-27",
+    "from_ccy": "EUR",
+    "kind": null,
+    "rate": "1.1604461916",
+    "to_ccy": "USD"
    }
   ],
   "percentiles": {
@@ -174144,6 +174216,15 @@
     "from_ccy": "EUR",
     "kind": null,
     "rate": "1.1604562914",
+    "to_ccy": "USD"
+   },
+   {
+    "amount_from": "689.390000",
+    "conversion_id": 7,
+    "date": "2026-06-27",
+    "from_ccy": "EUR",
+    "kind": null,
+    "rate": "1.1604461916",
     "to_ccy": "USD"
    }
   ],
@@ -220755,23 +220836,22 @@
     "actions": [
      {
       "danger": "none",
-      "href": "/transactions",
+      "href": "/conversions",
       "id": "ecb_fallback_deposits",
       "kind": "link",
-      "label": "Record the missing conversion",
+      "label": "Open the Conversions page",
       "params": {}
      }
     ],
-    "count": 3,
-    "detail": "These USD deposits were not fully covered by recorded conversions; the ECB rate was used for the rest.",
+    "count": 2,
+    "detail": "2 deposits valued at the ECB rate with no conversion. Add the conversion, or mark a deposit as received in USD on the Conversions page.",
     "examples": [
      "2023-03-01 (900000.000000 USD)",
-     "2023-03-01 (180000.000000 USD)",
      "2025-02-03 (2000.000000 USD)"
     ],
     "id": "ecb_fallback_deposits",
     "severity": "info",
-    "title": "Deposits paid at the ECB rate"
+    "title": "Deposits valued at the ECB rate"
    }
   ],
   "count": 13,
@@ -220844,6 +220924,26 @@
  },
  "GET /api/fx-conversions": [
   {
+   "all_in_rate": "1.1585975177",
+   "date": "2026-06-27",
+   "ecb_rate": "1.16511000",
+   "ecb_rate_date": "2026-06-26",
+   "effective_rate": "1.1604461916",
+   "eur_sent": "689.390000",
+   "fees_eur": "1.100000",
+   "from_ccy": "EUR",
+   "id": 7,
+   "kept_usd": "200.000000",
+   "note": "Kept $200 for the card",
+   "off_pct": "-0.0055895858",
+   "provider": "wise",
+   "rate": "1.1604461916",
+   "remaining_usd": "600.000000",
+   "to_ccy": "USD",
+   "usd_received": "800.000000",
+   "used_by": []
+  },
+  {
    "all_in_rate": "1.1585740271",
    "date": "2026-06-26",
    "ecb_rate": "1.16511000",
@@ -220853,6 +220953,7 @@
    "fees_eur": "1.400000",
    "from_ccy": "EUR",
    "id": 6,
+   "kept_usd": "0.000000",
    "note": null,
    "off_pct": "-0.0056097475",
    "provider": "wise",
@@ -220872,6 +220973,7 @@
    "fees_eur": null,
    "from_ccy": "EUR",
    "id": 5,
+   "kept_usd": "0.000000",
    "note": null,
    "off_pct": "-0.0040019928",
    "provider": "revolut",
@@ -220899,6 +221001,7 @@
    "fees_eur": "2.100000",
    "from_ccy": "EUR",
    "id": 4,
+   "kept_usd": "0.000000",
    "note": null,
    "off_pct": "-0.0052320756",
    "provider": "wise",
@@ -220926,6 +221029,7 @@
    "fees_eur": "3.200000",
    "from_ccy": "EUR",
    "id": 3,
+   "kept_usd": "0.000000",
    "note": "Booked late at the broker; pinned to the 5 May deposit",
    "off_pct": "-0.0055078603",
    "provider": "wise",
@@ -220953,6 +221057,7 @@
    "fees_eur": null,
    "from_ccy": "EUR",
    "id": 2,
+   "kept_usd": "0.000000",
    "note": null,
    "off_pct": "-0.0039996620",
    "provider": "revolut",
@@ -220980,6 +221085,7 @@
    "fees_eur": "41.800000",
    "from_ccy": "EUR",
    "id": 1,
+   "kept_usd": "0.000000",
    "note": null,
    "off_pct": "-0.0046592568",
    "provider": "wise",
@@ -220999,8 +221105,8 @@
   }
  ],
  "GET /api/fx-conversions/pool": {
-  "balance_eur": "863.130000",
-  "balance_usd": "1000.000000",
+  "balance_eur": "1380.997500",
+  "balance_usd": "1600.000000",
   "deposits": [
    {
     "date": "2026-06-02",
@@ -221025,6 +221131,7 @@
     ],
     "pinned": false,
     "rate_missing": false,
+    "received_in_usd": false,
     "slices": [
      {
       "conversion_date": "2026-05-29",
@@ -221065,6 +221172,7 @@
     ],
     "pinned": true,
     "rate_missing": false,
+    "received_in_usd": false,
     "slices": [
      {
       "conversion_date": "2026-05-08",
@@ -221097,6 +221205,7 @@
     ],
     "pinned": false,
     "rate_missing": false,
+    "received_in_usd": false,
     "slices": [
      {
       "conversion_date": "2026-04-01",
@@ -221129,6 +221238,7 @@
     ],
     "pinned": false,
     "rate_missing": false,
+    "received_in_usd": false,
     "slices": [
      {
       "conversion_date": "2025-01-28",
@@ -221155,8 +221265,9 @@
     "matched": [],
     "pinned": false,
     "rate_missing": false,
+    "received_in_usd": true,
     "slices": [],
-    "status": "ecb_only",
+    "status": "received_usd",
     "transaction_id": 2,
     "usd": "180000.000000"
    },
@@ -221172,6 +221283,7 @@
     "matched": [],
     "pinned": false,
     "rate_missing": false,
+    "received_in_usd": false,
     "slices": [],
     "status": "ecb_only",
     "transaction_id": 1,
@@ -221197,6 +221309,7 @@
     ],
     "pinned": false,
     "rate_missing": false,
+    "received_in_usd": false,
     "slices": [
      {
       "conversion_date": "2025-01-28",
@@ -221223,8 +221336,9 @@
     "matched": [],
     "pinned": false,
     "rate_missing": false,
+    "received_in_usd": true,
     "slices": [],
-    "status": "ecb_only",
+    "status": "received_usd",
     "transaction_id": 2,
     "usd": "180000.000000"
    },
@@ -221240,6 +221354,7 @@
     "matched": [],
     "pinned": false,
     "rate_missing": false,
+    "received_in_usd": false,
     "slices": [],
     "status": "ecb_only",
     "transaction_id": 1,
@@ -221277,6 +221392,11 @@
     "conversion_id": 6,
     "eur": "863.130000",
     "usd": "1000.000000"
+   },
+   {
+    "conversion_id": 7,
+    "eur": "517.867500",
+    "usd": "600.000000"
    }
   ]
  },
@@ -280835,6 +280955,26 @@
    {
     "choices": [],
     "danger": null,
+    "default": true,
+    "env_bound": null,
+    "env_var": null,
+    "help": "A Wise statement can hold conversions into other currencies (for example EUR to GBP). 7.3 only supports EUR to USD, so with this on those rows are left out of the preview without a fuss; with it off they are listed but cannot be imported.",
+    "key": "import.ignore_non_usd_conversions",
+    "label": "Import: ignore conversions not into USD",
+    "level": "user",
+    "max": null,
+    "min": null,
+    "nullable": false,
+    "restart_required": false,
+    "secret": false,
+    "section": "imports",
+    "since": "6.0",
+    "type": "bool",
+    "unit": null
+   },
+   {
+    "choices": [],
+    "danger": null,
     "default": {},
     "env_bound": null,
     "env_var": null,
@@ -281986,6 +282126,15 @@
     "source": "default",
     "stored_invalid": false,
     "value": {}
+   },
+   "import.ignore_non_usd_conversions": {
+    "default": true,
+    "env_value_present": false,
+    "is_set": true,
+    "modified_at": null,
+    "source": "default",
+    "stored_invalid": false,
+    "value": true
    },
    "import.max_upload_mb": {
     "default": 10,

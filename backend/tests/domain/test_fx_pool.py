@@ -229,3 +229,95 @@ def test_no_pins_equals_fifo(batches: list[Batch], deposits: list[UsdDeposit]) -
     res = match_deposits(batches, deposits, _ecb, pins=())
     assert res.rejected_pins == ()
     assert all(not s.pinned for m in res.deposits for s in m.matched)
+
+
+# ------------------------------------------------- 7.3 kept dollars, USD-received deposits
+#
+# Golden case worked by hand. C1 2024-01-10: EUR 880 + fee EUR 20 -> all-in EUR 900,
+# USD 1000, of which USD 100 is kept in the owner's USD account (never sent on).
+# The investable part is USD 900 costing EUR 900 * 900 / 1000 = 810 (0.9 EUR per USD).
+#   D1 2024-02-01 USD 500 -> all from C1: 500 * 0.9 = EUR 450; C1 left USD 400 / EUR 360.
+#   D2 2024-03-01 USD 600 -> C1 400 -> EUR 360; uncovered USD 200 at ECB 1.10
+#      -> EUR 181.8181...; the kept USD 100 never matches anything.
+#   D3 2024-04-01 USD 300 marked "received in USD": ECB only, EUR 300 / 1.10.
+
+
+def test_golden_kept_dollars() -> None:
+    from dataclasses import replace
+
+    batch = Batch(1, date(2024, 1, 10), D("880"), D("1000"), D("20"), kept_usd=D("100"))
+    assert batch.pool_usd == D("900") and batch.pool_eur == D("810")
+    deposits = [
+        UsdDeposit(1, date(2024, 2, 1), D("500")),
+        UsdDeposit(2, date(2024, 3, 1), D("600")),
+        UsdDeposit(3, date(2024, 4, 1), D("300"), no_conversion=True),
+    ]
+    res = match_deposits([batch], deposits, _ecb)
+    d1, d2, d3 = res.deposits
+    assert [(s.usd, s.eur) for s in d1.matched] == [(D("500"), D("450"))]
+    assert [(s.usd, s.eur) for s in d2.matched] == [(D("400"), D("360"))]
+    assert d2.fallback_usd == D("200") and d2.fallback_eur == D("200") / D("1.10")
+    assert d3.matched == () and d3.fallback_usd == D("300") and d3.fallback_rate == ECB
+    assert res.remaining_usd == 0 and res.remaining_eur == 0  # kept dollars are not "in the pool"
+    # all kept: nothing to match, nothing remaining
+    none = match_deposits([replace(batch, kept_usd=D("1000"))], deposits[:1], _ecb)
+    assert none.deposits[0].matched == () and none.remaining_usd == 0
+
+
+def test_pin_cannot_use_kept_dollars() -> None:
+    batch = Batch(1, date(2024, 1, 10), D("900"), D("1000"), kept_usd=D("100"))
+    dep = UsdDeposit(1, date(2024, 1, 20), D("1000"))
+    res = match_deposits([batch], [dep], _ecb, pins=[Pin(1, 1, D("1000"))])
+    assert [r for _, r in res.rejected_pins] == ["conversion is pinned for more than its amount"]
+    ok = match_deposits([batch], [dep], _ecb, pins=[Pin(1, 1, D("900"))])
+    assert ok.rejected_pins == () and ok.deposits[0].fallback_usd == D("100")
+
+
+def test_pin_on_usd_received_deposit_rejected() -> None:
+    batch = Batch(1, date(2024, 1, 10), D("900"), D("1000"))
+    dep = UsdDeposit(1, date(2024, 1, 20), D("100"), no_conversion=True)
+    res = match_deposits([batch], [dep], _ecb, pins=[Pin(1, 1, D("50"))])
+    assert len(res.rejected_pins) == 1 and res.remaining_usd == D("1000")
+
+
+_kept_batches = st.lists(
+    st.tuples(_day, _amount, _amount, _fee, st.integers(0, 100)), max_size=6
+).map(
+    lambda xs: [
+        Batch(i + 1, d, e, u, f, kept_usd=(u * pct / 100).quantize(_C))
+        for i, (d, e, u, f, pct) in enumerate(xs)
+    ]
+)
+
+
+@settings(max_examples=150, deadline=None)
+@given(_kept_batches, _deposits, _pins_st)
+def test_kept_conservation(
+    batches: list[Batch], deposits: list[UsdDeposit], pins: list[Pin]
+) -> None:
+    res = match_deposits(batches, deposits, _ecb, pins=pins)
+    by_batch = {b.id: b for b in batches}
+    for use in res.by_conversion:
+        b = by_batch[use.conversion_id]
+        used = sum((s.usd for s in use.slices), D(0))
+        # received = used + remaining + kept
+        assert used + use.remaining_usd + b.kept_usd == b.usd_received
+        rem = next(r for r in res.remaining if r.conversion_id == b.id)
+        # the pool's EUR (all-in minus the kept share) is conserved
+        assert abs(sum((s.eur for s in use.slices), D(0)) + rem.eur - b.pool_eur) < D("1e-20")
+    for m in res.deposits:
+        assert m.matched_usd + m.fallback_usd == m.usd
+
+
+@settings(max_examples=100, deadline=None)
+@given(_batches, _deposits, _pins_st)
+def test_zero_kept_is_todays_result(
+    batches: list[Batch], deposits: list[UsdDeposit], pins: list[Pin]
+) -> None:
+    from dataclasses import replace
+
+    explicit = [replace(b, kept_usd=D(0)) for b in batches]
+    assert match_deposits(explicit, deposits, _ecb, pins=pins) == match_deposits(
+        batches, deposits, _ecb, pins=pins
+    )
+    assert all(b.pool_eur == b.eur_cost and b.pool_usd == b.usd_received for b in batches)

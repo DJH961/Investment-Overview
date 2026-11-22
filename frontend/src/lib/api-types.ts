@@ -682,6 +682,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/fx-conversions/received-in-usd/{deposit_txn_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Mark Received In Usd
+         * @description Mark a USD deposit as received in USD (no conversion); it keeps its ECB valuation.
+         */
+        put: operations["mark_received_in_usd_api_fx_conversions_received_in_usd__deposit_txn_id__put"];
+        post?: never;
+        /** Unmark Received In Usd */
+        delete: operations["unmark_received_in_usd_api_fx_conversions_received_in_usd__deposit_txn_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/fx-conversions/reference": {
         parameters: {
             query?: never;
@@ -1016,6 +1037,77 @@ export interface paths {
         get: operations["unknown_actions_api_imports_unknown_actions_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/wise": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Wise Statement */
+        post: operations["upload_wise_statement_api_imports_wise_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/wise/{import_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Discard Wise Statement */
+        delete: operations["discard_wise_statement_api_imports_wise__import_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/wise/{import_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm Wise Statement */
+        post: operations["confirm_wise_statement_api_imports_wise__import_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/wise/{import_id}/layout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Wise Layout
+         * @description Re-parse the staged statement with columns chosen by hand (new ``import_id``).
+         */
+        post: operations["set_wise_layout_api_imports_wise__import_id__layout_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2133,6 +2225,11 @@ export interface components {
             /** File */
             file: string;
         };
+        /** Body_upload_wise_statement_api_imports_wise_post */
+        Body_upload_wise_statement_api_imports_wise_post: {
+            /** File */
+            file: string;
+        };
         /** BriefAckIn */
         BriefAckIn: {
             /** Seen At */
@@ -3191,13 +3288,19 @@ export interface components {
             pinned: boolean;
             /** Rate Missing */
             rate_missing: boolean;
+            /**
+             * Received In Usd
+             * @description Marked as received in USD (no conversion).
+             * @default false
+             */
+            received_in_usd: boolean;
             /** Slices */
             slices: components["schemas"]["DepositSliceOut"][];
             /**
              * Status
              * @enum {string}
              */
-            status: "matched" | "partial" | "ecb_only";
+            status: "matched" | "partial" | "ecb_only" | "received_usd";
             /** Transaction Id */
             transaction_id: number;
             /** Usd */
@@ -4019,6 +4122,12 @@ export interface components {
              * @default EUR
              */
             from_ccy: string;
+            /**
+             * Kept Usd
+             * @description Dollars kept in the USD account, never sent to the broker.
+             * @default 0
+             */
+            kept_usd: number | string;
             /** Note */
             note?: string | null;
             /** Provider */
@@ -4063,6 +4172,11 @@ export interface components {
             from_ccy: string;
             /** Id */
             id: number;
+            /**
+             * Kept Usd
+             * @description Dollars kept outside investing (not in the pool).
+             */
+            kept_usd: string;
             /** Note */
             note: string | null;
             /**
@@ -8780,6 +8894,132 @@ export interface components {
             high: components["schemas"]["RateHistoryPoint"];
             low: components["schemas"]["RateHistoryPoint"];
         };
+        /** WiseColumnField */
+        WiseColumnField: {
+            /** Column */
+            column: number | null;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Required */
+            required: boolean;
+        };
+        /** WiseConfirmIn */
+        WiseConfirmIn: {
+            /** Rows */
+            rows?: components["schemas"]["WiseRowChoiceIn"][];
+        };
+        /** WiseConfirmResult */
+        WiseConfirmResult: {
+            /** Duplicates */
+            duplicates: number;
+            /** Import Id */
+            import_id: string;
+            /** Imported */
+            imported: number;
+            /** Skipped */
+            skipped: number;
+        };
+        /** WiseCounts */
+        WiseCounts: {
+            /** Duplicates */
+            duplicates: number;
+            /** New */
+            new: number;
+            /** Rows */
+            rows: number;
+            /** Skipped */
+            skipped: number;
+        };
+        /** WiseLayoutIn */
+        WiseLayoutIn: {
+            /** Columns */
+            columns: {
+                [key: string]: number | null;
+            };
+        };
+        /** WisePreview */
+        WisePreview: {
+            counts: components["schemas"]["WiseCounts"];
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Fields */
+            fields: components["schemas"]["WiseColumnField"][];
+            /** Filename */
+            filename: string;
+            /** Headers */
+            headers: string[];
+            /** Ignore Non Usd */
+            ignore_non_usd: boolean;
+            /** Import Id */
+            import_id: string;
+            /** Missing */
+            missing: string[];
+            /** Rows */
+            rows: components["schemas"]["WisePreviewRow"][];
+        };
+        /** WisePreviewRow */
+        WisePreviewRow: {
+            /** Date */
+            date: string | null;
+            /** Description */
+            description?: string | null;
+            /** Eur Sent */
+            eur_sent?: string | null;
+            /** External Id */
+            external_id: string;
+            /**
+             * Fee Stated
+             * @default false
+             */
+            fee_stated: boolean;
+            /** Fees Eur */
+            fees_eur?: string | null;
+            /**
+             * Is Duplicate
+             * @default false
+             */
+            is_duplicate: boolean;
+            /** Line */
+            line: number;
+            /** Rate */
+            rate?: string | null;
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Sent On
+             * @default false
+             */
+            sent_on: boolean;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "conversion" | "skipped" | "ignored" | "unsupported";
+            /** Usd Received */
+            usd_received?: string | null;
+            /** Warnings */
+            warnings?: string[];
+        };
+        /** WiseRowChoiceIn */
+        WiseRowChoiceIn: {
+            /**
+             * Kept Usd
+             * @default 0
+             */
+            kept_usd: number | string;
+            /** Line */
+            line: number;
+            /**
+             * Skip
+             * @default false
+             */
+            skip: boolean;
+        };
     };
     responses: never;
     parameters: never;
@@ -10071,6 +10311,66 @@ export interface operations {
             };
         };
     };
+    mark_received_in_usd_api_fx_conversions_received_in_usd__deposit_txn_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deposit_txn_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepositMatchOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unmark_received_in_usd_api_fx_conversions_received_in_usd__deposit_txn_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deposit_txn_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     reference_api_fx_conversions_reference_get: {
         parameters: {
             query: {
@@ -10705,6 +11005,140 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UnknownActionsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_wise_statement_api_imports_wise_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_wise_statement_api_imports_wise_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WisePreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discard_wise_statement_api_imports_wise__import_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                import_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_wise_statement_api_imports_wise__import_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                import_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WiseConfirmIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WiseConfirmResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_wise_layout_api_imports_wise__import_id__layout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                import_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WiseLayoutIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WisePreview"];
                 };
             };
             /** @description Validation Error */

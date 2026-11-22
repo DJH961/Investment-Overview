@@ -60,6 +60,7 @@ def _out(
         from_ccy=row.from_ccy,
         to_ccy=row.to_ccy,
         provider=cast("Literal['wise', 'revolut', 'other'] | None", row.provider),
+        kept_usd=_s(row.kept_usd),
         rate=_s(row.usd_received / row.eur_sent),
         all_in_rate=_s(row.usd_received / (row.eur_sent + fees)),
         ecb_rate=None if ecb is None else _s(ecb),
@@ -76,17 +77,21 @@ def _out(
             for sl in used
             if sl.deposit_id in dates
         ],
-        remaining_usd=_s(use.remaining_usd if use is not None else row.usd_received),
+        remaining_usd=_s(use.remaining_usd if use is not None else row.usd_received - row.kept_usd),
     )
 
 
-def _match_out(m: DepositMatch, convs: dict[int, FxConversion]) -> DepositMatchOut:
+def _match_out(
+    m: DepositMatch, convs: dict[int, FxConversion], received: frozenset[int] = frozenset()
+) -> DepositMatchOut:
     rate = m.blended_rate
-    status: Literal["matched", "partial", "ecb_only"]
+    status: Literal["matched", "partial", "ecb_only", "received_usd"]
     if not m.is_fallback:
         status = "matched"
     elif m.matched_usd > 0:
         status = "partial"
+    elif m.deposit_id in received:
+        status = "received_usd"
     else:
         status = "ecb_only"
     slices = []
@@ -122,6 +127,7 @@ def _match_out(m: DepositMatch, convs: dict[int, FxConversion]) -> DepositMatchO
         # the lookup date; the fixing itself is forward-filled from the last published day
         fallback_rate_date=m.date.isoformat() if m.is_fallback else None,
         pinned=any(s.pinned for s in m.matched),
+        received_in_usd=m.deposit_id in received,
     )
 
 
@@ -154,6 +160,7 @@ def create_conversion(body: FxConversionIn, session: SessionDep) -> FxConversion
             fees_eur=body.fees_eur,
             note=body.note,
             provider=body.provider,
+            kept_usd=body.kept_usd,
             from_ccy=body.from_ccy,
             to_ccy=body.to_ccy,
         )
@@ -167,7 +174,7 @@ def pool(session: SessionDep) -> PoolOut:
     report = service.pool_report(session)
     convs = {c.id: c for c in report.conversions}
     ordered = sorted(report.result.deposits, key=lambda m: (m.date, m.deposit_id), reverse=True)
-    deposits = [_match_out(m, convs) for m in ordered]
+    deposits = [_match_out(m, convs, report.received_in_usd) for m in ordered]
     return PoolOut(
         balance_usd=_s(report.result.remaining_usd),
         balance_eur=_s(report.result.remaining_eur),
@@ -209,6 +216,28 @@ def put_pins(deposit_txn_id: int, body: PinsIn, session: SessionDep) -> DepositM
     return _match_out(match, convs)
 
 
+@router.put("/fx-conversions/received-in-usd/{deposit_txn_id}", response_model=DepositMatchOut)
+def mark_received_in_usd(deposit_txn_id: int, session: SessionDep) -> DepositMatchOut:
+    """Mark a USD deposit as received in USD (no conversion); it keeps its ECB valuation."""
+    try:
+        service.set_received_in_usd(session, deposit_txn_id, True)
+    except ValueError as exc:
+        raise _bad(exc) from exc
+    report = service.pool_report(session)
+    convs = {c.id: c for c in report.conversions}
+    match = next(m for m in report.result.deposits if m.deposit_id == deposit_txn_id)
+    return _match_out(match, convs, report.received_in_usd)
+
+
+@router.delete("/fx-conversions/received-in-usd/{deposit_txn_id}", status_code=204)
+def unmark_received_in_usd(deposit_txn_id: int, session: SessionDep) -> Response:
+    try:
+        service.set_received_in_usd(session, deposit_txn_id, False)
+    except ValueError as exc:
+        raise _bad(exc) from exc
+    return Response(status_code=204)
+
+
 @router.delete("/fx-conversions/pins/{deposit_txn_id}", status_code=204)
 def delete_pins(deposit_txn_id: int, session: SessionDep) -> Response:
     service.clear_pins(session, deposit_txn_id)
@@ -229,6 +258,7 @@ def update_conversion(
             fees_eur=body.fees_eur,
             note=body.note,
             provider=body.provider,
+            kept_usd=body.kept_usd,
             from_ccy=body.from_ccy,
             to_ccy=body.to_ccy,
         )

@@ -34,7 +34,7 @@ export const INVALIDATION = {
   // "graphs": a changed ETF twin redraws the 1D line.
   instrumentEdit: ["instruments", "overview", "holdings", "allocations", "analytics", "calculator", "deposits", "transactions", "graphs"],
   /** EUR returns are rebuilt server-side from the conversions; values and ledger rows are untouched. */
-  fxConversionWrite: ["fx-conversions", "overview", "currency", "holdings", "graphs", "periods", "analytics", "calculator", "deposits"],
+  fxConversionWrite: ["fx-conversions", "diagnostics", "overview", "currency", "holdings", "graphs", "periods", "analytics", "calculator", "deposits"],
   /** Prices or FX moved (tick, fx event): the live numbers. */
   tick: ["overview", "holdings", "graphs", "periods", "allocations", "currency", "brief"],
   /** End-of-day jobs or a price refresh finished: every report. */

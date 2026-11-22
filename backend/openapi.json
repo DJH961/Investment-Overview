@@ -890,6 +890,20 @@
         "title": "Body_upload_import_api_imports_post",
         "type": "object"
       },
+      "Body_upload_wise_statement_api_imports_wise_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_wise_statement_api_imports_wise_post",
+        "type": "object"
+      },
       "BriefAckIn": {
         "properties": {
           "seen_at": {
@@ -3991,6 +4005,12 @@
             "title": "Rate Missing",
             "type": "boolean"
           },
+          "received_in_usd": {
+            "default": false,
+            "description": "Marked as received in USD (no conversion).",
+            "title": "Received In Usd",
+            "type": "boolean"
+          },
           "slices": {
             "items": {
               "$ref": "#/components/schemas/DepositSliceOut"
@@ -4002,7 +4022,8 @@
             "enum": [
               "matched",
               "partial",
-              "ecb_only"
+              "ecb_only",
+              "received_usd"
             ],
             "title": "Status",
             "type": "string"
@@ -6426,6 +6447,21 @@
             "title": "From Ccy",
             "type": "string"
           },
+          "kept_usd": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "description": "Dollars kept in the USD account, never sent to the broker.",
+            "title": "Kept Usd"
+          },
           "note": {
             "anyOf": [
               {
@@ -6551,6 +6587,12 @@
             "title": "Id",
             "type": "integer"
           },
+          "kept_usd": {
+            "description": "Dollars kept outside investing (not in the pool).",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Kept Usd",
+            "type": "string"
+          },
           "note": {
             "anyOf": [
               {
@@ -6630,6 +6672,7 @@
           "from_ccy",
           "to_ccy",
           "provider",
+          "kept_usd",
           "rate",
           "all_in_rate",
           "ecb_rate",
@@ -20344,6 +20387,363 @@
         ],
         "title": "Week52",
         "type": "object"
+      },
+      "WiseColumnField": {
+        "properties": {
+          "column": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Column"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "required",
+          "column"
+        ],
+        "title": "WiseColumnField",
+        "type": "object"
+      },
+      "WiseConfirmIn": {
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/WiseRowChoiceIn"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "title": "WiseConfirmIn",
+        "type": "object"
+      },
+      "WiseConfirmResult": {
+        "properties": {
+          "duplicates": {
+            "title": "Duplicates",
+            "type": "integer"
+          },
+          "import_id": {
+            "title": "Import Id",
+            "type": "string"
+          },
+          "imported": {
+            "title": "Imported",
+            "type": "integer"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "import_id",
+          "imported",
+          "skipped",
+          "duplicates"
+        ],
+        "title": "WiseConfirmResult",
+        "type": "object"
+      },
+      "WiseCounts": {
+        "properties": {
+          "duplicates": {
+            "title": "Duplicates",
+            "type": "integer"
+          },
+          "new": {
+            "title": "New",
+            "type": "integer"
+          },
+          "rows": {
+            "title": "Rows",
+            "type": "integer"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rows",
+          "new",
+          "duplicates",
+          "skipped"
+        ],
+        "title": "WiseCounts",
+        "type": "object"
+      },
+      "WiseLayoutIn": {
+        "properties": {
+          "columns": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Columns",
+            "type": "object"
+          }
+        },
+        "required": [
+          "columns"
+        ],
+        "title": "WiseLayoutIn",
+        "type": "object"
+      },
+      "WisePreview": {
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/WiseCounts"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/WiseColumnField"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "headers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Headers",
+            "type": "array"
+          },
+          "ignore_non_usd": {
+            "title": "Ignore Non Usd",
+            "type": "boolean"
+          },
+          "import_id": {
+            "title": "Import Id",
+            "type": "string"
+          },
+          "missing": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing",
+            "type": "array"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/WisePreviewRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "import_id",
+          "filename",
+          "counts",
+          "rows",
+          "headers",
+          "fields",
+          "missing",
+          "ignore_non_usd",
+          "expires_at"
+        ],
+        "title": "WisePreview",
+        "type": "object"
+      },
+      "WisePreviewRow": {
+        "properties": {
+          "date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "eur_sent": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eur Sent"
+          },
+          "external_id": {
+            "title": "External Id",
+            "type": "string"
+          },
+          "fee_stated": {
+            "default": false,
+            "title": "Fee Stated",
+            "type": "boolean"
+          },
+          "fees_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fees Eur"
+          },
+          "is_duplicate": {
+            "default": false,
+            "title": "Is Duplicate",
+            "type": "boolean"
+          },
+          "line": {
+            "title": "Line",
+            "type": "integer"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "sent_on": {
+            "default": false,
+            "title": "Sent On",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "conversion",
+              "skipped",
+              "ignored",
+              "unsupported"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "usd_received": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usd Received"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "line",
+          "external_id",
+          "date",
+          "status"
+        ],
+        "title": "WisePreviewRow",
+        "type": "object"
+      },
+      "WiseRowChoiceIn": {
+        "properties": {
+          "kept_usd": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "title": "Kept Usd"
+          },
+          "line": {
+            "title": "Line",
+            "type": "integer"
+          },
+          "skip": {
+            "default": false,
+            "title": "Skip",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "line"
+        ],
+        "title": "WiseRowChoiceIn",
+        "type": "object"
       }
     }
   },
@@ -22131,6 +22531,82 @@
         ]
       }
     },
+    "/api/fx-conversions/received-in-usd/{deposit_txn_id}": {
+      "delete": {
+        "operationId": "unmark_received_in_usd_api_fx_conversions_received_in_usd__deposit_txn_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deposit_txn_id",
+            "required": true,
+            "schema": {
+              "title": "Deposit Txn Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Unmark Received In Usd",
+        "tags": [
+          "fx-conversions"
+        ]
+      },
+      "put": {
+        "description": "Mark a USD deposit as received in USD (no conversion); it keeps its ECB valuation.",
+        "operationId": "mark_received_in_usd_api_fx_conversions_received_in_usd__deposit_txn_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deposit_txn_id",
+            "required": true,
+            "schema": {
+              "title": "Deposit Txn Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DepositMatchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mark Received In Usd",
+        "tags": [
+          "fx-conversions"
+        ]
+      }
+    },
     "/api/fx-conversions/reference": {
       "get": {
         "operationId": "reference_api_fx_conversions_reference_get",
@@ -23077,6 +23553,194 @@
           }
         },
         "summary": "Unknown Actions",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/api/imports/wise": {
+      "post": {
+        "operationId": "upload_wise_statement_api_imports_wise_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_wise_statement_api_imports_wise_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WisePreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Wise Statement",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/api/imports/wise/{import_id}": {
+      "delete": {
+        "operationId": "discard_wise_statement_api_imports_wise__import_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "import_id",
+            "required": true,
+            "schema": {
+              "title": "Import Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Discard Wise Statement",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/api/imports/wise/{import_id}/confirm": {
+      "post": {
+        "operationId": "confirm_wise_statement_api_imports_wise__import_id__confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "import_id",
+            "required": true,
+            "schema": {
+              "title": "Import Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WiseConfirmIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WiseConfirmResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Wise Statement",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/api/imports/wise/{import_id}/layout": {
+      "post": {
+        "description": "Re-parse the staged statement with columns chosen by hand (new ``import_id``).",
+        "operationId": "set_wise_layout_api_imports_wise__import_id__layout_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "import_id",
+            "required": true,
+            "schema": {
+              "title": "Import Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WiseLayoutIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WisePreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Wise Layout",
         "tags": [
           "imports"
         ]

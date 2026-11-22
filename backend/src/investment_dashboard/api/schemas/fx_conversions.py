@@ -11,7 +11,7 @@ from pydantic import Field, field_validator
 from investment_dashboard.api.schemas.common import ApiModel, DecStr
 
 Provider = Literal["wise", "revolut", "other"]
-DepositStatus = Literal["matched", "partial", "ecb_only"]
+DepositStatus = Literal["matched", "partial", "ecb_only", "received_usd"]
 
 
 class FxConversionIn(ApiModel):
@@ -21,6 +21,11 @@ class FxConversionIn(ApiModel):
     fees_eur: Decimal | None = Field(default=None, ge=0)
     note: str | None = Field(default=None, max_length=512)
     provider: Provider | None = None
+    kept_usd: Decimal = Field(
+        default=Decimal(0),
+        ge=0,
+        description="Dollars kept in the USD account, never sent to the broker.",
+    )
     from_ccy: str = Field(default="EUR", min_length=3, max_length=3)
     to_ccy: str = Field(default="USD", min_length=3, max_length=3)
 
@@ -51,6 +56,7 @@ class FxConversionOut(ApiModel):
     from_ccy: str
     to_ccy: str
     provider: Provider | None
+    kept_usd: DecStr = Field(description="Dollars kept outside investing (not in the pool).")
     rate: DecStr = Field(description="usd_received / eur_sent (same as effective_rate).")
     all_in_rate: DecStr = Field(description="usd_received / (eur_sent + fees).")
     ecb_rate: DecStr | None = Field(
@@ -130,6 +136,9 @@ class DepositMatchOut(ApiModel):
     slices: list[DepositSliceOut]
     fallback_rate_date: str | None
     pinned: bool
+    received_in_usd: bool = Field(
+        default=False, description="Marked as received in USD (no conversion)."
+    )
 
 
 class RemainingBatchOut(ApiModel):

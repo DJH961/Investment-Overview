@@ -50270,7 +50270,7 @@
     "examples": [],
     "id": "ecb_fallback_deposits",
     "severity": "ok",
-    "title": "Deposits paid at the ECB rate"
+    "title": "Deposits valued at the ECB rate"
    }
   ],
   "count": 1,
@@ -60885,6 +60885,26 @@
    {
     "choices": [],
     "danger": null,
+    "default": true,
+    "env_bound": null,
+    "env_var": null,
+    "help": "A Wise statement can hold conversions into other currencies (for example EUR to GBP). 7.3 only supports EUR to USD, so with this on those rows are left out of the preview without a fuss; with it off they are listed but cannot be imported.",
+    "key": "import.ignore_non_usd_conversions",
+    "label": "Import: ignore conversions not into USD",
+    "level": "user",
+    "max": null,
+    "min": null,
+    "nullable": false,
+    "restart_required": false,
+    "secret": false,
+    "section": "imports",
+    "since": "6.0",
+    "type": "bool",
+    "unit": null
+   },
+   {
+    "choices": [],
+    "danger": null,
     "default": {},
     "env_bound": null,
     "env_var": null,
@@ -62036,6 +62056,15 @@
     "source": "default",
     "stored_invalid": false,
     "value": {}
+   },
+   "import.ignore_non_usd_conversions": {
+    "default": true,
+    "env_value_present": false,
+    "is_set": true,
+    "modified_at": null,
+    "source": "default",
+    "stored_invalid": false,
+    "value": true
    },
    "import.max_upload_mb": {
     "default": 10,
