@@ -148,6 +148,19 @@ function WeekColumns({ pts, extremes }: { pts: { t: number; v: number }[]; extre
     }
     return e.x < 12 ? "start" : e.x > 88 ? "end" : "middle";
   };
+  // A label is about a quarter of the plot wide. It sits above the tallest column under
+  // it (its own span), joined to its point by a thin leader, so neighbours never cover it.
+  const LABEL_SPAN = 26;
+  const lift = (e: (typeof placed)[number]) => {
+    const a = anchor(e);
+    const lo = a === "start" ? e.x : a === "end" ? e.x - LABEL_SPAN : e.x - LABEL_SPAN / 2;
+    const hi = lo + LABEL_SPAN;
+    const under = pts.filter((p) => {
+      const px = x(p.t);
+      return px >= lo && px <= hi;
+    });
+    return Math.max(e.y, ...under.map((p) => h(p.v)));
+  };
   return (
     <div className="next-cols">
       <p className="next-cols__caption">Each week of the past year</p>
@@ -162,17 +175,23 @@ function WeekColumns({ pts, extremes }: { pts: { t: number; v: number }[]; extre
             />
           ))}
         </ol>
-        {placed.map((e) => (
-          <span
-            key={e.kind}
-            className={clsx("next-cols__point", `next-cols__point--${anchor(e)}`, `next-cols__point--${e.kind}`)}
-            style={{ left: `${e.x}%`, bottom: `${e.y}%` }}
-          >
-            <span className="next-cols__point-label">
-              {e.kind === "best" ? "best" : "worst"} <Money amount={e.v} currency="USD" digits={0} />
+        {placed.map((e) => {
+          const top = lift(e);
+          return (
+            <span key={e.kind} className="next-cols__mark">
+              {top > e.y ? (
+                <span className="next-cols__leader" style={{ left: `${e.x}%`, bottom: `${e.y}%`, height: `${top - e.y}%` }} />
+              ) : null}
+              <span className="next-cols__point" style={{ left: `${e.x}%`, bottom: `${e.y}%` }} />
+              <span
+                className={clsx("next-cols__point-label", `next-cols__point-label--${anchor(e)}`)}
+                style={{ left: `${e.x}%`, bottom: `${top}%` }}
+              >
+                {e.kind === "best" ? "best" : "worst"} <Money amount={e.v} currency="USD" digits={0} />
+              </span>
             </span>
-          </span>
-        ))}
+          );
+        })}
       </div>
       <p className="next-cols__ends" aria-hidden>
         <span>a year ago</span>

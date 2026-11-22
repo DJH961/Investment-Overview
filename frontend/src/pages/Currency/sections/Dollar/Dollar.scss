@@ -797,7 +797,8 @@
     list-style: none;
   }
 
-  // The year's best and worst day: a small point on the column top with its figure above.
+  // The year's best and worst day: a small point on its column, its figure above the
+  // tallest column beneath the label, joined by a thin leader when lifted.
   &__point {
     position: absolute;
     width: var(--space-2);
@@ -808,34 +809,30 @@
     transform: translate(-50%, 50%);
   }
 
-  &__point-label {
+  &__leader {
     position: absolute;
-    bottom: calc(100% + 2px);
-    left: 50%;
-    padding: 0 var(--space-1);
-    border-radius: var(--radius-sm);
-    background: var(--color-surface);
-    color: var(--color-fg);
-    font-size: var(--font-size-2xs);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
+    width: var(--border-width);
+    background: var(--color-fg);
     transform: translateX(-50%);
   }
 
-  // The worst week sits among taller neighbours: its label rides a little higher.
-  &__point--worst &__point-label {
-    bottom: calc(100% + var(--space-3));
-  }
+  &__point-label {
+    position: absolute;
+    margin-bottom: var(--space-1);
+    color: var(--color-fg);
+    font-size: var(--font-size-2xs);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    white-space: nowrap;
+    transform: translateX(-50%);
 
-  &__point--start &__point-label {
-    left: 0;
-    transform: none;
-  }
+    &--start {
+      transform: translateX(calc(var(--space-1) * -1));
+    }
 
-  &__point--end &__point-label {
-    right: 0;
-    left: auto;
-    transform: none;
+    &--end {
+      transform: translateX(calc(-100% + var(--space-1)));
+    }
   }
 
   &__col {
