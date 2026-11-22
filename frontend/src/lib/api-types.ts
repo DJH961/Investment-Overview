@@ -2858,6 +2858,45 @@ export interface components {
             /** To Ccy */
             to_ccy: string;
         };
+        /** CostMonthOut */
+        CostMonthOut: {
+            /**
+             * All In Rate
+             * @description sum(usd received) / sum(eur sent + fees) of the group.
+             */
+            all_in_rate?: string | null;
+            /**
+             * Avg Off Pct
+             * @description all-in distance from the ECB, weighted by EUR converted.
+             */
+            avg_off_pct: string | null;
+            /**
+             * Converted
+             * @description EUR sent (EUR view) or USD received (USD view).
+             */
+            converted: string;
+            /**
+             * Cost
+             * @description fees + spread; negative is intraday noise, not a win.
+             */
+            cost: string;
+            /**
+             * Cost Pct
+             * @description cost / converted; null when nothing converted.
+             */
+            cost_pct: string | null;
+            /** Count */
+            count: number;
+            /** Fees */
+            fees: string;
+            /**
+             * Month
+             * @description YYYY-MM
+             */
+            month: string;
+            /** Spread */
+            spread: string;
+        };
         /** CostPointOut */
         CostPointOut: {
             /**
@@ -2870,6 +2909,11 @@ export interface components {
         };
         /** CostProviderOut */
         CostProviderOut: {
+            /**
+             * All In Rate
+             * @description sum(usd received) / sum(eur sent + fees) of the group.
+             */
+            all_in_rate?: string | null;
             /**
              * Avg Off Pct
              * @description all-in distance from the ECB, weighted by EUR converted.
@@ -2942,6 +2986,11 @@ export interface components {
          */
         CostSummaryOut: {
             /**
+             * All In Rate
+             * @description sum(usd received) / sum(eur sent + fees) of the group.
+             */
+            all_in_rate?: string | null;
+            /**
              * Avg Off Pct
              * @description all-in distance from the ECB, weighted by EUR converted.
              */
@@ -2990,6 +3039,11 @@ export interface components {
         /** CostYearOut */
         CostYearOut: {
             /**
+             * All In Rate
+             * @description sum(usd received) / sum(eur sent + fees) of the group.
+             */
+            all_in_rate?: string | null;
+            /**
              * Avg Off Pct
              * @description all-in distance from the ECB, weighted by EUR converted.
              */
@@ -3021,6 +3075,8 @@ export interface components {
         /** CostsOut */
         CostsOut: {
             best: components["schemas"]["CostRowOut"] | null;
+            /** By Month */
+            by_month: components["schemas"]["CostMonthOut"][];
             /** By Provider */
             by_provider: components["schemas"]["CostProviderOut"][];
             /** By Year */
@@ -3032,6 +3088,11 @@ export interface components {
              * @description Lowest cost % among providers with conversions (needs two to compare).
              */
             cheaper_provider: ("wise" | "revolut" | "other") | null;
+            /**
+             * Cheaper Than
+             * @description The next-cheapest provider.
+             */
+            cheaper_than: ("wise" | "revolut" | "other") | null;
             /** Cumulative */
             cumulative: components["schemas"]["CostPointOut"][];
             /**
@@ -3222,7 +3283,7 @@ export interface components {
             /** Currency */
             currency?: ("EUR" | "USD") | null;
             /** Direction */
-            direction?: ("dollar_up" | "dollar_down" | "sideways") | null;
+            direction?: ("dollar_up" | "dollar_down" | "euro_up" | "euro_down" | "sideways") | null;
             /**
              * Key
              * @enum {string}
@@ -3807,14 +3868,17 @@ export interface components {
         };
         /**
          * DollarRegime
-         * @description The dollar's regime with hysteresis (``domain.fx_trend.regime``).
+         * @description The trend's regime with hysteresis (``domain.fx_trend.regime``).
+         *
+         *     In ``DollarTrend.asset``'s terms: the EUR view reads the dollar (``dollar_*``), the
+         *     USD view the euro (``euro_*``, on the EUR/USD rate itself).
          */
         DollarRegime: {
             /**
              * Direction
              * @enum {string}
              */
-            direction: "dollar_up" | "dollar_down" | "sideways";
+            direction: "dollar_up" | "dollar_down" | "euro_up" | "euro_down" | "sideways";
             /** Since */
             since: string;
             /** Since Change Pct */
@@ -3872,10 +3936,26 @@ export interface components {
             /** Value Display */
             value_display?: string | null;
         };
-        /** DollarTrend */
+        /**
+         * DollarTrend
+         * @description The trend of one currency against the other, in its own terms.
+         *
+         *     ``asset`` says whose: ``dollar`` (the EUR view: every move, average, run and
+         *     percentile is the dollar's, on EUR per USD) or ``euro`` (the USD view: the same
+         *     figures computed on the EUR/USD rate itself, never the dollar's negated).
+         *     ``ma200.distance_pct``, ``normal_*.move_pct``, ``run``, ``percentiles`` (days the
+         *     asset was cheaper than today), ``long_run.distance_pct`` and
+         *     ``above_entry_share`` (days the asset stood above your average rate) follow it.
+         */
         DollarTrend: {
             /** Above Entry Share */
             above_entry_share?: string | null;
+            /**
+             * Asset
+             * @default dollar
+             * @enum {string}
+             */
+            asset: "dollar" | "euro";
             long_run?: components["schemas"]["LongRun"] | null;
             ma200?: components["schemas"]["DollarMa200"] | null;
             normal_month?: components["schemas"]["NormalRange"] | null;
@@ -6024,6 +6104,8 @@ export interface components {
         LongRun: {
             /** Distance Inverse Pct */
             distance_inverse_pct: string;
+            /** Distance Pct */
+            distance_pct?: string | null;
             mean: components["schemas"]["RateValue"];
             /** Since */
             since: string;

@@ -57,7 +57,12 @@ def test_golden_both_currencies(api_client: TestClient) -> None:
     assert [y["year"] for y in eur["by_year"]] == [2026]
     assert [p["provider"] for p in eur["by_provider"]] == ["wise", "revolut"]
     # revolut costs 100 on 900 (11.1 %), wise -145 on 2850: wise is the cheaper
-    assert eur["cheaper_provider"] == "wise"
+    assert eur["cheaper_provider"] == "wise" and eur["cheaper_than"] == "revolut"
+    # fold headers: one summary per month (newest first), all-in rate = usd / (eur + fees)
+    assert [m["month"] for m in eur["by_month"]] == ["2026-03", "2026-02", "2026-01"]
+    jan = eur["by_month"][2]
+    assert abs(Decimal(jan["all_in_rate"]) - Decimal(1100) / Decimal(1002)) < Decimal("1e-9")
+    assert Decimal(jan["cost"]) == 2 and Decimal(jan["converted"]) == 1000
     u = usd["summary"]
     assert (Decimal(u["converted"]), Decimal(u["fees"])) == (4100, Decimal("5.2"))
     assert (Decimal(u["spread"]), Decimal(u["cost"])) == (-25, Decimal("-19.8"))

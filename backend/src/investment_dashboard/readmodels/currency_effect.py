@@ -1303,11 +1303,12 @@ def strip_figures(session: Session, ccy: str, *, today: date | None = None) -> S
 
 
 @cached_read
-def dollar_trend(session: Session) -> dict[str, Any] | None:
-    """The dollar's regime on the settled daily history (``domain/fx_trend``)."""
+def dollar_trend(session: Session, of: fx_trend.Asset = "dollar") -> dict[str, Any] | None:
+    """The dollar's (or, ``of="euro"``, the euro's) regime on the settled daily history
+    (``domain/fx_trend``; the euro's on the EUR/USD rate itself)."""
     daily = sorted(rows_rm.settled_rates(session, "USD").items())
-    reg = fx_trend.regime(daily)
-    move = fx_trend.move_normality(daily)
+    reg = fx_trend.regime(daily, of=of)
+    move = fx_trend.move_normality(daily, of=of)
     if reg is None or move is None:
         return None
     return {

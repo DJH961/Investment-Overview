@@ -2829,6 +2829,92 @@
         "title": "ConversionMarker",
         "type": "object"
       },
+      "CostMonthOut": {
+        "properties": {
+          "all_in_rate": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "sum(usd received) / sum(eur sent + fees) of the group.",
+            "title": "All In Rate"
+          },
+          "avg_off_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "all-in distance from the ECB, weighted by EUR converted.",
+            "title": "Avg Off Pct"
+          },
+          "converted": {
+            "description": "EUR sent (EUR view) or USD received (USD view).",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Converted",
+            "type": "string"
+          },
+          "cost": {
+            "description": "fees + spread; negative is intraday noise, not a win.",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Cost",
+            "type": "string"
+          },
+          "cost_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "cost / converted; null when nothing converted.",
+            "title": "Cost Pct"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "fees": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Fees",
+            "type": "string"
+          },
+          "month": {
+            "description": "YYYY-MM",
+            "title": "Month",
+            "type": "string"
+          },
+          "spread": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Spread",
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "converted",
+          "fees",
+          "spread",
+          "cost",
+          "cost_pct",
+          "avg_off_pct",
+          "month"
+        ],
+        "title": "CostMonthOut",
+        "type": "object"
+      },
       "CostPointOut": {
         "properties": {
           "cost": {
@@ -2851,6 +2937,19 @@
       },
       "CostProviderOut": {
         "properties": {
+          "all_in_rate": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "sum(usd received) / sum(eur sent + fees) of the group.",
+            "title": "All In Rate"
+          },
           "avg_off_pct": {
             "anyOf": [
               {
@@ -3093,6 +3192,19 @@
       "CostSummaryOut": {
         "description": "Totals in the view's currency (EUR amounts, or USD amounts not received).",
         "properties": {
+          "all_in_rate": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "sum(usd received) / sum(eur sent + fees) of the group.",
+            "title": "All In Rate"
+          },
           "avg_off_pct": {
             "anyOf": [
               {
@@ -3203,6 +3315,19 @@
       },
       "CostYearOut": {
         "properties": {
+          "all_in_rate": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "sum(usd received) / sum(eur sent + fees) of the group.",
+            "title": "All In Rate"
+          },
           "avg_off_pct": {
             "anyOf": [
               {
@@ -3285,6 +3410,13 @@
               }
             ]
           },
+          "by_month": {
+            "items": {
+              "$ref": "#/components/schemas/CostMonthOut"
+            },
+            "title": "By Month",
+            "type": "array"
+          },
           "by_provider": {
             "items": {
               "$ref": "#/components/schemas/CostProviderOut"
@@ -3327,6 +3459,23 @@
             ],
             "description": "Lowest cost % among providers with conversions (needs two to compare).",
             "title": "Cheaper Provider"
+          },
+          "cheaper_than": {
+            "anyOf": [
+              {
+                "enum": [
+                  "wise",
+                  "revolut",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The next-cheapest provider.",
+            "title": "Cheaper Than"
           },
           "cumulative": {
             "items": {
@@ -3398,8 +3547,10 @@
           "cumulative",
           "timing",
           "by_year",
+          "by_month",
           "by_provider",
           "cheaper_provider",
+          "cheaper_than",
           "cheaper_gap_pct",
           "rows"
         ],
@@ -3962,6 +4113,8 @@
                 "enum": [
                   "dollar_up",
                   "dollar_down",
+                  "euro_up",
+                  "euro_down",
                   "sideways"
                 ],
                 "type": "string"
@@ -5709,12 +5862,14 @@
         "type": "object"
       },
       "DollarRegime": {
-        "description": "The dollar's regime with hysteresis (``domain.fx_trend.regime``).",
+        "description": "The trend's regime with hysteresis (``domain.fx_trend.regime``).\n\nIn ``DollarTrend.asset``'s terms: the EUR view reads the dollar (``dollar_*``), the\nUSD view the euro (``euro_*``, on the EUR/USD rate itself).",
         "properties": {
           "direction": {
             "enum": [
               "dollar_up",
               "dollar_down",
+              "euro_up",
+              "euro_down",
               "sideways"
             ],
             "title": "Direction",
@@ -5915,6 +6070,7 @@
         "type": "object"
       },
       "DollarTrend": {
+        "description": "The trend of one currency against the other, in its own terms.\n\n``asset`` says whose: ``dollar`` (the EUR view: every move, average, run and\npercentile is the dollar's, on EUR per USD) or ``euro`` (the USD view: the same\nfigures computed on the EUR/USD rate itself, never the dollar's negated).\n``ma200.distance_pct``, ``normal_*.move_pct``, ``run``, ``percentiles`` (days the\nasset was cheaper than today), ``long_run.distance_pct`` and\n``above_entry_share`` (days the asset stood above your average rate) follow it.",
         "properties": {
           "above_entry_share": {
             "anyOf": [
@@ -5927,6 +6083,15 @@
               }
             ],
             "title": "Above Entry Share"
+          },
+          "asset": {
+            "default": "dollar",
+            "enum": [
+              "dollar",
+              "euro"
+            ],
+            "title": "Asset",
+            "type": "string"
           },
           "long_run": {
             "anyOf": [
@@ -11972,6 +12137,18 @@
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Distance Inverse Pct",
             "type": "string"
+          },
+          "distance_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distance Pct"
           },
           "mean": {
             "$ref": "#/components/schemas/RateValue"

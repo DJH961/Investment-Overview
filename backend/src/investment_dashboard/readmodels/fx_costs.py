@@ -30,6 +30,7 @@ def _summary(s: CostSummary, ccy: str) -> dict[str, Any]:
         "cost": dec(s.cost_eur if eur else s.cost_usd),
         "cost_pct": dec(s.cost_pct if eur else s.cost_pct_usd),
         "avg_off_pct": dec(s.avg_off_pct),
+        "all_in_rate": dec(s.all_in_rate),
     }
 
 
@@ -53,7 +54,7 @@ def _row(r: ConversionCost, ccy: str) -> dict[str, Any]:
     }
 
 
-def _cheaper(report: fx_spread.CostReport, ccy: str) -> tuple[str | None, str | None]:
+def _cheaper(report: fx_spread.CostReport, ccy: str) -> tuple[str | None, str | None, str | None]:
     """The provider with the lowest cost % of what it converted, and the gap to the next."""
     eur = ccy == "EUR"
     ranked = sorted(
@@ -66,15 +67,15 @@ def _cheaper(report: fx_spread.CostReport, ccy: str) -> tuple[str | None, str | 
     )
     ranked = [t for t in ranked if t[0] is not None]
     if len(ranked) < 2:
-        return None, None
-    return ranked[0][1], dec(ranked[1][0] - ranked[0][0])  # type: ignore[operator]
+        return None, None, None
+    return ranked[0][1], ranked[1][1], dec(ranked[1][0] - ranked[0][0])  # type: ignore[operator]
 
 
 def _side(
     report: fx_spread.CostReport, ccy: str, range_key: str, start: date | None
 ) -> dict[str, Any]:
     eur = ccy == "EUR"
-    cheaper, gap = _cheaper(report, ccy)
+    cheaper, cheaper_than, gap = _cheaper(report, ccy)
     return {
         "currency": ccy,
         "range": range_key,
@@ -95,11 +96,13 @@ def _side(
             "so_far": report.timing.so_far,
         },
         "by_year": [{"year": y, **_summary(s, ccy)} for y, s in report.by_year],
+        "by_month": [{"month": m, **_summary(s, ccy)} for m, s in report.by_month],
         "by_provider": [
             {"provider": None if p == "none" else p, **_summary(s, ccy)}
             for p, s in report.by_provider
         ],
         "cheaper_provider": cheaper,
+        "cheaper_than": cheaper_than,
         "cheaper_gap_pct": gap,
         "rows": [_row(r, ccy) for r in report.rows],
     }

@@ -100,6 +100,13 @@ class CostSummaryOut(ApiModel):
     avg_off_pct: DecStr | None = Field(
         description="all-in distance from the ECB, weighted by EUR converted."
     )
+    all_in_rate: DecStr | None = Field(
+        default=None, description="sum(usd received) / sum(eur sent + fees) of the group."
+    )
+
+
+class CostMonthOut(CostSummaryOut):
+    month: str = Field(description="YYYY-MM")
 
 
 class CostYearOut(CostSummaryOut):
@@ -155,10 +162,12 @@ class CostsOut(ApiModel):
     cumulative: list[CostPointOut]
     timing: CostTimingOut
     by_year: list[CostYearOut]
+    by_month: list[CostMonthOut]
     by_provider: list[CostProviderOut]
     cheaper_provider: Provider | None = Field(
         description="Lowest cost % among providers with conversions (needs two to compare)."
     )
+    cheaper_than: Provider | None = Field(description="The next-cheapest provider.")
     cheaper_gap_pct: DecStr | None
     rows: list[CostRowOut]
 

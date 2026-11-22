@@ -116,6 +116,8 @@ class CostSummary:
     cost_pct_usd: Decimal | None
     #: Average ``off_pct`` weighted by EUR sent (never a plain mean of percentages).
     avg_off_pct: Decimal | None
+    #: ``sum(usd) / sum(eur + fees)`` over every conversion of the group, priced or not.
+    all_in_rate: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,6 +135,8 @@ class CostReport:
     cumulative: tuple[CumulativePoint, ...]
     timing: Timing
     by_year: tuple[tuple[int, CostSummary], ...]
+    #: ``("2026-03", summary)``, newest first (the Conversions page's fold headers).
+    by_month: tuple[tuple[str, CostSummary], ...]
     by_provider: tuple[tuple[str, CostSummary], ...]
     #: Every conversion, newest first (unpriced ones carry ``None`` figures).
     rows: tuple[ConversionCost, ...]
@@ -264,6 +268,12 @@ def summarise(rows: Sequence[ConversionCost]) -> CostSummary:
         cost_usd=cost_usd,
         cost_pct_usd=cost_usd / conv_usd if conv_usd > 0 else None,
         avg_off_pct=weighted / converted if converted > 0 else None,
+        all_in_rate=(
+            sum((r.usd_received for r in rows), ZERO)
+            / sum((r.eur_sent + r.fees_eur for r in rows), ZERO)
+            if rows
+            else None
+        ),
     )
 
 
@@ -311,8 +321,10 @@ def build_report(
             cumulative.append(point)
     years: dict[int, list[ConversionCost]] = defaultdict(list)
     provs: dict[str, list[ConversionCost]] = defaultdict(list)
+    months: dict[str, list[ConversionCost]] = defaultdict(list)
     for r in asc:
         years[r.date.year].append(r)
+        months[r.date.isoformat()[:7]].append(r)
         provs[r.provider].append(r)
     return CostReport(
         summary=summarise(asc),
@@ -321,6 +333,7 @@ def build_report(
         cumulative=tuple(cumulative),
         timing=timing(asc),
         by_year=tuple((y, summarise(years[y])) for y in sorted(years, reverse=True)),
+        by_month=tuple((m, summarise(months[m])) for m in sorted(months, reverse=True)),
         by_provider=tuple((p, summarise(provs[p])) for p in PROVIDERS if p in provs),
         rows=tuple(reversed(asc)),
         unpriced=len(asc) - len(priced),

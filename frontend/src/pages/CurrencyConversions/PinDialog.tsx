@@ -104,7 +104,10 @@ export function PinDialog({ deposit, conversions, onClose }: PinDialogProps) {
             {candidates.map((c) => (
               <li key={c.id} className="pin-form__row">
                 <span className="pin-form__name">
-                  {conversionTitle(c)} · {formatMoney(Number(c.eur_sent), "EUR")} → {formatMoney(Number(c.usd_received), "USD")}
+                  <span className="pin-form__title">{conversionTitle(c)}</span>
+                  <span className="pin-form__free">
+                    {formatMoney(Number(c.eur_sent), "EUR")} → {formatMoney(Number(c.usd_received), "USD")}
+                  </span>
                   <span className="pin-form__free">{availability(c)}</span>
                 </span>
                 <Input

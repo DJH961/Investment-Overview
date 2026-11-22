@@ -107,11 +107,15 @@ class NextEuro(ApiModel):
 
 
 class DollarRegime(ApiModel):
-    """The dollar's regime with hysteresis (``domain.fx_trend.regime``)."""
+    """The trend's regime with hysteresis (``domain.fx_trend.regime``).
 
-    direction: Literal["dollar_up", "dollar_down", "sideways"]
+    In ``DollarTrend.asset``'s terms: the EUR view reads the dollar (``dollar_*``), the
+    USD view the euro (``euro_*``, on the EUR/USD rate itself).
+    """
+
+    direction: Literal["dollar_up", "dollar_down", "euro_up", "euro_down", "sideways"]
     since: str
-    #: The dollar's (inverse) change since ``since``, fraction.
+    #: The asset's own change since ``since``, fraction.
     since_change_pct: DecStr
 
 
@@ -186,9 +190,23 @@ class LongRun(ApiModel):
     mean: RateValue
     #: ``inverse_now / mean.inverse - 1``.
     distance_inverse_pct: DecStr
+    #: The asset's own distance: the dollar's (as above) or the euro's
+    #: (``rate_now / mean.rate - 1``).
+    distance_pct: DecStr | None = None
 
 
 class DollarTrend(ApiModel):
+    """The trend of one currency against the other, in its own terms.
+
+    ``asset`` says whose: ``dollar`` (the EUR view: every move, average, run and
+    percentile is the dollar's, on EUR per USD) or ``euro`` (the USD view: the same
+    figures computed on the EUR/USD rate itself, never the dollar's negated).
+    ``ma200.distance_pct``, ``normal_*.move_pct``, ``run``, ``percentiles`` (days the
+    asset was cheaper than today), ``long_run.distance_pct`` and
+    ``above_entry_share`` (days the asset stood above your average rate) follow it.
+    """
+
+    asset: Literal["dollar", "euro"] = "dollar"
     regime: DollarRegime | None = None
     ma200: DollarMa200 | None = None
     normal_month: NormalRange | None = None
