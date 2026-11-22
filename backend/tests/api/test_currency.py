@@ -96,7 +96,10 @@ def test_stats_have_values_and_side_specific_tiles(api_client: TestClient, seede
             if t["key"] != "effect_today":
                 assert D(t["secondary"]) == D(eur_tiles[t["key"]]["value"])
     lifetime = next(t for t in gap_tiles if t["key"] == "effect_lifetime")
-    assert lifetime["value"] == body["USD"]["return_split"]["eur_minus_usd_pp"]
+    # The same time-weighted gap as the Impact section's All range.
+    impact = api_client.get("/api/currency/effect/both?range=all").json()
+    gap = D(impact["USD"]["headline"]["effect_pp"])
+    assert abs(D(lifetime["value"]) - gap) < Decimal("1e-8")
     keys_eur = {t["key"] for t in body["EUR"]["stats"]}
     assert "investing_power_today" not in keys_eur
     assert "rate_now" in keys_eur

@@ -5662,8 +5662,6 @@
           },
           "return_basis": {
             "enum": [
-              "periods",
-              "lifetime",
               "daily_chain",
               "day"
             ],

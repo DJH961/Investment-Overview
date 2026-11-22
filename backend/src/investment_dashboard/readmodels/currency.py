@@ -226,7 +226,7 @@ def _gap_tiles(
     eur_today = _d((eur_payload["currency"]["today"].get("effect_eur") or {}).get("net"))
     usd = currency_effect.strip_figures(session, "USD")
     eur = currency_effect.strip_figures(session, "EUR")
-    life_gap = _d(payload["currency"]["return_split"].get("eur_minus_usd_pp"))
+    life_gap = usd.effect_lifetime_pp
     return [
         *_gap_tile("effect_today", day_gap, eur_today),
         *_gap_tile("effect_this_year", usd.effect_year_pp, eur.effect_year),
@@ -269,7 +269,7 @@ def _effect_tiles(
         out.append(_stat("effect_this_year", figures.effect_year.quantize(Q6), "money", **extra))
     if figures.effect_lifetime is not None:
         extra = {"currency": ccy, "kind": _kind(figures.effect_lifetime)}
-        gap = _d(payload["currency"]["return_split"].get("eur_minus_usd_pp"))
+        gap = figures.effect_lifetime_pp  # the Impact All gap (time-weighted)
         if gap is not None:
             extra |= {"secondary": dec(gap), "secondary_unit": "fraction"}
         out.append(_stat("effect_lifetime", figures.effect_lifetime.quantize(Q6), "money", **extra))

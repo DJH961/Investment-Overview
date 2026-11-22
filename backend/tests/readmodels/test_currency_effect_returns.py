@@ -205,36 +205,38 @@ def test_no_flows_telescopes_to_end_over_start(start: int, rs: list[Decimal]) ->
     assert abs(got - (value / D(start) - 1)) < D("1e-18")
 
 
-@settings(max_examples=150)
-@given(
-    rs=st.lists(
-        st.decimals(min_value=D("-0.02"), max_value=D("0.02"), places=4), min_size=5, max_size=40
+_DEPOSITS = st.lists(
+    st.tuples(
+        st.integers(min_value=0, max_value=39),  # day of the flow
+        st.integers(min_value=0, max_value=5),  # days until the book sees it
+        st.integers(min_value=1, max_value=20),  # size, a multiple of the start
     ),
-    deposits=st.lists(
-        st.tuples(
-            st.integers(min_value=0, max_value=39),
-            st.integers(min_value=0, max_value=5),
-            st.integers(min_value=1, max_value=5),
-        ),
-        max_size=4,
-    ),
-    scale=st.sampled_from([D(1), D(1000), D("0.37")]),
+    max_size=4,
 )
-def test_delayed_deposits_stay_close_to_the_true_twr(
-    rs: list[Decimal], deposits: list[tuple[int, int, int]], scale: Decimal
-) -> None:
-    """Deposits (as a multiple of the start) seen in the book 0-5 days late: the chain
-    stays near the true time-weighted return, never near -100 %, at any scale."""
+
+
+def _delayed_ledger(
+    rs: Sequence[Decimal], deposits: Sequence[tuple[int, int, int]], start: Decimal
+) -> tuple[list[fa.DayParts], Decimal]:
+    """Day parts of a book earning ``rs`` whose deposits reach it some days late,
+    and the true time-weighted growth factor.
+
+    One transfer at a time, as a broker statement shows it: a deposit is bought
+    before the next one is made (a later one moves to the day after).
+    """
     n = len(rs)
-    start = D(1000) * scale
     flow_on: dict[int, Decimal] = {}
     seen_on: dict[int, Decimal] = {}
-    for day, delay, size in deposits:
-        d = day % n
+    free = 0
+    for day, delay, size in sorted(deposits):
+        d = max(day % n, free)
+        if d > n - 1:
+            continue
         amount = start * size
-        flow_on[d] = flow_on.get(d, D(0)) + amount
         seen = min(d + delay, n - 1)
+        flow_on[d] = amount
         seen_on[seen] = seen_on.get(seen, D(0)) + amount
+        free = seen + 1
     book = start
     parts = []
     true_growth = D(1)
@@ -243,10 +245,47 @@ def test_delayed_deposits_stay_close_to_the_true_twr(
         book = book * (1 + r) + seen_on.get(i, D(0))
         true_growth *= 1 + r
         parts.append(_part(i, before, book, flow_on.get(i, D(0))))
+    return parts, true_growth
+
+
+@settings(max_examples=300)
+@given(
+    n=st.integers(min_value=1, max_value=40),
+    deposits=_DEPOSITS,
+    scale=st.sampled_from([D(1), D(1000), D("0.37")]),
+)
+def test_money_in_flight_never_makes_a_return(
+    n: int, deposits: list[tuple[int, int, int]], scale: Decimal
+) -> None:
+    """A flat market: deposits of any size, seen any number of days late, give 0 %."""
+    parts, _ = _delayed_ledger([D(0)] * n, deposits, D(1000) * scale)
+    assert ce.chained_return(parts) == 0
+
+
+@settings(max_examples=300)
+@given(
+    rs=st.lists(
+        st.decimals(min_value=D("-0.01"), max_value=D("0.01"), places=4), min_size=5, max_size=40
+    ),
+    deposits=_DEPOSITS,
+    scale=st.sampled_from([D(1), D(1000), D("0.37")]),
+)
+def test_delayed_deposits_stay_close_to_the_true_twr(
+    rs: list[Decimal], deposits: list[tuple[int, int, int]], scale: Decimal
+) -> None:
+    """Deposits (up to 20x the start) seen 0-5 days late, daily moves up to 1 %.
+
+    Outside the merged spans the chain is the exact TWR. Inside one, the waiting money
+    dilutes the span's Dietz return, so the error is at most about the span's own
+    market move: bounded by ``2 * sum((1.01 ** (delay + 1)) - 1)`` over the deposits.
+    Never near -100 %, at any scale.
+    """
+    parts, true_growth = _delayed_ledger(rs, deposits, D(1000) * scale)
     got = ce.chained_return(parts)
     assert got is not None
-    # Every deposit is in the book by the last day: within a few points of the TWR.
-    assert abs(got - (true_growth - 1)) < D("0.05")
+    assert got > D("-0.5")
+    tol = 2 * sum((D("1.01") ** (delay + 1) - 1 for _d, delay, _s in deposits), D(0))
+    assert abs((1 + got) / true_growth - 1) <= tol + D("1e-15")
 
 
 @given(rs=_returns, k=st.sampled_from([D(2), D(1000), D("0.001")]))
@@ -303,3 +342,105 @@ def test_new_windows_exist() -> None:
     assert ce.range_window("5y", today)[0] == date(2021, 6, 30)
     assert ce.range_window("10y", today)[0] == date(2016, 6, 30)
     assert {"5y", "10y"} <= set(ce.FIXED_RANGES)
+
+
+# -- the owner's case and one method for every window -----------------------------------
+
+
+def test_golden_owner_case_deposit_from_an_empty_book() -> None:
+    """Empty book; 1000 deposited on day 1 but bought on day 3; then +1 %, +2 %.
+
+    Day 1 alone: (0 - 0 - 1000) / (0 + 1000 / 2) = -200 % (what the owner saw).
+    Days 1-3 as one span: gain 1000 - 0 - 1000 = 0 -> 0 %. Then 1.01 * 1.02 - 1.
+    """
+    parts = [
+        _part(0, "0", "0"),  # before anything
+        _part(1, "0", "0", "1000"),  # deposited, cash not in the book
+        _part(2, "0", "0"),
+        _part(3, "0", "1000"),  # bought
+        _part(4, "1000", "1010"),
+        _part(5, "1010", "1030.2"),
+    ]
+    naive_day = (parts[1].end - parts[1].start - parts[1].flow) / (parts[1].flow / 2)
+    assert naive_day == D(-2)
+    got = ce.chained_return(parts)
+    assert got is not None
+    assert got > -1
+    assert abs(got - D("0.0302")) < D("1e-24")
+
+
+def _lifetime(parts: Sequence[fa.DayParts]) -> ce.Lifetime:
+    return ce.Lifetime("USD", [], list(parts))
+
+
+def test_all_is_the_product_of_the_years_on_a_synthetic_ledger(session: Session) -> None:
+    """A ledger over three calendar years (2023-12-27 .. 2025-01-04) with a deposit
+    waiting over the 2023/2024 year end: (1 + All) == prod(1 + year), and a 1-year
+    window plus what came before it chains back to All."""
+    acct = accounts_repo.create_account(
+        session,
+        broker="fidelity",
+        account_label="USD brokerage",
+        native_currency="USD",
+        account_type="brokerage",
+    ).id
+    first = date(2023, 12, 27)
+    last = date(2025, 1, 4)
+    fx_repo.upsert_rates(session, {first: D("1.10")})
+    _txn(session, acct, first, "deposit", "1000")
+    _txn(session, acct, date(2023, 12, 30), "deposit", "5000")  # bought 2024-01-03
+    values: dict[date, Decimal] = {}
+    held = D(1000)
+    day = first
+    i = 0
+    while day <= last:
+        if day > first:
+            held *= D("1.002") if i % 3 else D("0.997")
+        if day == date(2024, 1, 3):
+            held += D(5000)
+        values[day] = held
+        day += timedelta(days=1)
+        i += 1
+    session.flush()
+    life = ce.build_lifetime(session, "USD", through=last, source=_FakeHoldings(acct, values))
+    assert life is not None
+    today = last + timedelta(days=1)
+    whole = ce.window_return(life, *ce.range_window("all", today))
+    assert whole is not None
+    assert whole > -1
+    years = [ce.window_return(life, *ce.range_window(str(y), today)) for y in (2023, 2024, 2025)]
+    product = D(1)
+    for y in years:
+        assert y is not None
+        product *= 1 + y
+    assert abs((1 + whole) - product) < D("1e-20")
+    # A rolling window is a sub-chain: before it times it gives the whole.
+    after, through = ce.range_window("1y", today)
+    head = ce.window_return(life, date.min, after)
+    tail = ce.window_return(life, after, through)
+    assert head is not None
+    assert tail is not None
+    assert abs((1 + head) * (1 + tail) - (1 + whole)) < D("1e-20")
+
+
+@settings(max_examples=300)
+@given(
+    rs=st.lists(
+        st.decimals(min_value=D("-0.03"), max_value=D("0.03"), places=4), min_size=2, max_size=40
+    ),
+    deposits=_DEPOSITS,
+    cut=st.integers(min_value=0, max_value=40),
+)
+def test_adjacent_windows_chain_into_the_whole(
+    rs: list[Decimal], deposits: list[tuple[int, int, int]], cut: int
+) -> None:
+    """For any ledger, (1 + left) * (1 + right) == 1 + whole for any cut point."""
+    parts, _ = _delayed_ledger(rs, deposits, D(1000))
+    life = _lifetime(parts)
+    k = cut % (len(parts) + 1)
+    cut_day = parts[k - 1].on if k else parts[0].prev_on
+    whole = ce.window_return(life, date.min, parts[-1].on)
+    left = ce.window_return(life, date.min, cut_day) or D(0)
+    right = ce.window_return(life, cut_day, parts[-1].on) or D(0)
+    assert whole is not None
+    assert abs((1 + left) * (1 + right) - (1 + whole)) < D("1e-20")

@@ -3762,7 +3762,7 @@ export interface components {
              * Return Basis
              * @enum {string}
              */
-            return_basis: "periods" | "lifetime" | "daily_chain" | "day";
+            return_basis: "daily_chain" | "day";
             /** Usd Return */
             usd_return?: string | null;
         };

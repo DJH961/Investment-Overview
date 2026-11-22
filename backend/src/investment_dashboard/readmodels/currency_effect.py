@@ -11,10 +11,12 @@ Everything is built per reporting currency from :mod:`domain.fx_attribution`:
   rows are live, never stored, and today is the 1D range (the Overview's own
   figures).
 * **Headline returns** are computed in each currency on its own and subtracted,
-  never converted: the Periods rows (``periods.build_for_ccy``) for YTD and
-  calendar years; the Overview's own lifetime returns for All; a hardened daily
-  time-weighted chain over each currency's own parts for the rolling ranges
-  (:func:`chained_return`); the Overview's own day growth for 1D.
+  never converted. One method for every range but 1D: the hardened daily
+  time-weighted chain over each currency's own lifetime parts
+  (:func:`daily_factors`), sliced to the range, so adjacent ranges chain exactly
+  into the whole (``1 + All`` is the product of the years). 1D is the Overview's
+  own live day growth. No XIRR here: the Overview's money-weighted lifetime return
+  can differ, and :data:`RETURNS_TIP` says so.
 * **The headline** (``headline.lead``): the money effect when the rate moved the
   side's book at all, else the gap between the euro and the dollar return (the
   USD view of an all-dollar book, where the effect in dollars is zero by
@@ -41,7 +43,8 @@ from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, localcontext
+from functools import cached_property
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -52,7 +55,6 @@ from investment_dashboard.domain import fx_effect_split, fx_trend
 from investment_dashboard.domain.market_hours import exchange_today, is_trading_day
 from investment_dashboard.domain.session_fx import fx_buying_power_split
 from investment_dashboard.readmodels import fx_attribution_rows as rows_rm
-from investment_dashboard.readmodels import periods as periods_rm
 from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.repositories import instruments_repo, transactions_repo
 from investment_dashboard.services import (
@@ -75,6 +77,11 @@ _MONTHS = {"1m": 1, "3m": 3, "1y": 12, "3y": 36, "5y": 60, "10y": 120}
 #: :func:`chained_return`). Merging a genuine big day is harmless: a span without
 #: flows telescopes to the same ``end / start - 1``.
 MAX_STEP = Decimal("0.1")
+#: A span with flows whose book moved by less than half of them has not seen that
+#: money yet (a deposit waiting for the buy) and stays open, for up to this many days
+#: (then the span closes on the other tests alone, so money that never shows up, like
+#: proceeds of an earlier sale withdrawn later, cannot hold the chain forever).
+HOLD_DAYS = 10
 #: A span's Dietz denominator below this share of its size is too thin to divide by.
 MIN_DENOM_SHARE = Decimal("0.1")
 #: About 12 months of business days (``fa.ROLLING_WINDOWS[-1]``).
@@ -85,16 +92,20 @@ MAX_DAILY_POINTS = 1100
 BUYS_AMOUNT_EUR = Decimal(1000)
 _CURRENCY_NAMES = {"USD": "dollar", "EUR": "euro", "GBP": "pound", "CHF": "franc"}
 
+#: The returns' one-sentence tip (also on the page beside the return bars).
+RETURNS_TIP = (
+    "These returns are time-weighted: each day's growth is chained, so deposits do not "
+    "distort them, and they can differ from the Overview's lifetime return, which is "
+    "money-weighted."
+)
 ALL_EXPLAINER = (
-    "The two returns are the Overview's lifetime returns, each worked out in its own "
-    "currency. The money figure is summed day by day: each day, the {foreign} you held "
+    RETURNS_TIP + " The money figure is summed day by day: each day, the {foreign} you held "
     "then were revalued from the previous day's rate to that day's. The Overview card "
     "instead compares today's {foreign} with what they cost at your average buy rate, so "
     "the two differ whenever the rate moved while your holdings grew or shrank."
 )
 ALL_GAP_EXPLAINER = (
-    "The two returns are the Overview's lifetime returns, each worked out in its own "
-    "currency from your deposits at their own day's rate. The euro amount is what the "
+    RETURNS_TIP + " The euro amount is what the "
     "dollar's moves did to your result in euros, summed day by day."
 )
 #: When the money effect and the gap in points point different ways (lead ``effect``).
@@ -220,6 +231,11 @@ class Lifetime:
         hi = bisect.bisect_right(ons, through)
         return list(range(lo, hi))
 
+    @cached_property
+    def factors(self) -> list[Decimal | None]:
+        """The hardened daily growth factors over the whole lifetime (:func:`daily_factors`)."""
+        return daily_factors(self.parts)
+
     @property
     def foreign(self) -> list[str]:
         held = {c for r in self.rows for c, v in r.book.items() if v}
@@ -255,12 +271,6 @@ def lifetime(session: Session, reporting: str) -> Lifetime | None:
     return build_lifetime(session, reporting)
 
 
-@cached_read
-def _yearly_growth(session: Session, ccy: str) -> dict[str, Decimal | None]:
-    rows = periods_rm.build_for_ccy(session, monthly=False, ccy=ccy)["rows"]
-    return {str(r["label"]): _d(r.get("growth_pct")) for r in rows}
-
-
 # -- returns ------------------------------------------------------------------------------
 
 
@@ -270,8 +280,9 @@ def span_return(span: Sequence[fa.DayParts]) -> Decimal | None:
     ``(end - start - sum F) / (start + sum w_j F_j)`` with ``w_j = (n - j - 1/2) / n``
     for the flow booked on the ``j``-th of ``n`` days (mid-day, as the one-day
     ``start + F / 2``). ``None`` when the denominator is under
-    :data:`MIN_DENOM_SHARE` of the span's size, or the return is beyond
-    :data:`MAX_STEP` either way: the book has not seen that money yet.
+    :data:`MIN_DENOM_SHARE` of the span's size, the return is beyond
+    :data:`MAX_STEP` either way, or (for up to :data:`HOLD_DAYS` days) the book moved
+    by less than half the span's flows: the book has not seen that money yet.
     """
     n = len(span)
     if n == 0:
@@ -285,6 +296,8 @@ def span_return(span: Sequence[fa.DayParts]) -> Decimal | None:
     size = max(abs(start), abs(end), sum((abs(p.flow) for p in span), ZERO))
     if size == 0:
         return ZERO
+    if flows != 0 and abs(end - start) * 2 < abs(flows) and n < HOLD_DAYS:
+        return None
     denom = start + weighted
     if denom <= size * MIN_DENOM_SHARE:
         return None
@@ -294,85 +307,92 @@ def span_return(span: Sequence[fa.DayParts]) -> Decimal | None:
     return r
 
 
-def chained_return(parts: Sequence[fa.DayParts]) -> Decimal | None:
-    """Time-weighted return over ``parts`` (one currency's own parts), hardened.
+def daily_factors(parts: Sequence[fa.DayParts]) -> list[Decimal | None]:
+    """One growth factor per day part (``None`` = the day does not count), hardened.
 
     Days are linked geometrically, each a one-day Modified Dietz return. The book
     is the holdings plus cash/savings accounts, not idle broker cash, so a deposit
     shows up as a flow days before the buy that brings it into the book, and a sale
     drops the book with no flow until the proceeds are withdrawn or reinvested. Taken
-    day by day those read as -100 % / +100 % days (or divide by zero) and wreck the
-    product. So a day whose return is implausible (:func:`span_return` is ``None``)
-    stays open and is merged with the next days into one multi-day Dietz span until
-    the money shows up and the span's return is plausible again. Empty days (no book,
-    no flow) are skipped. A span still open at the end of the range (money the book
-    has not seen by then) is left out. ``None`` when no span closes.
+    day by day those read as -200 % / +100 % / -100 % days (or divide by zero) and
+    wreck the product. So a day whose return is implausible (:func:`span_return` is
+    ``None``) stays open and is merged with the next days into one multi-day Dietz
+    span until the money shows up; the span's growth ``1 + r`` is then spread evenly
+    (geometrically) over its ``n`` days, ``(1 + r) ** (1 / n)`` each. Empty days (no
+    book, no flow) and a span still open at the end (money the book has not seen by
+    then) do not count.
+
+    Built once over the lifetime, any window's return is the product of its days'
+    factors, so adjacent windows chain exactly into the whole (``1 + All`` is the
+    product of the years).
     """
-    growth = ONE
-    counted = False
-    span: list[fa.DayParts] = []
-    for p in parts:
+    out: list[Decimal | None] = [None] * len(parts)
+    span: list[int] = []
+    for i, p in enumerate(parts):
         if not span and p.start == 0 and p.end == 0 and p.flow == 0:
             continue
-        span.append(p)
-        r = span_return(span)
+        span.append(i)
+        r = span_return([parts[j] for j in span])
         if r is None:
             continue
-        growth *= ONE + r
-        counted = True
+        growth = ONE + r
+        if len(span) == 1:
+            out[i] = growth
+        else:
+            with localcontext() as ctx:
+                ctx.prec = 50
+                each = (growth.ln() / Decimal(len(span))).exp()
+            for j in span:
+                out[j] = each
         span = []
+    return out
+
+
+def chain(factors: Sequence[Decimal | None]) -> Decimal | None:
+    """``prod(factors) - 1`` over the days that count; ``None`` when none does."""
+    growth = ONE
+    counted = False
+    for f in factors:
+        if f is not None:
+            growth *= f
+            counted = True
     return growth - ONE if counted else None
 
 
-def _periods_return(session: Session, ccy: str, range_key: str, today: date) -> Decimal | None:
-    growth: dict[str, Decimal | None] = _yearly_growth(session=session, ccy=ccy)
-    if range_key == "ytd":
-        return growth.get(str(today.year))
-    if range_key.isdigit():
-        return growth.get(range_key)
-    return None
+def chained_return(parts: Sequence[fa.DayParts]) -> Decimal | None:
+    """The time-weighted return over ``parts`` alone (:func:`daily_factors` chained)."""
+    return chain(daily_factors(parts))
 
 
-def lifetime_returns(
-    overview: Mapping[str, Mapping[str, Any]],
-) -> tuple[Decimal | None, Decimal | None]:
-    """The Overview's own lifetime returns (``kpis.total_growth_compounded``) per side.
-
-    Each is computed in its own currency from its own cashflow stream (XIRR
-    compounded over the years held); never one converted from the other.
-    """
-    return (
-        _d(overview["EUR"]["kpis"].get("total_growth_compounded")),
-        _d(overview["USD"]["kpis"].get("total_growth_compounded")),
-    )
+def window_return(life: Lifetime | None, after: date, through: date) -> Decimal | None:
+    """The lifetime's daily factors over ``(after, through]`` chained (one method for all)."""
+    if life is None:
+        return None
+    factors = life.factors
+    return chain([factors[i] for i in life.window(after, through)])
 
 
 def headline_returns(
-    session: Session,
     range_key: str,
     today: date,
-    parts_by_ccy: Mapping[str, Sequence[fa.DayParts]],
+    lives: Mapping[str, Lifetime | None],
     overview: Mapping[str, Mapping[str, Any]],
 ) -> tuple[Decimal | None, Decimal | None, str]:
-    """``(eur_return, usd_return, basis)``, each currency computed on its own."""
+    """``(eur_return, usd_return, basis)``, each currency computed on its own.
+
+    Every range but 1D (the Overview's own live day growth) is the same
+    time-weighted chain over the lifetime's days (:func:`window_return`).
+    """
     if range_key == "1d":
         return (
             _d(overview["EUR"]["kpis"].get("daily_growth_pct")),
             _d(overview["USD"]["kpis"].get("daily_growth_pct")),
             "day",
         )
-    if range_key == "all":
-        eur, usd = lifetime_returns(overview)
-        if eur is not None and usd is not None:
-            return eur, usd, "lifetime"
-    if range_key == "ytd" or range_key.isdigit():
-        eur = _periods_return(session, "EUR", range_key, today)
-        usd = _periods_return(session, "USD", range_key, today)
-        if eur is not None and usd is not None:
-            return eur, usd, "periods"
+    after, through = range_window(range_key, today)
     return (
-        chained_return(parts_by_ccy.get("EUR", ())),
-        chained_return(parts_by_ccy.get("USD", ())),
+        window_return(lives.get("EUR"), after, through),
+        window_return(lives.get("USD"), after, through),
         "daily_chain",
     )
 
@@ -1174,12 +1194,7 @@ def build_effect_both(
     now = now or datetime.now(UTC)
     today = exchange_today(now)
     lives = {c: _safe_lifetime(session, c) for c in ("EUR", "USD")}
-    after, through = range_window(range_key, today)
-    parts_by_ccy: dict[str, list[fa.DayParts]] = {}
-    for c, life in lives.items():
-        if life is not None:
-            parts_by_ccy[c] = [life.parts[i] for i in life.window(after, through)]
-    returns = headline_returns(session, range_key, today, parts_by_ccy, overview)
+    returns = headline_returns(range_key, today, lives, overview)
     recorded = fx_session_rates_service.session_rates(session)
     first = min(recorded) if recorded else None
     out = {
@@ -1226,10 +1241,20 @@ class StripFigures:
     effect_year: Decimal | None
     effect_year_pp: Decimal | None
     effect_lifetime: Decimal | None
+    effect_lifetime_pp: Decimal | None = None
+
+
+def _gap(lives: Mapping[str, Lifetime | None], after: date, through: date) -> Decimal | None:
+    eur = window_return(lives.get("EUR"), after, through)
+    usd = window_return(lives.get("USD"), after, through)
+    return eur - usd if eur is not None and usd is not None else None
 
 
 def strip_figures(session: Session, ccy: str, *, today: date | None = None) -> StripFigures:
-    """This year's and the lifetime day-by-day currency effect for the strip tiles."""
+    """This year's and the lifetime currency effect and return gap for the strip tiles.
+
+    The gaps are the same time-weighted chains as the Impact section's YTD and All.
+    """
     today = today or exchange_today()
     life = _safe_lifetime(session, ccy)
     if life is None or not life.parts:
@@ -1237,10 +1262,10 @@ def strip_figures(session: Session, ccy: str, *, today: date | None = None) -> S
     after, through = range_window("ytd", today)
     ytd = [life.parts[i] for i in life.window(after, through)]
     year = fa.bridge(ytd).currency if ytd else ZERO
-    growth_eur = _periods_return(session, "EUR", "ytd", today)
-    growth_usd = _periods_return(session, "USD", "ytd", today)
-    pp = growth_eur - growth_usd if growth_eur is not None and growth_usd is not None else None
-    return StripFigures(year, pp, fa.bridge(life.parts).currency)
+    lives = {c: _safe_lifetime(session, c) for c in ("EUR", "USD")}
+    pp = _gap(lives, after, through)
+    life_pp = _gap(lives, *range_window("all", today))
+    return StripFigures(year, pp, fa.bridge(life.parts).currency, life_pp)
 
 
 @cached_read
@@ -1262,15 +1287,18 @@ def dollar_trend(session: Session) -> dict[str, Any] | None:
 __all__ = [
     "ALL_EXPLAINER",
     "FIXED_RANGES",
+    "RETURNS_TIP",
     "Lifetime",
     "StripFigures",
     "build_effect_both",
     "build_lifetime",
     "chained_return",
+    "daily_factors",
     "dollar_trend",
     "link_sides",
     "mismatch_note",
     "range_window",
     "span_return",
     "strip_figures",
+    "window_return",
 ]

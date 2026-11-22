@@ -6635,7 +6635,7 @@
      "key": "effect_this_year",
      "kind": "tailwind",
      "normal": null,
-     "secondary": "0.008850498825317894193975269",
+     "secondary": "0.010763303565177663192003060",
      "secondary_currency": null,
      "secondary_unit": "fraction",
      "since": null,
@@ -6648,7 +6648,7 @@
      "key": "effect_lifetime",
      "kind": "headwind",
      "normal": null,
-     "secondary": "-0.1011756508762612",
+     "secondary": "-0.099666328120701119966724263",
      "secondary_currency": null,
      "secondary_unit": "fraction",
      "since": null,
@@ -6853,7 +6853,7 @@
      "secondary_unit": "money",
      "since": null,
      "unit": "fraction",
-     "value": "0.008850498825317894193975269"
+     "value": "0.010763303565177663192003060"
     },
     {
      "currency": null,
@@ -6866,7 +6866,7 @@
      "secondary_unit": "money",
      "since": null,
      "unit": "fraction",
-     "value": "-0.1011756508762612"
+     "value": "-0.099666328120701119966724263"
     },
     {
      "currency": null,
@@ -66768,8 +66768,8 @@
    "headline": {
     "currency_share": "0.05355429",
     "effect": "-14146.196021",
-    "effect_pp": "-0.01937793",
-    "eur_return": "0.23469896",
+    "effect_pp": "-0.01938626",
+    "eur_return": "0.23470361",
     "kind": "headwind",
     "lead": "effect",
     "market": "250000.619523",
@@ -66777,7 +66777,7 @@
     "other_ccy": null,
     "other_effect": null,
     "return_basis": "daily_chain",
-    "usd_return": "0.25407690"
+    "usd_return": "0.25408987"
    },
    "holdings": [
     {
@@ -69576,7 +69576,7 @@
      "secondary_currency": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "0.23469896"
+     "value": "0.23470361"
     },
     {
      "currency": null,
@@ -69587,7 +69587,7 @@
      "secondary_currency": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "0.25407690"
+     "value": "0.25408987"
     },
     {
      "currency": null,
@@ -69598,7 +69598,7 @@
      "secondary_currency": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "-0.01937793"
+     "value": "-0.01938626"
     },
     {
      "currency": "EUR",
@@ -69745,8 +69745,8 @@
    "headline": {
     "currency_share": null,
     "effect": "0.000000",
-    "effect_pp": "-0.01937793",
-    "eur_return": "0.23469896",
+    "effect_pp": "-0.01938626",
+    "eur_return": "0.23470361",
     "kind": "headwind",
     "lead": "gap",
     "market": "292152.349745",
@@ -69754,7 +69754,7 @@
     "other_ccy": "EUR",
     "other_effect": "-14146.196021",
     "return_basis": "daily_chain",
-    "usd_return": "0.25407690"
+    "usd_return": "0.25408987"
    },
    "holdings": [
     {
@@ -71363,7 +71363,7 @@
      "secondary_currency": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "0.23469896"
+     "value": "0.23470361"
     },
     {
      "currency": null,
@@ -71374,7 +71374,7 @@
      "secondary_currency": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "0.25407690"
+     "value": "0.25408987"
     },
     {
      "currency": null,
@@ -71385,7 +71385,7 @@
      "secondary_currency": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "-0.01937793"
+     "value": "-0.01938626"
     },
     {
      "currency": "USD",
@@ -71445,7 +71445,7 @@
    "headline": {
     "currency_share": "0.39628312",
     "effect": "25466.621069",
-    "effect_pp": "0.02181447",
+    "effect_pp": "0.02181228",
     "eur_return": "0.05466835",
     "kind": "tailwind",
     "lead": "effect",
@@ -71454,7 +71454,7 @@
     "other_ccy": null,
     "other_effect": null,
     "return_basis": "daily_chain",
-    "usd_return": "0.03285388"
+    "usd_return": "0.03285607"
    },
    "holdings": [
     {
@@ -72268,7 +72268,7 @@
      "secondary_currency": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "0.03285388"
+     "value": "0.03285607"
     },
     {
      "currency": null,
@@ -72279,7 +72279,7 @@
      "secondary_currency": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "0.02181447"
+     "value": "0.02181228"
     },
     {
      "currency": "EUR",
@@ -72421,7 +72421,7 @@
    "headline": {
     "currency_share": null,
     "effect": "0.000000",
-    "effect_pp": "0.02181447",
+    "effect_pp": "0.02181228",
     "eur_return": "0.05466835",
     "kind": "tailwind",
     "lead": "gap",
@@ -72430,7 +72430,7 @@
     "other_ccy": "EUR",
     "other_effect": "25466.621069",
     "return_basis": "daily_chain",
-    "usd_return": "0.03285388"
+    "usd_return": "0.03285607"
    },
    "holdings": [
     {
@@ -72916,7 +72916,7 @@
      "secondary_currency": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "0.03285388"
+     "value": "0.03285607"
     },
     {
      "currency": null,
@@ -72927,7 +72927,7 @@
      "secondary_currency": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "0.02181447"
+     "value": "0.02181228"
     },
     {
      "currency": "USD",
@@ -73044,8 +73044,8 @@
    "headline": {
     "currency_share": "0.04772346",
     "effect": "-27985.762850",
-    "effect_pp": "-0.07432402",
-    "eur_return": "0.78146329",
+    "effect_pp": "-0.10911491",
+    "eur_return": "0.18745608",
     "kind": "headwind",
     "lead": "effect",
     "market": "558429.449289",
@@ -73053,7 +73053,7 @@
     "other_ccy": null,
     "other_effect": null,
     "return_basis": "daily_chain",
-    "usd_return": "0.85578731"
+    "usd_return": "0.29657099"
    },
    "holdings": [
     {
@@ -80526,7 +80526,7 @@
      "secondary_currency": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "0.78146329"
+     "value": "0.18745608"
     },
     {
      "currency": null,
@@ -80537,7 +80537,7 @@
      "secondary_currency": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "0.85578731"
+     "value": "0.29657099"
     },
     {
      "currency": null,
@@ -80548,7 +80548,7 @@
      "secondary_currency": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "-0.07432402"
+     "value": "-0.10911491"
     },
     {
      "currency": "EUR",
@@ -80705,8 +80705,8 @@
    "headline": {
     "currency_share": null,
     "effect": "0.000000",
-    "effect_pp": "-0.07432402",
-    "eur_return": "0.78146329",
+    "effect_pp": "-0.10911491",
+    "eur_return": "0.18745608",
     "kind": "headwind",
     "lead": "gap",
     "market": "647066.712921",
@@ -80714,7 +80714,7 @@
     "other_ccy": "EUR",
     "other_effect": "-27985.762850",
     "return_basis": "daily_chain",
-    "usd_return": "0.85578731"
+    "usd_return": "0.29657099"
    },
    "holdings": [
     {
@@ -85329,7 +85329,7 @@
      "secondary_currency": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "0.78146329"
+     "value": "0.18745608"
     },
     {
      "currency": null,
@@ -85340,7 +85340,7 @@
      "secondary_currency": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "0.85578731"
+     "value": "0.29657099"
     },
     {
      "currency": null,
@@ -85351,7 +85351,7 @@
      "secondary_currency": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "-0.07432402"
+     "value": "-0.10911491"
     },
     {
      "currency": "USD",
@@ -85384,7 +85384,7 @@
    "buys": null,
    "ccy": "EUR",
    "end_on": "2026-06-29",
-   "explainer": "The two returns are the Overview's lifetime returns, each worked out in its own currency. The money figure is summed day by day: each day, the dollars you held then were revalued from the previous day's rate to that day's. The Overview card instead compares today's dollars with what they cost at your average buy rate, so the two differ whenever the rate moved while your holdings grew or shrank.",
+   "explainer": "These returns are time-weighted: each day's growth is chained, so deposits do not distort them, and they can differ from the Overview's lifetime return, which is money-weighted. The money figure is summed day by day: each day, the dollars you held then were revalued from the previous day's rate to that day's. The Overview card instead compares today's dollars with what they cost at your average buy rate, so the two differ whenever the rate moved while your holdings grew or shrank.",
    "generated_at": "2026-06-30T18:15:00+00:00",
    "granularity": "daily",
    "grid": [
@@ -85468,16 +85468,16 @@
    "headline": {
     "currency_share": "0.18878337",
     "effect": "-54619.841370",
-    "effect_pp": "-0.10117565",
-    "eur_return": "0.18199119",
+    "effect_pp": "-0.09966633",
+    "eur_return": "0.16310653",
     "kind": "headwind",
     "lead": "effect",
     "market": "234705.650230",
     "note": null,
     "other_ccy": null,
     "other_effect": null,
-    "return_basis": "lifetime",
-    "usd_return": "0.28316684"
+    "return_basis": "daily_chain",
+    "usd_return": "0.26277286"
    },
    "holdings": [
     {
@@ -93498,7 +93498,7 @@
      "secondary_currency": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "0.18199119"
+     "value": "0.16310653"
     },
     {
      "currency": null,
@@ -93509,7 +93509,7 @@
      "secondary_currency": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "0.28316684"
+     "value": "0.26277286"
     },
     {
      "currency": null,
@@ -93520,7 +93520,7 @@
      "secondary_currency": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "-0.10117565"
+     "value": "-0.09966633"
     },
     {
      "currency": "EUR",
@@ -93670,23 +93670,23 @@
    "buys": null,
    "ccy": "USD",
    "end_on": "2026-06-29",
-   "explainer": "The two returns are the Overview's lifetime returns, each worked out in its own currency from your deposits at their own day's rate. The euro amount is what the dollar's moves did to your result in euros, summed day by day.",
+   "explainer": "These returns are time-weighted: each day's growth is chained, so deposits do not distort them, and they can differ from the Overview's lifetime return, which is money-weighted. The euro amount is what the dollar's moves did to your result in euros, summed day by day.",
    "generated_at": "2026-06-30T18:15:00+00:00",
    "granularity": "daily",
    "grid": [],
    "headline": {
     "currency_share": null,
     "effect": "0.000000",
-    "effect_pp": "-0.10117565",
-    "eur_return": "0.18199119",
+    "effect_pp": "-0.09966633",
+    "eur_return": "0.16310653",
     "kind": "headwind",
     "lead": "gap",
     "market": "301379.666061",
     "note": null,
     "other_ccy": "EUR",
     "other_effect": "-54619.841370",
-    "return_basis": "lifetime",
-    "usd_return": "0.28316684"
+    "return_basis": "daily_chain",
+    "usd_return": "0.26277286"
    },
    "holdings": [
     {
@@ -98805,7 +98805,7 @@
      "secondary_currency": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "0.18199119"
+     "value": "0.16310653"
     },
     {
      "currency": null,
@@ -98816,7 +98816,7 @@
      "secondary_currency": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "0.28316684"
+     "value": "0.26277286"
     },
     {
      "currency": null,
@@ -98827,7 +98827,7 @@
      "secondary_currency": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "-0.10117565"
+     "value": "-0.09966633"
     },
     {
      "currency": "USD",
@@ -98887,16 +98887,16 @@
    "headline": {
     "currency_share": "0.12455278",
     "effect": "12851.243307",
-    "effect_pp": "0.00885050",
-    "eur_return": "0.09562376",
+    "effect_pp": "0.01076330",
+    "eur_return": "0.09098965",
     "kind": "tailwind",
     "lead": "effect",
     "market": "90327.852500",
     "note": null,
     "other_ccy": null,
     "other_effect": null,
-    "return_basis": "periods",
-    "usd_return": "0.08677327"
+    "return_basis": "daily_chain",
+    "usd_return": "0.08022634"
    },
    "holdings": [
     {
@@ -100339,7 +100339,7 @@
      "secondary_currency": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "0.09562376"
+     "value": "0.09098965"
     },
     {
      "currency": null,
@@ -100350,7 +100350,7 @@
      "secondary_currency": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "0.08677327"
+     "value": "0.08022634"
     },
     {
      "currency": null,
@@ -100361,7 +100361,7 @@
      "secondary_currency": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "0.00885050"
+     "value": "0.01076330"
     },
     {
      "currency": "EUR",
@@ -100503,16 +100503,16 @@
    "headline": {
     "currency_share": null,
     "effect": "0.000000",
-    "effect_pp": "0.00885050",
-    "eur_return": "0.09562376",
+    "effect_pp": "0.01076330",
+    "eur_return": "0.09098965",
     "kind": "tailwind",
     "lead": "gap",
     "market": "106630.405612",
     "note": null,
     "other_ccy": "EUR",
     "other_effect": "12851.243307",
-    "return_basis": "periods",
-    "usd_return": "0.08677327"
+    "return_basis": "daily_chain",
+    "usd_return": "0.08022634"
    },
    "holdings": [
     {
@@ -101347,7 +101347,7 @@
      "secondary_currency": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "0.09562376"
+     "value": "0.09098965"
     },
     {
      "currency": null,
@@ -101358,7 +101358,7 @@
      "secondary_currency": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "0.08677327"
+     "value": "0.08022634"
     },
     {
      "currency": null,
@@ -101369,7 +101369,7 @@
      "secondary_currency": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "0.00885050"
+     "value": "0.01076330"
     },
     {
      "currency": "USD",
