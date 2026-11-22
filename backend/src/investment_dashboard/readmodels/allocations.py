@@ -29,6 +29,11 @@ from investment_dashboard.services.positions_service import Position, compute_po
 ZERO = Decimal(0)
 HUNDRED = Decimal(100)
 UNCATEGORIZED = "Uncategorized"
+#: Printed with the currency split (plan §5 "What if", Exposure).
+CURRENCY_NOTE = (
+    "Split by the currency each holding trades in. A world fund priced in dollars "
+    "is not purely dollar exposure: it holds companies from many countries."
+)
 
 
 class AllocationInputError(ValidationError):
@@ -93,6 +98,8 @@ class _InstrumentAgg:
     asset_class: str
     value_eur: Decimal
     is_cash: bool = False
+    #: Trading currency: the instrument's quote currency (v7.2 allocation dimension).
+    currency: str = ""
     #: Native-USD value (USD accounts at native; others converted at the spot).
     value_usd: Decimal = ZERO
 
@@ -120,6 +127,7 @@ def _aggregate(positions: list[Position], fx: Decimal | None) -> dict[int, _Inst
                 value_eur=p.current_value_eur,
                 is_cash=cash,
                 value_usd=position_value_usd(p, fx),
+                currency=(p.instrument.native_currency or "").upper() or UNCATEGORIZED,
             )
         else:
             agg.value_eur += p.current_value_eur
@@ -249,6 +257,8 @@ def build(session: Session, *, ccy: str, as_of: date | None = None) -> dict[str,
         "drift_by_category": drift_by_category,
         "current_by_category": _buckets(agg_list, "category", total, ccy),
         "current_by_asset_class": _buckets(agg_list, "asset_class", total, ccy),
+        "current_by_currency": _buckets(agg_list, "currency", total, ccy),
+        "currency_note": CURRENCY_NOTE,
     }
 
 

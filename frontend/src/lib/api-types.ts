@@ -8364,12 +8364,20 @@ export interface components {
             /** Error Type */
             type: string;
         };
-        /** Week52 */
+        /**
+         * Week52
+         * @description The last 365 days of settled rows. ``low`` / ``high`` are the lowest / highest
+         *     **rate** (EUR/USD); in the dollar's terms the low rate is the dollar's high.
+         */
         Week52: {
             /** From High Inverse Pct */
             from_high_inverse_pct: string;
+            /** From High Rate Pct */
+            from_high_rate_pct: string;
             /** From Low Inverse Pct */
             from_low_inverse_pct: string;
+            /** From Low Rate Pct */
+            from_low_rate_pct: string;
             high: components["schemas"]["RateHistoryPoint"];
             low: components["schemas"]["RateHistoryPoint"];
         };

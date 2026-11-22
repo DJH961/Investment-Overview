@@ -56,6 +56,10 @@ def _exact() -> Iterator[None]:
         yield
 
 
+#: The same wide context, for modules that build further sums on these parts.
+exact_context = _exact
+
+
 @dataclass(frozen=True)
 class FxRate:
     """How one unit of a currency becomes the reporting currency on one day.

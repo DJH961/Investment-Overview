@@ -2,7 +2,7 @@ import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
 import type { ReactNode } from "react";
 import { Money } from "../Money";
 import type { StatItem } from "../StatStrip";
-import { formatNumber, formatPp } from "../../lib/format";
+import { formatNumber, formatPercent, formatPp } from "../../lib/format";
 import { toNum } from "../../lib/queries/portfolio";
 
 /**
@@ -25,6 +25,7 @@ export interface StatMeta {
   label: string;
   tip?: string;
   noteLead?: string;
+  fractionFormat?: "percent" | "pp";
 }
 
 const KIND_WORD = { tailwind: "Tailwind", headwind: "Headwind", neutral: "Neutral" } as const;
@@ -35,10 +36,11 @@ export function statFigure(
   value: string | null | undefined,
   ccy: string | null | undefined,
   fallbackCcy: string,
+  fractionFormat: "percent" | "pp" = "pp",
 ): ReactNode {
   const n = toNum(value ?? null);
   if (unit === "rate") return formatNumber(n, 4);
-  if (unit === "fraction") return formatPp(n);
+  if (unit === "fraction") return fractionFormat === "percent" ? formatPercent(n, { digits: 1 }) : formatPp(n);
   // Whole units: cents on a currency effect are noise (and crowd a phone row).
   return <Money amount={n} currency={ccy ?? fallbackCcy} signed colored digits={0} />;
 }
@@ -58,13 +60,13 @@ export function serverStatItem(s: ServerStat, meta: StatMeta | undefined, fallba
   const m = meta ?? { label: s.key };
   const kind = s.kind ?? null;
   const secondary = s.secondary
-    ? statFigure(s.secondary_unit, s.secondary, s.secondary_currency ?? s.currency, fallbackCcy)
+    ? statFigure(s.secondary_unit, s.secondary, s.secondary_currency ?? s.currency, fallbackCcy, m.fractionFormat)
     : null;
   return {
     key: s.key,
     label: m.label,
     tip: m.tip || undefined,
-    value: statFigure(s.unit, s.value, s.currency, fallbackCcy),
+    value: statFigure(s.unit, s.value, s.currency, fallbackCcy, m.fractionFormat),
     note:
       kind || secondary ? (
         <span className="currency-stat__note">

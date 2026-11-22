@@ -1,8 +1,9 @@
 import type { ComponentType } from "react";
 import type { ReportingCurrency } from "../../lib/prefs";
 import type { CurrencyRange } from "./range";
+import { Dollar } from "./sections/Dollar";
 import { Impact, ImpactHoldings } from "./sections/Impact";
-import { PlaceholderSection } from "./sections/Placeholder/Placeholder";
+import { WhatIf } from "./sections/WhatIf";
 
 /**
  * The Currency page's section registry (v7.2 contract with 7.3, `docs/v7_contracts.md`).
@@ -57,8 +58,8 @@ export const CURRENCY_SECTIONS: CurrencySectionDef[] = [
     subPages: [{ id: "holdings", label: "Currency effect per holding", Component: ImpactHoldings, ranged: true }],
   },
   // lane v7.2-sections replaces these two entries.
-  { id: "dollar", label: "The dollar", Component: PlaceholderSection },
-  { id: "whatif", label: "What if", Component: PlaceholderSection },
+  { id: "dollar", label: "The dollar", Component: Dollar },
+  { id: "whatif", label: "What if", Component: WhatIf },
   // 7.3 adds { id: "conversions", label: "Conversions", ... } here.
 ];
 

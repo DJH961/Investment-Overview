@@ -1,0 +1,504 @@
+@use "../../../../styles/mixins" as m;
+
+// The dollar section: position (both lenses) beside the trend panel on wide screens,
+// the rolling changes under both, the permanent caption last.
+.dollar-section {
+  &__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--page-gap);
+    align-items: start;
+
+    @include m.desktop {
+      grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    }
+  }
+
+  &__caption {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-base);
+  }
+
+  &__caption-icon {
+    flex-shrink: 0;
+    width: var(--font-size-sm);
+    height: var(--font-size-sm);
+    margin-top: calc(var(--space-1) / 2);
+  }
+}
+
+// ---- Position card -------------------------------------------------------------------
+
+.dollar-position {
+  container: dollar-position / inline-size;
+
+  &__lens {
+    display: grid;
+    gap: var(--space-3);
+    min-width: 0;
+
+    &--next {
+      margin-top: var(--space-5);
+      padding-top: var(--space-5);
+      border-top: var(--border-width) solid var(--color-border);
+    }
+  }
+
+  &__eyebrow {
+    @include m.eyebrow(var(--font-size-sm));
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-1) var(--space-2);
+    margin: 0;
+    color: var(--color-fg);
+  }
+
+  &__hint {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-regular);
+  }
+
+  &__lead {
+    display: grid;
+    gap: var(--space-1);
+    margin: 0;
+  }
+
+  &__lead-figure {
+    @include m.display(var(--font-size-3xl));
+
+    @include m.phone {
+      font-size: var(--font-size-2xl);
+    }
+  }
+
+  &__lead-note {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+  }
+
+  // Five figures: rows on a narrow card, three across from 26rem.
+  &__figs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-4) var(--space-4);
+    margin: var(--space-1) 0 0;
+
+    @container dollar-position (min-width: 26rem) {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  &__fig {
+    display: grid;
+    align-content: start;
+    gap: var(--space-1);
+    min-width: 0;
+  }
+
+  &__label {
+    @include m.eyebrow;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
+
+  &__value {
+    @include m.figure(var(--font-size-lg));
+    margin: 0;
+  }
+
+  &__note {
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__next {
+    margin: 0;
+    color: var(--color-fg);
+    font-size: var(--font-size-md);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__next-figure {
+    @include m.figure(var(--font-size-xl));
+  }
+
+  &__next-sub {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1);
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__next-change {
+    color: var(--color-fg);
+    font-weight: var(--font-weight-medium);
+  }
+}
+
+// ---- Trend panel ---------------------------------------------------------------------
+
+.dollar-trend {
+  container: dollar-trend / inline-size;
+
+  &__rows {
+    display: grid;
+    margin: 0;
+  }
+
+  &__row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-1);
+    padding: var(--space-3) 0;
+    border-top: var(--border-width) solid var(--color-border);
+
+    &:first-child {
+      padding-top: 0;
+      border-top: 0;
+    }
+
+    &:last-child {
+      padding-bottom: 0;
+    }
+
+    @container dollar-trend (min-width: 30rem) {
+      grid-template-columns: 6.5rem minmax(0, 1fr);
+      gap: var(--space-4);
+    }
+  }
+
+  &__label {
+    @include m.eyebrow;
+    display: inline-flex;
+    align-items: center;
+    align-self: start;
+    gap: var(--space-1);
+    padding-top: calc(var(--space-1) / 2);
+  }
+
+  &__body {
+    display: grid;
+    gap: var(--space-2);
+    min-width: 0;
+    margin: 0;
+  }
+
+  &__lead {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0;
+    font-size: var(--font-size-md);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__icon {
+    flex-shrink: 0;
+    width: var(--font-size-lg);
+    height: var(--font-size-lg);
+    color: var(--color-fg);
+  }
+
+  &__line {
+    margin: 0;
+    color: var(--color-fg);
+    font-size: var(--font-size-sm);
+    line-height: var(--line-height-base);
+    font-variant-numeric: tabular-nums;
+
+    &--muted {
+      color: var(--color-muted);
+      font-size: var(--font-size-xs);
+    }
+  }
+
+  &__strong {
+    font-weight: var(--font-weight-semibold);
+  }
+
+  &__gauges {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-4);
+
+    @container dollar-trend (min-width: 40rem) {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--space-5);
+    }
+  }
+}
+
+// The normal-range gauge: band = normal (80 % of moves), ticks = a typical move, dot = now.
+.dollar-gauge {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+
+  &__text {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-1) var(--space-2);
+    margin: 0;
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__move {
+    font-weight: var(--font-weight-semibold);
+  }
+
+  &__label {
+    padding: 0 var(--space-2);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-full);
+    color: var(--color-muted);
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-medium);
+
+    &--outside {
+      border-color: transparent;
+      background: var(--color-warn-soft);
+      color: var(--color-fg);
+    }
+  }
+
+  &__track {
+    position: relative;
+    height: var(--space-4);
+  }
+
+  &__band {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    border: var(--border-width) dashed var(--color-border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-2);
+  }
+
+  &__zero {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    border-left: var(--border-width) solid var(--color-border-strong);
+  }
+
+  &__tick {
+    position: absolute;
+    top: 25%;
+    bottom: 25%;
+    border-left: var(--border-width) solid var(--color-muted);
+  }
+
+  &__dot {
+    position: absolute;
+    top: 50%;
+    width: var(--space-3);
+    height: var(--space-3);
+    border: calc(var(--border-width) * 2) solid var(--color-surface);
+    border-radius: var(--radius-full);
+    background: var(--chart-1);
+    transform: translate(-50%, -50%);
+
+    &--outside {
+      background: var(--color-warn);
+    }
+  }
+
+  &__scale {
+    display: flex;
+    justify-content: space-between;
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-2xs);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+// A low-to-high bar with today's dot (percentile since 1999, 52-week range).
+.dollar-range {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+
+  &__track {
+    position: relative;
+    height: var(--space-2);
+    margin: var(--space-1) 0;
+    border-radius: var(--radius-full);
+    background: var(--color-surface-2);
+    box-shadow: inset 0 0 0 var(--border-width) var(--color-border);
+  }
+
+  &__fill {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    border-radius: var(--radius-full);
+    background: var(--color-accent-soft);
+  }
+
+  &__dot {
+    position: absolute;
+    top: 50%;
+    width: var(--space-3);
+    height: var(--space-3);
+    border: calc(var(--border-width) * 2) solid var(--color-surface);
+    border-radius: var(--radius-full);
+    background: var(--chart-1);
+    transform: translate(-50%, -50%);
+  }
+
+  &__ends {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-2);
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-2xs);
+    font-variant-numeric: tabular-nums;
+
+    &--figures {
+      color: var(--color-fg);
+      font-size: var(--font-size-sm);
+    }
+  }
+}
+
+// ---- Rolling changes -----------------------------------------------------------------
+
+.dollar-rolling {
+  container: dollar-rolling / inline-size;
+
+  &__title {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
+
+  &__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-5);
+
+    @container dollar-rolling (min-width: 40rem) {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  &__item {
+    display: grid;
+    gap: var(--space-2);
+    min-width: 0;
+    margin: 0;
+  }
+
+  &__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-2);
+  }
+
+  &__window {
+    @include m.eyebrow(var(--font-size-sm));
+  }
+
+  &__now {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--space-2);
+  }
+
+  &__value {
+    @include m.figure(var(--font-size-md));
+  }
+
+  &__word {
+    color: var(--color-muted);
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-medium);
+
+    &--outside {
+      padding: 0 var(--space-2);
+      border-radius: var(--radius-full);
+      background: var(--color-warn-soft);
+      color: var(--color-fg);
+    }
+  }
+
+  &__svg {
+    display: block;
+    width: 100%;
+    height: calc(var(--space-9) * 2);
+    overflow: visible;
+  }
+
+  &__band {
+    fill: var(--color-surface-2);
+    stroke: var(--color-border-strong);
+    stroke-dasharray: 3 3;
+    vector-effect: non-scaling-stroke;
+  }
+
+  &__zero {
+    stroke: var(--color-border-strong);
+    vector-effect: non-scaling-stroke;
+  }
+
+  &__line {
+    fill: none;
+    stroke: var(--chart-1);
+    stroke-width: 1.75;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+  }
+
+  &__plot {
+    position: relative;
+  }
+
+  &__dot {
+    position: absolute;
+    width: var(--space-2);
+    height: var(--space-2);
+    border: var(--border-width) solid var(--color-surface);
+    border-radius: var(--radius-full);
+    background: var(--chart-1);
+    transform: translate(-50%, -50%);
+
+    &--outside {
+      background: var(--color-warn);
+    }
+  }
+
+  &__foot {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: var(--space-1) var(--space-2);
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-2xs);
+    font-variant-numeric: tabular-nums;
+  }
+}

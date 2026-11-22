@@ -17,6 +17,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [7.2.0] — 2026-11-21
+
+### Added
+- **Currency page.** Added the EUR/USD history chart, portfolio currency effect and per-holding breakdown, dollar trend, and what-if scenarios in one page with section navigation.
+- Added currency as an allocation dimension, the Projection exchange-rate band, and currency trend indicators on Overview.
+- Kept session open and close exchange rates in the ledger tier so currency effect reporting still has them after intraday cache samples expire.
+
+### Changed
+- The Currency page now separates market movement from currency movement and labels the dollar's effect in plain language.
+
 ## [7.1.2] — 2026-11-21
 
 ### Fixed

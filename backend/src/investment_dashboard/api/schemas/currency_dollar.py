@@ -132,10 +132,15 @@ class NormalRange(ApiModel):
 
 
 class Week52(ApiModel):
+    """The last 365 days of settled rows. ``low`` / ``high`` are the lowest / highest
+    **rate** (EUR/USD); in the dollar's terms the low rate is the dollar's high."""
+
     low: RateHistoryPoint
     high: RateHistoryPoint
-    #: The dollar's (inverse) distance from the 52-week low / high in its own terms:
-    #: ``inverse_now / inverse_at - 1``.
+    #: Today's rate against the low / high rate: ``rate_now / rate_at - 1``.
+    from_low_rate_pct: DecStr
+    from_high_rate_pct: DecStr
+    #: The same in the dollar's (inverse) terms: ``inverse_now / inverse_at - 1``.
     from_low_inverse_pct: DecStr
     from_high_inverse_pct: DecStr
 

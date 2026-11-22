@@ -87,11 +87,44 @@ function intraday(range: string, last: number): Pt[] {
   return out;
 }
 
-export function rateHistoryFixture(range: string, anchor: { now: number; avg: number }): unknown {
-  // Scale the walk so it ends at the fixture's spot (the strip and the chart agree).
+/** The fixture portfolio starts here (an invented first deposit, not ledger data). */
+export const PORTFOLIO_START = "2019-03-04";
+const FIRST_DEPOSIT_EUR = 420_000;
+const MONTHLY_DEPOSIT_EUR = 6_000;
+
+/**
+ * The fixture's euro deposits: one lump on the first day, then a regular amount on the
+ * first business day of each month, each converted at that day's rate. The effect fixture
+ * books them as flows and the rate chart draws them as conversion markers.
+ */
+export function depositSchedule(rates: { day: string; rate: number }[]): { day: string; rate: number; eur: number }[] {
+  const out: { day: string; rate: number; eur: number }[] = [];
+  let month = "";
+  for (const p of rates) {
+    if (p.day < PORTFOLIO_START) continue;
+    const m = p.day.slice(0, 7);
+    if (m === month) continue;
+    month = m;
+    out.push({ day: p.day, rate: p.rate, eur: out.length === 0 ? FIRST_DEPOSIT_EUR : MONTHLY_DEPOSIT_EUR });
+  }
+  return out;
+}
+
+/** The same walk, scaled to end at `now` (the effect fixture builds on it, so Impact and the rate chart agree). */
+export function scaledDailyRates(now: number): { day: string; rate: number }[] {
   const raw = dailySeries();
-  const k = anchor.now / raw[raw.length - 1].rate;
-  const all = raw.map((p) => ({ day: p.day, rate: p.rate * k }));
+  const k = now / raw[raw.length - 1].rate;
+  return raw.map((p) => ({ day: p.day, rate: p.rate * k }));
+}
+
+/** The 1D / 1W intraday rate points (same seeds as the chart). */
+export function intradayRates(range: "1d" | "1w", now: number): { t: string; rate: number }[] {
+  return intraday(range, now).map((p) => ({ t: p.t, rate: Number(p.rate) }));
+}
+
+export function rateHistoryFixture(range: string, anchor: { now: number; avg: number; scale?: number }): unknown {
+  // Scale the walk so it ends at the fixture's spot (the strip and the chart agree).
+  const all = scaledDailyRates(anchor.now);
   const last = all[all.length - 1];
   const avgRate = anchor.avg;
   const granularity = range === "1d" || range === "1w" ? "intraday" : range === "10y" || range === "max" ? "weekly" : "daily";
@@ -145,6 +178,17 @@ export function rateHistoryFixture(range: string, anchor: { now: number; avg: nu
       window_days: 21,
     },
     percentiles: { since_start: "0.29", y5: "0.34", y10: "0.47", since_1999: "0.38" },
-    markers: [],
+    // The fixture's euro deposits, each converted on its own day (kind: null until 7.3).
+    markers: depositSchedule(all)
+      .filter((d) => d.day >= from)
+      .map((d, i) => ({
+        date: d.day,
+        rate: d.rate.toFixed(4),
+        amount_from: (d.eur * (anchor.scale ?? 1)).toFixed(2),
+        from_ccy: "EUR",
+        to_ccy: "USD",
+        kind: null,
+        conversion_id: 1000 + i,
+      })),
   };
 }

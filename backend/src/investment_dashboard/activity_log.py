@@ -62,6 +62,8 @@ SUBJECTS: dict[str, tuple[str, ...]] = {
         # market_data.log where RUNBOOK says provider fallbacks are recorded.
         f"{_PKG}.services.tiingo_fallback_wiring",
         f"{_PKG}.services.intraday_snapshots_service",
+        # Session open/close EUR/USD kept from the samples (7.2): boot + capture.
+        f"{_PKG}.services.fx_session_rates_service",
         f"{_PKG}.services.price_probe_service",
         # Symbol lookup (7.1, P20): on-demand provider calls for instruments you
         # do not hold; logs the action, symbol and range only, never the query.

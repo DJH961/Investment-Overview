@@ -1243,6 +1243,26 @@ def run_server_boot_sequence() -> None:
         log.debug("Could not seed live FX spot on server boot", exc_info=True)
     # Long ECB history for the Currency page chart (v7.2): background, best effort.
     start_fx_history_backfill()
+    _record_fx_session_rates()
+
+
+def _record_fx_session_rates() -> bool:
+    """Keep the session open/close EUR/USD the stored intraday samples still cover (v7.2).
+
+    Offline and cheap (a week of samples at most); writes the ledger-tier
+    ``fx_session_rates`` table, so it also proves on a real SQLCipher database that
+    migration 0025 ran (the CI ``image`` job fails on the warning below).
+    """
+    try:
+        from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
+        from investment_dashboard.services import fx_session_rates_service  # noqa: PLC0415
+
+        with ledger_session_scope() as session:
+            fx_session_rates_service.record_from_samples(session)
+    except Exception:
+        log.warning("FX session rates backfill failed; continuing", exc_info=True)
+        return False
+    return True
 
 
 def run_deferred_network_refresh(*, show_progress: bool = True) -> None:

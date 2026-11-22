@@ -302,6 +302,11 @@ jobs:
             sleep 2
           done
           if [ -z "$ok" ]; then docker logs inv-smoke; exit 1; fi
+          # Boot writes the ledger-tier fx_session_rates table (migration 0025) on the
+          # encrypted database; the step logs this warning when it fails.
+          if docker logs inv-smoke 2>&1 | grep -q "FX session rates backfill failed"; then
+            docker logs inv-smoke; exit 1
+          fi
           docker rm -f inv-smoke
 
       - name: SQLCipher check (encrypt, reopen, fail without key)

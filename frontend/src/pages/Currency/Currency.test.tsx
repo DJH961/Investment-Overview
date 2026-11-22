@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import full from "../../fixtures/data/full.json";
 import type { CurrencyDto } from "../../lib/queries/currency";
@@ -41,12 +42,15 @@ const cur = fx["GET /api/currency/both"];
 const ov = fx["GET /api/overview/both"];
 
 function mount(route = "/currency") {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   return render(
-    <HideAmountsProvider>
-      <MemoryRouter initialEntries={[route]}>
-        <Currency />
-      </MemoryRouter>
-    </HideAmountsProvider>,
+    <QueryClientProvider client={queryClient}>
+      <HideAmountsProvider>
+        <MemoryRouter initialEntries={[route]}>
+          <Currency />
+        </MemoryRouter>
+      </HideAmountsProvider>
+    </QueryClientProvider>,
   );
 }
 
@@ -62,7 +66,9 @@ afterEach(() => localStorage.clear());
 describe("Currency page", () => {
   it("renders one tile per sent stat, with a tip each, except the rate (the chart's headline)", () => {
     mount();
-    expect(tiles()).toHaveLength(cur.EUR.stats!.filter((s) => s.key !== "rate_now" && s.key !== "avg_rate_vs_now").length);
+    expect(tiles()).toHaveLength(
+      cur.EUR.stats!.filter((s) => !["rate_now", "avg_rate_vs_now", "lifetime_effect"].includes(s.key)).length,
+    );
     expect(screen.queryByText("EUR/USD now")).not.toBeInTheDocument();
     expect(screen.getByText("Effect today")).toBeInTheDocument();
     expect(screen.queryByText("Investing power today")).not.toBeInTheDocument();

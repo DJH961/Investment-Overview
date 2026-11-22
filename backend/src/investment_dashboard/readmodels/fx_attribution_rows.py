@@ -31,9 +31,8 @@ from __future__ import annotations
 
 import bisect
 from collections import defaultdict
-from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
-from datetime import date
+from collections.abc import Collection, Iterable, Mapping, Sequence
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Protocol
 
@@ -42,41 +41,30 @@ from sqlalchemy.orm import Session
 from investment_dashboard.domain.fx_attribution import AttributionDay, FxRate
 from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.repositories import accounts_repo, transactions_repo
-from investment_dashboard.services import cashflows, fx_service, metrics_service
+from investment_dashboard.services import (
+    cashflows,
+    fx_service,
+    holding_values_service,
+    metrics_service,
+)
+from investment_dashboard.services.holding_values_service import (
+    HoldingDayDividend,
+    HoldingDayValue,
+)
 
 ZERO = Decimal(0)
+#: How far before a range start the holding values are read (a close to carry in).
+_LOOKBACK = timedelta(days=10)
 _CASH_ACCOUNT_TYPES = frozenset({"savings", "cash"})
 REPORTING_CURRENCIES = ("EUR", "USD")
-
-
-@dataclass(frozen=True)
-class HoldingDayValue:
-    """One holding at one close (mirror of 7.1's ``holding_values_service`` row)."""
-
-    date: date
-    instrument_id: int
-    account_id: int
-    quantity: Decimal
-    close_price_native: Decimal
-    value_native: Decimal
-    currency: str
-
-
-@dataclass(frozen=True)
-class HoldingDayDividend:
-    """One dividend on one day, native (mirror of 7.1's dividend row)."""
-
-    date: date
-    instrument_id: int
-    account_id: int
-    amount_native: Decimal
-    currency: str
 
 
 class HoldingValuesSource(Protocol):
     """What 7.2 needs from 7.1's ``services.holding_values_service`` (contract P16).
 
-    The module itself satisfies this protocol; tests pass a fake.
+    The service module itself satisfies this protocol (:data:`REAL_SOURCE`, the
+    default); tests pass a fake. Stored rows run through yesterday; a range that
+    reaches today gets today's rows valued live (never stored).
     """
 
     def holding_values(
@@ -84,7 +72,7 @@ class HoldingValuesSource(Protocol):
         session: Session,
         start: date,
         end: date,
-        instrument_ids: Sequence[int] | None = None,
+        instrument_ids: Collection[int] | None = None,
     ) -> Sequence[HoldingDayValue]: ...
 
     def holding_dividends(
@@ -92,8 +80,12 @@ class HoldingValuesSource(Protocol):
         session: Session,
         start: date,
         end: date,
-        instrument_ids: Sequence[int] | None = None,
+        instrument_ids: Collection[int] | None = None,
     ) -> Sequence[HoldingDayDividend]: ...
+
+
+#: The real 7.1 service (``services.holding_values_service``).
+REAL_SOURCE: HoldingValuesSource = holding_values_service
 
 
 class _Series:
@@ -230,7 +222,7 @@ def build_attribution_rows(
     end: date,
     reporting: str,
     *,
-    source: HoldingValuesSource,
+    source: HoldingValuesSource = REAL_SOURCE,
 ) -> list[AttributionDay]:
     """The daily rows for ``[start, end]`` in ``reporting`` (``EUR`` or ``USD``).
 
@@ -243,15 +235,22 @@ def build_attribution_rows(
     if end < start:
         raise ValueError("end must not be before start")
 
-    books: dict[date, dict[str, Decimal]] = defaultdict(lambda: defaultdict(lambda: ZERO))
-    for hv in source.holding_values(session, start, end):
-        if start <= hv.date <= end:
-            books[hv.date][hv.currency.upper()] += hv.value_native
+    # Each holding's value is a step function: the real service stores rows on
+    # trading days (plus trade / dividend days), so on a US holiday with an ECB
+    # fixing (a row date) the holding still holds its last close; a full sale
+    # leaves a quantity-0 row, so the step drops to zero there. The read starts a
+    # little before ``start`` so the anchor sees the last close before it.
+    points: dict[tuple[int, int, str], dict[date, Decimal]] = defaultdict(dict)
+    for hv in source.holding_values(session, start - _LOOKBACK, end):
+        if hv.date <= end:
+            points[(hv.instrument_id, hv.account_id, hv.currency.upper())][hv.date] = (
+                hv.value_native
+            )
+    holding_steps = [(key[2], _Steps(p)) for key, p in points.items()]
+    holding_dates = {d for p in points.values() for d in p if start < d <= end}
     cash_steps, cash_dates = _cash_books(session, start, end)
 
-    currencies: set[str] = {ccy for ccy, _ in cash_steps}
-    for held in books.values():
-        currencies |= set(held)
+    currencies: set[str] = {ccy for ccy, _ in cash_steps} | {ccy for ccy, _ in holding_steps}
     foreign = sorted(c for c in currencies if c != rep)
     series = {
         q: _Series(settled_rates(session, q)) for q in {"USD", *(c for c in foreign if c != "EUR")}
@@ -261,13 +260,17 @@ def build_attribution_rows(
     fx_dates = (
         {d for s in series.values() for d in s.dates if start < d <= end} if foreign else set()
     )
-    row_dates = sorted({start} | {d for d in books if d > start} | cash_dates | fx_dates)
+    row_dates = sorted({start} | holding_dates | cash_dates | fx_dates)
     flows = _flows_by_row(session, rep, row_dates, end)
 
     day_books: list[dict[str, Decimal]] = []
     day_rates: list[dict[str, FxRate]] = []
     for on in row_dates:
-        book: dict[str, Decimal] = dict(books.get(on, {}))
+        book: dict[str, Decimal] = {}
+        for ccy, steps in holding_steps:
+            value = steps.at(on)
+            if value:
+                book[ccy] = book.get(ccy, ZERO) + value
         for ccy, steps in cash_steps:
             bal = steps.at(on)
             if bal:
@@ -286,6 +289,38 @@ def build_attribution_rows(
         AttributionDay(on=on, book=b, rates=r, flow=flows.get(on, ZERO))
         for on, b, r in zip(row_dates, day_books, day_rates, strict=True)
     ]
+
+
+class RateBook:
+    """The settled, forward-filled daily rates of some currencies into ``reporting``.
+
+    The same rates :func:`build_attribution_rows` values its rows at, for readers
+    that need a single holding's rate per day (the per-holding split).
+    """
+
+    def __init__(self, session: Session, reporting: str, currencies: Iterable[str]) -> None:
+        self.reporting = reporting.upper()
+        wanted = {c.upper() for c in currencies} - {self.reporting}
+        self._series = {
+            q: _Series(settled_rates(session, q))
+            for q in {"USD", *(c for c in wanted if c != "EUR")}
+        }
+        self.foreign = sorted(wanted)
+
+    def rate(self, ccy: str, on: date) -> FxRate | None:
+        """``ccy`` -> reporting on ``on`` (identity for the reporting currency)."""
+        code = ccy.upper()
+        if code == self.reporting:
+            return FxRate()
+        if code != "EUR" and code not in self._series:
+            return None
+        return _fx_rate(code, self.reporting, on, self._series)
+
+    def fixing_dates(self, start: date, end: date) -> set[date]:
+        """Dates in ``(start, end]`` with a fixing on file for any held foreign currency."""
+        if not self.foreign:
+            return set()
+        return {d for s in self._series.values() for d in s.dates if start < d <= end}
 
 
 def monthly_contributions(rows: Iterable[AttributionDay]) -> list[Decimal]:

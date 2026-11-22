@@ -7,7 +7,7 @@ Overview's lifetime ``fx_pnl_eur`` (they differ by definition; see
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -43,10 +43,10 @@ class FakeHoldings:
         session: Session,
         start: date,
         end: date,
-        instrument_ids: Sequence[int] | None = None,
+        instrument_ids: Collection[int] | None = None,
     ) -> Sequence[HoldingDayValue]:
         return [
-            HoldingDayValue(d, 1, self.account_id, v, D(1), v, self.ccy)
+            HoldingDayValue(d, 1, self.account_id, v, D(1), v, self.ccy, D(0), D(0))
             for d, v in sorted(self.values.items())
             if start <= d <= end and v
         ]
@@ -56,7 +56,7 @@ class FakeHoldings:
         session: Session,
         start: date,
         end: date,
-        instrument_ids: Sequence[int] | None = None,
+        instrument_ids: Collection[int] | None = None,
     ) -> Sequence[HoldingDayDividend]:
         return []
 

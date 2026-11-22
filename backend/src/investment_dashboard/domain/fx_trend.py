@@ -27,11 +27,14 @@ Everything is :class:`~decimal.Decimal`; nothing here does I/O.
 
 from __future__ import annotations
 
+import itertools
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from typing import Literal
+
+from investment_dashboard.domain.risk import annualized_volatility
 
 Direction = Literal["dollar_up", "dollar_down", "sideways"]
 Normality = Literal["normal", "large", "unusual"]
@@ -246,17 +249,256 @@ def range_extremes[T](points: Sequence[tuple[T, Decimal]]) -> Extremes[T] | None
     return Extremes(low_at=low_at, low=low, high_at=high_at, high=high)
 
 
+# --- "The dollar" section (v7.2) ---------------------------------------------
+
+Slope = Literal["rising", "falling", "flat"]
+RunDirection = Literal["rose", "fell"]
+
+#: An MA200 that moved less than this (fraction) over ``SLOPE_DAYS`` is ``flat``.
+FLAT_SLOPE = Decimal("0.001")
+#: Inside ``±`` this percentile of |move| a move is ``normal`` (matches LARGE_FROM).
+NORMAL_QUANTILE = LARGE_FROM
+MONTH_ROWS = 21
+QUARTER_ROWS = 63
+YEAR_ROWS = 252
+
+
+def quantile(values: Sequence[Decimal], q: Decimal) -> Decimal:
+    """Linear-interpolation quantile (spreadsheet ``PERCENTILE.INC``), ``q`` in [0, 1].
+
+    ``h = (n − 1)·q``; the result is ``x[⌊h⌋] + (h − ⌊h⌋)·(x[⌊h⌋+1] − x[⌊h⌋])``.
+    """
+    if not values:
+        raise ValueError("quantile of an empty sequence")
+    if not ZERO <= q <= ONE:
+        raise ValueError("q must be in [0, 1]")
+    ordered = sorted(values)
+    h = (len(ordered) - 1) * q
+    lo = int(h)
+    if lo >= len(ordered) - 1:
+        return ordered[-1]
+    return ordered[lo] + (h - lo) * (ordered[lo + 1] - ordered[lo])
+
+
+def trailing_moves(
+    series: Sequence[tuple[date, Decimal]], window_days: int
+) -> list[tuple[date, Decimal]]:
+    """The dollar's (inverse) trailing ``window_days``-row change on every row that has one.
+
+    ``inverse[i] / inverse[i − window_days] − 1`` == ``rate[i − w] / rate[i] − 1``.
+    """
+    if window_days < 1:
+        raise ValueError("window_days must be >= 1")
+    inv = inverse_series(series)
+    return [
+        (inv[i][0], inv[i][1] / inv[i - window_days][1] - ONE) for i in range(window_days, len(inv))
+    ]
+
+
+@dataclass(frozen=True)
+class MoveBand:
+    """The normal band of the dollar's ``window_days``-row moves over the whole series."""
+
+    window_days: int
+    #: Median |move| ("a typical month moves ±X").
+    typical_move_pct: Decimal
+    #: :data:`NORMAL_QUANTILE` quantile of |move|: inside ``±`` this is ``normal``.
+    normal_limit_pct: Decimal
+
+
+def move_band(
+    series: Sequence[tuple[date, Decimal]], window_days: int, *, q: Decimal = NORMAL_QUANTILE
+) -> MoveBand | None:
+    """Typical size and normal limit of every ``window_days`` move (``None`` without one)."""
+    sizes = [abs(m) for _d, m in trailing_moves(series, window_days)]
+    if not sizes:
+        return None
+    return MoveBand(
+        window_days=window_days,
+        typical_move_pct=_median(sizes),
+        normal_limit_pct=quantile(sizes, q),
+    )
+
+
+@dataclass(frozen=True)
+class MaSlope:
+    #: Today's MA of the inverse and the one ``slope_days`` rows earlier.
+    ma_now: Decimal
+    ma_then: Decimal
+    #: ``ma_now / ma_then − 1``.
+    slope_pct: Decimal
+    label: Slope
+    #: Today's inverse against ``ma_now``.
+    side: Side
+    #: ``inverse_now / ma_now − 1``.
+    distance_pct: Decimal
+    #: MA of the rate itself on the last row (for the rate quote).
+    ma_rate_now: Decimal
+
+
+def ma_slope(
+    series: Sequence[tuple[date, Decimal]],
+    *,
+    window: int = MA_WINDOW,
+    slope_days: int = SLOPE_DAYS,
+    flat: Decimal = FLAT_SLOPE,
+) -> MaSlope | None:
+    """The dollar against its MA200 and where that average points (``None`` if too short)."""
+    valid = [(d, r) for d, r in series if r > 0]
+    inv = inverse_series(valid)
+    ma = moving_average(inv, window)
+    ma_rate = moving_average(valid, window)
+    if len(ma) <= slope_days:
+        return None
+    now, then = ma[-1][1], ma[-1 - slope_days][1]
+    slope = now / then - ONE
+    label: Slope = "flat" if abs(slope) < flat else ("rising" if slope > 0 else "falling")
+    last = inv[-1][1]
+    return MaSlope(
+        ma_now=now,
+        ma_then=then,
+        slope_pct=slope,
+        label=label,
+        side="above" if last >= now else "below",
+        distance_pct=last / now - ONE,
+        ma_rate_now=ma_rate[-1][1],
+    )
+
+
+def share_below(
+    series: Sequence[tuple[date, Decimal]], threshold: Decimal, start: date | None = None
+) -> Decimal | None:
+    """Share of rows from ``start`` (all rows if ``None``) whose rate is below ``threshold``.
+
+    ``None`` without rows. Rates are USD per 1 EUR, so "rate below the average"
+    means "the dollar above it".
+    """
+    rows = [r for d, r in series if r > 0 and (start is None or d >= start)]
+    if not rows:
+        return None
+    return Decimal(sum(1 for r in rows if r < threshold)) / len(rows)
+
+
+def share_above(
+    series: Sequence[tuple[date, Decimal]], threshold: Decimal, start: date | None = None
+) -> Decimal | None:
+    """Share of rows from ``start`` whose rate is above ``threshold`` (``None`` without rows)."""
+    rows = [r for d, r in series if r > 0 and (start is None or d >= start)]
+    if not rows:
+        return None
+    return Decimal(sum(1 for r in rows if r > threshold)) / len(rows)
+
+
+@dataclass(frozen=True)
+class SeriesMean:
+    since: date
+    #: Mean of the rate and mean of the inverse (each its own average).
+    rate: Decimal
+    inverse: Decimal
+    rows: int
+
+
+def series_mean(
+    series: Sequence[tuple[date, Decimal]], start: date | None = None
+) -> SeriesMean | None:
+    """Mean rate and mean inverse of the rows from ``start`` (``None`` without rows)."""
+    rows = [(d, r) for d, r in series if r > 0 and (start is None or d >= start)]
+    if not rows:
+        return None
+    n = Decimal(len(rows))
+    return SeriesMean(
+        since=rows[0][0],
+        rate=sum((r for _d, r in rows), start=ZERO) / n,
+        inverse=sum((ONE / r for _d, r in rows), start=ZERO) / n,
+        rows=len(rows),
+    )
+
+
+@dataclass(frozen=True)
+class MonthRun:
+    direction: RunDirection
+    count: int
+    of: int
+
+
+def monthly_run(series: Sequence[tuple[date, Decimal]], months: int = 6) -> MonthRun | None:
+    """ "The dollar fell in 5 of the last 6 months".
+
+    Month ends are the last row of each calendar month (the current month's last
+    row so far counts as its end). The dollar's month change is the inverse of one
+    month end against the previous one; the last ``months`` changes are counted.
+    ``direction`` is the majority; on a tie, the direction of the latest month. A
+    flat month counts for neither. ``None`` with fewer than ``months`` changes or
+    when every one of them is flat.
+    """
+    if months < 1:
+        raise ValueError("months must be >= 1")
+    ends: list[tuple[date, Decimal]] = []
+    for d, r in series:
+        if r <= 0:
+            continue
+        if ends and (ends[-1][0].year, ends[-1][0].month) == (d.year, d.month):
+            ends[-1] = (d, r)
+        else:
+            ends.append((d, r))
+    if len(ends) <= months:
+        return None
+    # The dollar rose when the rate fell (inverse up).
+    changes = [ends[i - 1][1] - ends[i][1] for i in range(len(ends) - months, len(ends))]
+    rose = sum(1 for c in changes if c > 0)
+    fell = sum(1 for c in changes if c < 0)
+    if rose == fell == 0:
+        return None
+    if rose == fell:
+        latest = next(c for c in reversed(changes) if c != 0)
+        direction: RunDirection = "rose" if latest > 0 else "fell"
+    else:
+        direction = "rose" if rose > fell else "fell"
+    return MonthRun(direction=direction, count=rose if direction == "rose" else fell, of=months)
+
+
+def daily_returns(values: Sequence[Decimal]) -> list[Decimal]:
+    """``v[i] / v[i − 1] − 1`` for consecutive positive values."""
+    return [b / a - ONE for a, b in itertools.pairwise(values) if a > 0]
+
+
+def rate_volatility(
+    series: Sequence[tuple[date, Decimal]], rows: int = YEAR_ROWS, *, inverse: bool = False
+) -> Decimal | None:
+    """Annualised volatility of the last ``rows`` daily changes of the rate (or its inverse).
+
+    Uses :func:`domain.risk.annualized_volatility` (sample stdev × √252).
+    """
+    valid = [r for _d, r in series if r > 0]
+    values = [ONE / r for r in valid] if inverse else valid
+    return annualized_volatility(daily_returns(values[-(rows + 1) :]))
+
+
 __all__ = [
     "Direction",
     "Extremes",
+    "MaSlope",
+    "MonthRun",
+    "MoveBand",
     "MoveNormality",
     "Normality",
     "Regime",
+    "SeriesMean",
+    "daily_returns",
     "inverse_series",
     "label_for",
+    "ma_slope",
+    "monthly_run",
+    "move_band",
     "move_normality",
     "moving_average",
+    "quantile",
     "range_extremes",
     "rate_percentiles",
+    "rate_volatility",
     "regime",
+    "series_mean",
+    "share_above",
+    "share_below",
+    "trailing_moves",
 ]

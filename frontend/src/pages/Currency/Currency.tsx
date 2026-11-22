@@ -38,9 +38,18 @@ export const STRIP_LABELS: Record<string, StatMeta> = {
     label: "Effect, lifetime",
     tip: "What exchange-rate moves have added to or taken from your result since you started.",
   },
+  effect_this_year: {
+    label: "Effect this year",
+    tip: "What the exchange rate added to or took from your portfolio this year, in money and percentage points.",
+  },
+  effect_lifetime: {
+    label: "Effect, lifetime",
+    tip: "What the exchange rate added to or took from your portfolio since you started, in money and percentage points.",
+  },
   dollar_trend: {
     label: "Dollar trend",
     tip: "Whether the dollar is above or below its 200-day average, and whether this month's move is a usual one. It describes; it does not predict.",
+    fractionFormat: "percent",
   },
   avg_rate_vs_now: {
     label: "Your average rate",
@@ -55,7 +64,7 @@ export const STRIP_LABELS: Record<string, StatMeta> = {
 };
 
 /** On the chart already, in its quote: never repeated in the strip. */
-const ON_THE_CHART = new Set(["rate_now", "avg_rate_vs_now"]);
+const ON_THE_CHART = new Set(["rate_now", "avg_rate_vs_now", "lifetime_effect"]);
 
 export function Currency() {
   const { sub } = useParams();
@@ -133,7 +142,9 @@ function CurrencyMain({ range }: { range: CurrencyRangeState }) {
               className="stat-strip--rows"
               label="Currency at a glance"
               // The rate and your average are on the chart above, in its quote.
-              items={stats.filter((s) => !ON_THE_CHART.has(s.key)).map((s) => serverStatItem(s, STRIP_LABELS[s.key], cur.ccy))}
+              items={stats
+                .filter((s) => !ON_THE_CHART.has(s.key))
+                .map((s) => serverStatItem(s, STRIP_LABELS[s.key], cur.ccy))}
             />
           ) : null}
           {CURRENCY_SECTIONS.map((s, i) => (
