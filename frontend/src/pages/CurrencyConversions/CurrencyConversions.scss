@@ -461,10 +461,12 @@
 
   &__head {
     display: grid;
-    grid-template-columns: auto minmax(max-content, 1fr) auto;
+    // Narrow: the status chip sits under the date, so it never shares a column with
+    // the amount (each keeps its full width at 360 px).
+    grid-template-columns: auto minmax(0, 1fr) auto;
     grid-template-areas:
       "date usd chevron"
-      "bar bar status";
+      "status bar bar";
     align-items: center;
     gap: var(--space-1) var(--space-3);
     width: 100%;
@@ -521,7 +523,12 @@
 
   &__status {
     grid-area: status;
-    justify-self: end;
+    justify-self: start;
+    width: max-content;
+
+    @include m.wide {
+      justify-self: end;
+    }
   }
 
   &__chevron {
