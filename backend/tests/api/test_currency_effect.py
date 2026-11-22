@@ -68,17 +68,23 @@ def test_unknown_range_is_rejected(api_client: TestClient, seeded: None) -> None
     assert api_client.get("/api/currency/effect/both?range=2y").status_code == 422
 
 
-def test_all_range_uses_the_overview_lifetime_returns(api_client: TestClient, seeded: None) -> None:
-    body = _get(api_client, "all")
-    overview = api_client.get("/api/overview/both").json()
-    eur_life = D(overview["EUR"]["kpis"]["total_growth_compounded"])
-    usd_life = D(overview["USD"]["kpis"]["total_growth_compounded"])
+def test_all_is_the_product_of_the_years(api_client: TestClient, seeded: None) -> None:
+    """One method everywhere: All, the years and YTD are slices of one daily chain,
+    so (1 + All) is the product of (1 + year) in each currency."""
+    today = exchange_today()
+    whole = _get(api_client, "all")
+    keys = [str(y) for y in range(FIRST_DAY.year, today.year)] + ["ytd"]
+    years = [_get(api_client, k) for k in keys]
     for ccy in ("EUR", "USD"):
-        head = body[ccy]["headline"]
-        assert head["return_basis"] == "lifetime"
-        assert abs(D(head["eur_return"]) - eur_life) < Decimal("1e-8")
-        assert abs(D(head["usd_return"]) - usd_life) < Decimal("1e-8")
-        assert abs(D(head["effect_pp"]) - (eur_life - usd_life)) < Decimal("2e-8")
+        head = whole[ccy]["headline"]
+        assert head["return_basis"] == "daily_chain"
+        for field in ("eur_return", "usd_return"):
+            product = Decimal(1)
+            for body in years:
+                value = body[ccy]["headline"][field]
+                product *= 1 + (D(value) if value is not None else Decimal(0))
+            assert abs((1 + D(head[field])) - product) < Decimal("1e-6")
+            assert D(head[field]) > -1
 
 
 @pytest.mark.parametrize("rng", ["1y", "all"])

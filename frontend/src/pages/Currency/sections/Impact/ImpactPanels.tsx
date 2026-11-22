@@ -107,6 +107,10 @@ function ShareBar({ share, market, effect, ccy }: { share: number; market: numbe
   );
 }
 
+/** The returns are time-weighted (the server's `RETURNS_TIP`, word for word). */
+export const RETURNS_TIP =
+  "These returns are time-weighted: each day's growth is chained, so deposits do not distort them, and they can differ from the Overview's lifetime return, which is money-weighted.";
+
 /** "euros" / "dollars" for a currency code (the plain word in a sentence). */
 const ccyWords = (ccy: string) => (ccy === "EUR" ? "euros" : ccy === "USD" ? "dollars" : ccy);
 
@@ -141,7 +145,7 @@ function EffectHeadline({ data }: { data: CurrencyEffectDto }) {
         What the {foreign} did to you, in {ccyWords(ccy)}
         <InfoTip
           label="What the exchange rate did"
-          content={`Each day, what you held in ${foreign}s was revalued from the day before's rate to that day's, and the results are added up over this range. The bars show your return worked out in euros and in dollars, each on its own; the gap between them is the same effect in points.`}
+          content={`Each day, what you held in ${foreign}s was revalued from the day before's rate to that day's, and the results are added up over this range. The bars show your return worked out in euros and in dollars, each on its own; the gap between them is the same effect in points. ${RETURNS_TIP}`}
         />
       </p>
       <p className="impact__headline-value">
@@ -180,7 +184,7 @@ function GapHeadline({ data }: { data: CurrencyEffectDto }) {
         Euros against dollars
         <InfoTip
           label="Euros against dollars"
-          content={`Your return worked out in euros minus the same return worked out in dollars, each from your own deposits at their own day's rate. Your holdings are all in ${ccyWords(data.ccy)}, so the exchange rate did not change their value in ${ccyWords(data.ccy)}; it changes what they are worth in the other currency.`}
+          content={`Your return worked out in euros minus the same return worked out in dollars, each in its own currency. Your holdings are all in ${ccyWords(data.ccy)}, so the exchange rate did not change their value in ${ccyWords(data.ccy)}; it changes what they are worth in the other currency. ${RETURNS_TIP}`}
         />
       </p>
       <p className={clsx("impact__headline-value", tone !== "flat" && `impact__headline-value--${tone}`)}>

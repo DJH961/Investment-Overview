@@ -32,14 +32,12 @@ EFFECT_RANGE_PATTERN = r"^(1d|1w|1m|3m|ytd|1y|3y|5y|10y|all|\d{4})$"
 
 EffectKind = Literal["tailwind", "headwind", "neutral"]
 EffectGranularity = Literal["intraday", "daily", "weekly"]
-#: How the headline returns were computed: ``periods`` = the Periods page rows
-#: (``readmodels/periods.build_for_ccy``: YTD, calendar years); ``lifetime`` = the
-#: Overview's own lifetime returns (``kpis.total_growth_compounded`` of each side,
-#: the All range); ``daily_chain`` = daily time-weighted returns chained over the
-#: range in each currency on its own (rolling ranges; a day the book does not see
-#: the money of yet is merged with the next days); ``day`` = the Overview's own
-#: day growth of each side (1D).
-ReturnBasis = Literal["periods", "lifetime", "daily_chain", "day"]
+#: How the headline returns were computed, each currency on its own: ``daily_chain``
+#: = the hardened daily time-weighted chain over the lifetime's days, sliced to the
+#: range (every range but 1D, All included; a day the book does not see the money of
+#: yet is merged with the next days); ``day`` = the Overview's own day growth of
+#: each side (1D).
+ReturnBasis = Literal["daily_chain", "day"]
 #: What the headline leads with: ``effect`` = the money effect on this side's book;
 #: ``gap`` = the euro return minus the dollar return (when the rate did nothing to
 #: this side's book, e.g. the USD view of an all-dollar portfolio).
