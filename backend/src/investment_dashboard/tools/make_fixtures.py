@@ -79,9 +79,9 @@ _REAL_DATE = _dt.date
 GRAPH_RANGES = ("1d", "1w", "1m", "3m", "6m", "ytd", "1y", "all")
 HISTORY_RANGES = ("1m", "3m", "6m", "ytd", "1y", "all")
 #: The Currency page chart's ranges (``api/schemas/currency_rate.RateRange``).
-RATE_RANGES = ("1d", "1w", "1m", "3m", "ytd", "1y", "5y", "10y", "max")
+RATE_RANGES = ("1d", "1w", "1m", "3m", "ytd", "1y", "all", "5y", "10y", "max")
 # The Effect endpoint uses a shorter horizon set than the rate chart / Dollar view.
-EFFECT_RANGES = ("1d", "1w", "1m", "3m", "ytd", "1y", "3y", "all")
+EFFECT_RANGES = ("1d", "1w", "1m", "3m", "ytd", "1y", "3y", "5y", "10y", "all")
 GET_ENDPOINTS: tuple[str, ...] = (
     "/api/auth/me",
     "/api/auth/passkeys",
@@ -108,7 +108,7 @@ GET_ENDPOINTS: tuple[str, ...] = (
     "/api/deposits/dividends/both",
     "/api/currency/both",
     # v7.2 Currency page sections
-    *(f"/api/currency/rate-history?range={r}" for r in (*RATE_RANGES, "all")),
+    *(f"/api/currency/rate-history?range={r}" for r in RATE_RANGES),
     *(f"/api/currency/effect/both?range={r}" for r in EFFECT_RANGES),
     *(f"/api/currency/dollar/both?range={r}" for r in RATE_RANGES),
     "/api/currency/scenarios/both",

@@ -4617,6 +4617,139 @@
   },
   "detail": null
  },
+ "GET /api/currency/dollar/both?range=all": {
+  "EUR": {
+   "as_of": "2026-06-30",
+   "caption": "Exchange rates wander and tend to revert over years; this page describes, it does not predict.",
+   "ccy": "EUR",
+   "generated_at": "2026-06-30T18:15:00+00:00",
+   "next_euro": null,
+   "position": {
+    "avg_rate": null,
+    "breakeven": null,
+    "change": null,
+    "exposure_share": null,
+    "exposure_usd": null,
+    "exposure_value": null,
+    "fx_gain_eur": null,
+    "other_share": null,
+    "other_value": null,
+    "rate_now": null,
+    "today": null
+   },
+   "quote": {
+    "field": "inverse",
+    "pair": "USD/EUR"
+   },
+   "range": "all",
+   "rolling": [
+    {
+     "normal_limit_pct": null,
+     "points": [],
+     "typical_move_pct": null,
+     "window": "1m",
+     "window_days": 21
+    },
+    {
+     "normal_limit_pct": null,
+     "points": [],
+     "typical_move_pct": null,
+     "window": "3m",
+     "window_days": 63
+    },
+    {
+     "normal_limit_pct": null,
+     "points": [],
+     "typical_move_pct": null,
+     "window": "1y",
+     "window_days": 252
+    }
+   ],
+   "stats": [],
+   "trend": {
+    "above_entry_share": null,
+    "long_run": null,
+    "ma200": null,
+    "normal_month": null,
+    "normal_year": null,
+    "percentiles": {
+     "since_1999": null,
+     "since_start": null,
+     "y10": null,
+     "y5": null
+    },
+    "regime": null,
+    "run": null,
+    "week52": null
+   }
+  },
+  "USD": {
+   "as_of": "2026-06-30",
+   "caption": "Exchange rates wander and tend to revert over years; this page describes, it does not predict.",
+   "ccy": "USD",
+   "generated_at": "2026-06-30T18:15:00+00:00",
+   "next_euro": null,
+   "position": {
+    "avg_rate": null,
+    "breakeven": null,
+    "change": null,
+    "exposure_share": null,
+    "exposure_usd": null,
+    "exposure_value": null,
+    "fx_gain_eur": null,
+    "other_share": null,
+    "other_value": null,
+    "rate_now": null,
+    "today": null
+   },
+   "quote": {
+    "field": "rate",
+    "pair": "EUR/USD"
+   },
+   "range": "all",
+   "rolling": [
+    {
+     "normal_limit_pct": null,
+     "points": [],
+     "typical_move_pct": null,
+     "window": "1m",
+     "window_days": 21
+    },
+    {
+     "normal_limit_pct": null,
+     "points": [],
+     "typical_move_pct": null,
+     "window": "3m",
+     "window_days": 63
+    },
+    {
+     "normal_limit_pct": null,
+     "points": [],
+     "typical_move_pct": null,
+     "window": "1y",
+     "window_days": 252
+    }
+   ],
+   "stats": [],
+   "trend": {
+    "above_entry_share": null,
+    "long_run": null,
+    "ma200": null,
+    "normal_month": null,
+    "normal_year": null,
+    "percentiles": {
+     "since_1999": null,
+     "since_start": null,
+     "y10": null,
+     "y5": null
+    },
+    "regime": null,
+    "run": null,
+    "week52": null
+   }
+  },
+  "detail": null
+ },
  "GET /api/currency/dollar/both?range=max": {
   "EUR": {
    "as_of": "2026-06-30",
@@ -4880,6 +5013,127 @@
     "run": null,
     "week52": null
    }
+  },
+  "detail": null
+ },
+ "GET /api/currency/effect/both?range=10y": {
+  "EUR": {
+   "as_of": "2026-06-30",
+   "bridge": null,
+   "buys": null,
+   "ccy": "EUR",
+   "end_on": null,
+   "explainer": null,
+   "generated_at": "2026-06-30T18:15:00+00:00",
+   "granularity": "daily",
+   "grid": [],
+   "headline": {
+    "currency_share": null,
+    "effect": "0.000000",
+    "effect_pp": null,
+    "eur_return": null,
+    "kind": "neutral",
+    "lead": "effect",
+    "market": "0.000000",
+    "note": null,
+    "other_ccy": null,
+    "other_effect": null,
+    "return_basis": "daily_chain",
+    "usd_return": null
+   },
+   "holdings": [],
+   "months": [],
+   "range": "10y",
+   "records": {
+    "average_monthly_contribution": null,
+    "best_day": null,
+    "best_month": null,
+    "best_year": null,
+    "lifetime_effect": null,
+    "lifetime_months_of_contributions": null,
+    "worst_day": null,
+    "worst_month": null,
+    "worst_year": null
+   },
+   "rolling": [],
+   "rolling_window_days": 252,
+   "run": null,
+   "series": [],
+   "session_split": null,
+   "start_on": null,
+   "stats": [
+    {
+     "currency": "EUR",
+     "key": "effect",
+     "kind": "neutral",
+     "label": null,
+     "secondary": null,
+     "secondary_currency": null,
+     "secondary_unit": null,
+     "unit": "money",
+     "value": "0.000000"
+    }
+   ],
+   "years": []
+  },
+  "USD": {
+   "as_of": "2026-06-30",
+   "bridge": null,
+   "buys": null,
+   "ccy": "USD",
+   "end_on": null,
+   "explainer": null,
+   "generated_at": "2026-06-30T18:15:00+00:00",
+   "granularity": "daily",
+   "grid": [],
+   "headline": {
+    "currency_share": null,
+    "effect": "0.000000",
+    "effect_pp": null,
+    "eur_return": null,
+    "kind": "neutral",
+    "lead": "effect",
+    "market": "0.000000",
+    "note": null,
+    "other_ccy": null,
+    "other_effect": null,
+    "return_basis": "daily_chain",
+    "usd_return": null
+   },
+   "holdings": [],
+   "months": [],
+   "range": "10y",
+   "records": {
+    "average_monthly_contribution": null,
+    "best_day": null,
+    "best_month": null,
+    "best_year": null,
+    "lifetime_effect": null,
+    "lifetime_months_of_contributions": null,
+    "worst_day": null,
+    "worst_month": null,
+    "worst_year": null
+   },
+   "rolling": [],
+   "rolling_window_days": 252,
+   "run": null,
+   "series": [],
+   "session_split": null,
+   "start_on": null,
+   "stats": [
+    {
+     "currency": "USD",
+     "key": "effect",
+     "kind": "neutral",
+     "label": null,
+     "secondary": null,
+     "secondary_currency": null,
+     "secondary_unit": null,
+     "unit": "money",
+     "value": "0.000000"
+    }
+   ],
+   "years": []
   },
   "detail": null
  },
@@ -5575,6 +5829,127 @@
    "holdings": [],
    "months": [],
    "range": "3y",
+   "records": {
+    "average_monthly_contribution": null,
+    "best_day": null,
+    "best_month": null,
+    "best_year": null,
+    "lifetime_effect": null,
+    "lifetime_months_of_contributions": null,
+    "worst_day": null,
+    "worst_month": null,
+    "worst_year": null
+   },
+   "rolling": [],
+   "rolling_window_days": 252,
+   "run": null,
+   "series": [],
+   "session_split": null,
+   "start_on": null,
+   "stats": [
+    {
+     "currency": "USD",
+     "key": "effect",
+     "kind": "neutral",
+     "label": null,
+     "secondary": null,
+     "secondary_currency": null,
+     "secondary_unit": null,
+     "unit": "money",
+     "value": "0.000000"
+    }
+   ],
+   "years": []
+  },
+  "detail": null
+ },
+ "GET /api/currency/effect/both?range=5y": {
+  "EUR": {
+   "as_of": "2026-06-30",
+   "bridge": null,
+   "buys": null,
+   "ccy": "EUR",
+   "end_on": null,
+   "explainer": null,
+   "generated_at": "2026-06-30T18:15:00+00:00",
+   "granularity": "daily",
+   "grid": [],
+   "headline": {
+    "currency_share": null,
+    "effect": "0.000000",
+    "effect_pp": null,
+    "eur_return": null,
+    "kind": "neutral",
+    "lead": "effect",
+    "market": "0.000000",
+    "note": null,
+    "other_ccy": null,
+    "other_effect": null,
+    "return_basis": "daily_chain",
+    "usd_return": null
+   },
+   "holdings": [],
+   "months": [],
+   "range": "5y",
+   "records": {
+    "average_monthly_contribution": null,
+    "best_day": null,
+    "best_month": null,
+    "best_year": null,
+    "lifetime_effect": null,
+    "lifetime_months_of_contributions": null,
+    "worst_day": null,
+    "worst_month": null,
+    "worst_year": null
+   },
+   "rolling": [],
+   "rolling_window_days": 252,
+   "run": null,
+   "series": [],
+   "session_split": null,
+   "start_on": null,
+   "stats": [
+    {
+     "currency": "EUR",
+     "key": "effect",
+     "kind": "neutral",
+     "label": null,
+     "secondary": null,
+     "secondary_currency": null,
+     "secondary_unit": null,
+     "unit": "money",
+     "value": "0.000000"
+    }
+   ],
+   "years": []
+  },
+  "USD": {
+   "as_of": "2026-06-30",
+   "bridge": null,
+   "buys": null,
+   "ccy": "USD",
+   "end_on": null,
+   "explainer": null,
+   "generated_at": "2026-06-30T18:15:00+00:00",
+   "granularity": "daily",
+   "grid": [],
+   "headline": {
+    "currency_share": null,
+    "effect": "0.000000",
+    "effect_pp": null,
+    "eur_return": null,
+    "kind": "neutral",
+    "lead": "effect",
+    "market": "0.000000",
+    "note": null,
+    "other_ccy": null,
+    "other_effect": null,
+    "return_basis": "daily_chain",
+    "usd_return": null
+   },
+   "holdings": [],
+   "months": [],
+   "range": "5y",
    "records": {
     "average_monthly_contribution": null,
     "best_day": null,
@@ -41819,6 +42194,26 @@
    {
     "choices": [],
     "danger": null,
+    "default": 600,
+    "env_bound": null,
+    "env_var": null,
+    "help": "The Currency page's 1D and 1W rate chart uses 15-minute EUR/USD bars from Yahoo (around the clock on weekdays). The server keeps the bars it fetched for this long before asking Yahoo again, so opening the page does not call Yahoo every time. A failed fetch is also kept this long before a retry. Shorter means a fresher chart and more Yahoo calls.",
+    "key": "fx.chart_bars_max_age_seconds",
+    "label": "Currency chart 1D/1W: reuse rate bars for",
+    "level": "user",
+    "max": "3600",
+    "min": "60",
+    "nullable": false,
+    "restart_required": false,
+    "secret": false,
+    "section": "data_refresh",
+    "since": "6.0",
+    "type": "duration_s",
+    "unit": "s"
+   },
+   {
+    "choices": [],
+    "danger": null,
     "default": true,
     "env_bound": null,
     "env_var": null,
@@ -42614,6 +43009,15 @@
     "source": "default",
     "stored_invalid": false,
     "value": 10
+   },
+   "fx.chart_bars_max_age_seconds": {
+    "default": 600,
+    "env_value_present": false,
+    "is_set": true,
+    "modified_at": null,
+    "source": "default",
+    "stored_invalid": false,
+    "value": 600
    },
    "fx.stale_after_seconds": {
     "default": 900,
