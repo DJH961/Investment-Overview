@@ -246,7 +246,10 @@ function StressCard({ data }: { data: ScenariosDto }) {
           <span role="rowheader">Today</span>
           <span role="cell">{formatNumber(toNum(data.rate_now ? data.rate_now[data.quote.field] : null), 4)}</span>
           <span role="cell"><Money amount={toNum(data.value_now)} currency={data.ccy} digits={0} /></span>
-          <span role="cell">—</span>
+          <span role="cell" className="rate-table__delta">
+            —
+            <span className="delta-bar delta-bar--empty" aria-hidden />
+          </span>
         </div>
         {rises.map(cell)}
       </div>
@@ -284,6 +287,7 @@ function RiskCard({ data }: { data: ScenariosDto }) {
   const rose = toNum(cushion.dollar_rose_share);
   return (
     <Card className="what-if__risk" title={<span className="what-if__title">Does the dollar cushion your swings?<InfoTip label="Does the dollar cushion your swings?" content="A comparison of the portfolio's historical volatility and deepest fall in euros and dollars. It describes what happened; it is not a promise that it will happen again." /></span>}>
+      <div className="what-if__groups">
       <p className="what-if__intro">Your own history, since {formatDate(cushion.since)}.</p>
       <PairBars title="Volatility" hint="how much it swings" eur={toNum(cushion.volatility_eur)} usd={toNum(cushion.volatility_usd)} />
       <PairBars title="Deepest fall" hint="worst drop from a peak" eur={toNum(cushion.max_drawdown_eur)} usd={toNum(cushion.max_drawdown_usd)} />
@@ -299,7 +303,8 @@ function RiskCard({ data }: { data: ScenariosDto }) {
           </div>
           <p className="what-if__note">On {cushion.down_days_dollar_rose} of the {cushion.down_days} days your holdings fell.</p>
         </div>
-      ) : <p className="what-if__caption">There are not enough down days to compare yet.</p>}
+      ) : <p className="what-if__note">There are not enough down days to compare yet.</p>}
+      </div>
     </Card>
   );
 }
