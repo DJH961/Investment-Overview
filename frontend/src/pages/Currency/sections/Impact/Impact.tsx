@@ -117,6 +117,7 @@ export function Impact({ id, label, currency, range }: CurrencySectionComponentP
           <span className="impact__meta">
             {rangeMeta(range, data)}
             {data.explainer ? <InfoTip label="How lifetime is counted" content={data.explainer} /> : null}
+            {data.book_note ? <InfoTip label="A deposit may be missing" content={data.book_note} /> : null}
           </span>
         ) : undefined
       }

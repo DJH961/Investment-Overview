@@ -138,51 +138,106 @@ def _txn(session: Session, account_id: int, on: date, kind: str, amount: str) ->
     )
 
 
-def test_deposit_before_buy_sale_and_withdrawal_no_longer_wreck_the_chain(
-    session: Session,
-) -> None:
-    """Day 1 deposit 1000 (bought day 4); +1 % a day while held; day 8 deposit 1000
-    (bought day 10); day 14 sold everything, day 16 the proceeds withdrawn."""
-    acct = accounts_repo.create_account(
+def _brokerage(session: Session) -> int:
+    return accounts_repo.create_account(
         session,
         broker="fidelity",
         account_label="USD brokerage",
         native_currency="USD",
         account_type="brokerage",
     ).id
+
+
+def _impact_life(
+    session: Session, acct: int, values: dict[date, Decimal], last: date, ccy: str = "USD"
+) -> ce.Lifetime:
+    session.flush()
+    life = ce.build_lifetime(session, ccy, through=last, source=_FakeHoldings(acct, values))
+    assert life is not None
+    return life
+
+
+def test_golden_big_deposit_partly_invested_rest_idle(session: Session) -> None:
+    """The fixture's 2023: 1000 deposited, only 700 bought, 300 idle for good.
+
+    Day 1 deposit 1000 (cash 1000). Day 3 buy 700 (cash 300, fund 700). Day 4 the
+    fund gains 10 % (770). The idle 300 earns 0 %. By hand: days 1-3 are 0 %
+    (1000 in, 1000 in the book), day 4 is (1070 - 1000) / 1000 = +7 %, later days 0 %.
+    Without the broker cash the 300 read as a permanent -30 % loss.
+    """
+    acct = _brokerage(session)
+    days = 12
+    fx_repo.upsert_rates(session, {DAY0 + timedelta(i): D("1.10") for i in range(days)})
+    _txn(session, acct, DAY0 + timedelta(1), "deposit", "1000")
+    _txn(session, acct, DAY0 + timedelta(3), "buy", "-700")
+    values = {DAY0 + timedelta(i): D(0) for i in range(3)}
+    values |= {DAY0 + timedelta(3): D(700)}
+    values |= {DAY0 + timedelta(i): D(770) for i in range(4, days)}
+    life = _impact_life(session, acct, values, DAY0 + timedelta(days - 1))
+    got = ce.chained_return(life.parts)
+    assert got == D("0.07")
+    assert life.rows[-1].book == {"USD": D(1070)}
+    assert life.shortfalls == []
+    # EUR view: the idle dollars are dollars too, revalued like the fund.
+    eur = _impact_life(session, acct, values, DAY0 + timedelta(days - 1), "EUR")
+    assert eur.rows[-1].book == {"USD": D(1070)}
+
+
+def test_deposit_before_buy_sale_and_withdrawal_no_longer_wreck_the_chain(
+    session: Session,
+) -> None:
+    """Day 1 deposit 1000 (bought day 4); +1 % a day while held; day 8 deposit 1000
+    (bought day 10); day 14 sold everything, day 16 1000 of the proceeds withdrawn.
+    With the broker cash in the book every day is a plain one-day return."""
+    acct = _brokerage(session)
     days = 18
     fx_repo.upsert_rates(session, {DAY0 + timedelta(i): D("1.10") for i in range(days)})
     _txn(session, acct, DAY0 + timedelta(1), "deposit", "1000")
+    _txn(session, acct, DAY0 + timedelta(4), "buy", "-1000")
     _txn(session, acct, DAY0 + timedelta(8), "deposit", "1000")
+    _txn(session, acct, DAY0 + timedelta(10), "buy", "-1000")
     values: dict[date, Decimal] = {}
     held = D(0)
-    true_growth = D(1)
     for i in range(days):
         if 4 < i <= 14 and held:
-            held *= D("1.01")  # +1 % on every held day
-            true_growth *= D("1.01")
-        if i == 4:
-            held += D(1000)
-        if i == 10:
+            held *= D("1.01")
+        if i in (4, 10):
             held += D(1000)
         if i == 14:
+            _txn(session, acct, DAY0 + timedelta(14), "sell", str(held))
             held = D(0)
         values[DAY0 + timedelta(i)] = held
     _txn(session, acct, DAY0 + timedelta(16), "withdrawal", "-1000")
-    session.flush()
-
-    life = ce.build_lifetime(
-        session, "USD", through=DAY0 + timedelta(days - 1), source=_FakeHoldings(acct, values)
-    )
-    assert life is not None
+    life = _impact_life(session, acct, values, DAY0 + timedelta(days - 1))
     naive = _naive_chain(life.parts)
-    assert naive is None or naive <= D("-0.5")  # the bug: None or "super negative"
     got = ce.chained_return(life.parts)
     assert got is not None
-    assert got > 0
-    # True time-weighted return: +1 % on each of the 9 held days before the sale
-    # (days 5-13; day 14 is the sale), the sale proceeds sitting outside the book.
-    assert abs(got - (D("1.01") ** 9 - 1)) < D("0.03")
+    assert naive is not None
+    assert got == naive  # nothing held open: the hardening changes nothing here
+    # Hand check of the shape: 10 days at +1 % on the fund, diluted on days 8-9 by
+    # the idle 1000 (fund about 1030 of a 2030 book): between 1.01**8 and 1.01**10.
+    assert D("1.01") ** 8 - 1 < got < D("1.01") ** 10 - 1
+
+
+def test_negative_broker_cash_is_flagged_and_never_a_fake_return(session: Session) -> None:
+    """A buy with no deposit on file (an unimported bank transfer): the balance is
+    held at zero and the 500 counts as a deposit that day, not as a +500 gain."""
+    acct = _brokerage(session)
+    days = 6
+    fx_repo.upsert_rates(session, {DAY0 + timedelta(i): D("1.10") for i in range(days)})
+    _txn(session, acct, DAY0 + timedelta(1), "deposit", "1000")
+    _txn(session, acct, DAY0 + timedelta(1), "buy", "-1000")
+    _txn(session, acct, DAY0 + timedelta(3), "buy", "-500")  # no deposit for this
+    values = {DAY0: D(0), DAY0 + timedelta(1): D(1000), DAY0 + timedelta(2): D(1000)}
+    values |= {DAY0 + timedelta(i): D(1500) for i in range(3, days)}
+    life = _impact_life(session, acct, values, DAY0 + timedelta(days - 1))
+    assert [(sf.on, sf.native) for sf in life.shortfalls] == [(DAY0 + timedelta(3), D(500))]
+    assert life.shortfall_days(date.min, DAY0 + timedelta(days)) == 1
+    assert ce.chained_return(life.parts) == 0
+    assert sum((p.flow for p in life.parts), D(0)) == D(1500)
+    eur = _impact_life(session, acct, values, DAY0 + timedelta(days - 1), "EUR")
+    implied = eur.parts[2].flow  # day 3, at that day's rate
+    assert implied == D(500) / D("1.10")
 
 
 # -- properties ----------------------------------------------------------------------------
@@ -388,6 +443,8 @@ def test_all_is_the_product_of_the_years_on_a_synthetic_ledger(session: Session)
     last = date(2025, 1, 4)
     fx_repo.upsert_rates(session, {first: D("1.10")})
     _txn(session, acct, first, "deposit", "1000")
+    _txn(session, acct, first, "buy", "-1000")
+    _txn(session, acct, date(2024, 1, 3), "buy", "-5000")
     _txn(session, acct, date(2023, 12, 30), "deposit", "5000")  # bought 2024-01-03
     values: dict[date, Decimal] = {}
     held = D(1000)

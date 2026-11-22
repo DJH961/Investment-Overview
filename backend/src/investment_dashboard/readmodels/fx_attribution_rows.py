@@ -21,6 +21,18 @@ For a date range and a reporting currency (EUR or USD) this builds one
   that conversion-cost difference therefore stays inside the *flow* part (and so
   outside both market and currency) until push 7.3 shows it on its own.
 
+**Broker cash (opt-in, ``include_broker_cash``; the Impact section).** The book
+then also holds each brokerage account's idle cash: the running sum of the
+account's own ``net_native`` (the same "uninvested cash" as
+:func:`positions_service.compute_cash_balance`), except that a reinvested dividend
+(its ``dividend_reinvest`` row and its paired ``dividend_cash`` leg) never touches
+cash: its shares are in the holdings already. Deposits and withdrawals are then
+the only external flows (dividends and interest stay in the book). A balance that
+would go below zero at a day's end (a deposit missing from the ledger: an in-kind
+transfer, a bank transfer straight into a buy) is held at zero and the shortfall is
+booked as an implied deposit that day (:class:`Shortfall`), so the missing money
+can never show up as a fake gain or loss.
+
 Rows: an anchor at ``start`` (the book at that close, possibly empty), then
 every later date in ``(start, end]`` on which a holding value, a cash
 balance change or (when a foreign currency is held) a rate fixing is on file. A flow dated between two rows is booked on the next row (it
@@ -32,13 +44,16 @@ from __future__ import annotations
 import bisect
 from collections import defaultdict
 from collections.abc import Collection, Iterable, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
-from typing import Protocol
+from typing import Any, Protocol
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.domain import dividends as dividends_domain
 from investment_dashboard.domain.fx_attribution import AttributionDay, FxRate
+from investment_dashboard.domain.kinds import DIVIDEND_CASH, DIVIDEND_REINVEST
 from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.repositories import accounts_repo, transactions_repo
 from investment_dashboard.services import (
@@ -158,6 +173,62 @@ def _cash_books(
     return accounts, dates
 
 
+@dataclass(frozen=True)
+class Shortfall:
+    """A day a brokerage account's cash would have gone below zero (native)."""
+
+    on: date
+    currency: str
+    native: Decimal
+
+
+@dataclass(frozen=True)
+class BookRows:
+    """Attribution rows plus the implied deposits behind them (broker cash book)."""
+
+    rows: list[AttributionDay]
+    shortfalls: list[Shortfall]
+
+
+def _broker_cash_books(
+    session: Session, start: date, end: date
+) -> tuple[list[tuple[str, _Steps]], set[date], list[Shortfall]]:
+    """Idle cash per non-cash account, clamped at zero (see the module doc)."""
+    accounts: list[tuple[str, _Steps]] = []
+    dates: set[date] = set()
+    shortfalls: list[Shortfall] = []
+    txns = list(transactions_repo.list_transactions(session, end=end))
+    reinvested = dividends_domain.reinvest_keys(txns)
+    by_account: dict[int, list[Any]] = defaultdict(list)
+    for t in txns:
+        if t.account_id is not None:
+            by_account[t.account_id].append(t)
+    for account in accounts_repo.list_accounts(session):
+        if account.account_type in _CASH_ACCOUNT_TYPES:
+            continue
+        ccy = account.native_currency.upper()
+        day_net: dict[date, Decimal] = defaultdict(lambda: ZERO)
+        for t in by_account.get(account.id, []):
+            if t.kind == DIVIDEND_REINVEST or (
+                t.kind == DIVIDEND_CASH and (t.account_id, t.instrument_id, t.date) in reinvested
+            ):
+                continue
+            day_net[t.date] += t.net_native or ZERO
+        running = ZERO
+        points: dict[date, Decimal] = {}
+        for on in sorted(day_net):
+            running += day_net[on]
+            if running < 0:
+                shortfalls.append(Shortfall(on, ccy, -running))
+                running = ZERO
+            points[on] = running
+            if start < on <= end:
+                dates.add(on)
+        if points:
+            accounts.append((ccy, _Steps(points)))
+    return accounts, dates, shortfalls
+
+
 class _Steps:
     """A step function ``date -> value`` (the last value on or before a date, else 0)."""
 
@@ -172,11 +243,24 @@ class _Steps:
 
 
 def _flows_by_row(
-    session: Session, reporting: str, row_dates: Sequence[date], end: date
+    session: Session,
+    reporting: str,
+    row_dates: Sequence[date],
+    end: date,
+    *,
+    retain_all: bool = False,
 ) -> dict[date, Decimal]:
-    """External flows into the book in ``reporting``, booked on the row they precede."""
+    """External flows into the book in ``reporting``, booked on the row they precede.
+
+    ``retain_all``: every account's cash is in the book (broker cash), so no
+    dividend or interest leaves it.
+    """
     txns = transactions_repo.list_transactions(session, end=end)
-    retained = metrics_service.build_retained_cash_account_ids(session, txns)
+    retained = (
+        {a.id for a in accounts_repo.list_accounts(session)}
+        if retain_all
+        else metrics_service.build_retained_cash_account_ids(session, txns)
+    )
     stream = cashflows.build_portfolio_cashflows(
         txns,
         currency=reporting,
@@ -229,6 +313,31 @@ def build_attribution_rows(
     Raises ``ValueError`` when a currency held in the range has no rate on file
     for a row (an honest gap, never a rate of 1).
     """
+    return _build_rows(session, start, end, reporting, source=source).rows
+
+
+def build_book_rows(
+    session: Session,
+    start: date,
+    end: date,
+    reporting: str,
+    *,
+    source: HoldingValuesSource = REAL_SOURCE,
+) -> BookRows:
+    """:func:`build_attribution_rows` with each brokerage account's idle cash in the
+    book and its implied deposits (see the module doc). The Impact section only."""
+    return _build_rows(session, start, end, reporting, source=source, broker_cash=True)
+
+
+def _build_rows(  # noqa: PLR0912
+    session: Session,
+    start: date,
+    end: date,
+    reporting: str,
+    *,
+    source: HoldingValuesSource,
+    broker_cash: bool = False,
+) -> BookRows:
     rep = reporting.upper()
     if rep not in REPORTING_CURRENCIES:
         raise ValueError(f"reporting currency must be one of {REPORTING_CURRENCIES}")
@@ -249,6 +358,11 @@ def build_attribution_rows(
     holding_steps = [(key[2], _Steps(p)) for key, p in points.items()]
     holding_dates = {d for p in points.values() for d in p if start < d <= end}
     cash_steps, cash_dates = _cash_books(session, start, end)
+    shortfalls: list[Shortfall] = []
+    if broker_cash:
+        broker_steps, broker_dates, shortfalls = _broker_cash_books(session, start, end)
+        cash_steps += broker_steps
+        cash_dates |= broker_dates
 
     currencies: set[str] = {ccy for ccy, _ in cash_steps} | {ccy for ccy, _ in holding_steps}
     foreign = sorted(c for c in currencies if c != rep)
@@ -261,7 +375,7 @@ def build_attribution_rows(
         {d for s in series.values() for d in s.dates if start < d <= end} if foreign else set()
     )
     row_dates = sorted({start} | holding_dates | cash_dates | fx_dates)
-    flows = _flows_by_row(session, rep, row_dates, end)
+    flows = _flows_by_row(session, rep, row_dates, end, retain_all=broker_cash)
 
     day_books: list[dict[str, Decimal]] = []
     day_rates: list[dict[str, FxRate]] = []
@@ -285,10 +399,23 @@ def build_attribution_rows(
     for i in range(len(day_rates) - 2, -1, -1):
         for ccy, rate in day_rates[i + 1].items():
             day_rates[i].setdefault(ccy, rate)
-    return [
+    # Implied deposits (a broker balance held at zero): money in on its own day,
+    # at that day's rate, like any deposit.
+    for sf in shortfalls:
+        if not start < sf.on <= end:
+            continue
+        sf_rate: FxRate | None = (
+            FxRate() if sf.currency == rep else _fx_rate(sf.currency, rep, sf.on, series)
+        )
+        if sf_rate is None:
+            raise ValueError(f"no {sf.currency} rate on file for {sf.on.isoformat()}")
+        i = bisect.bisect_left(row_dates, sf.on)
+        flows[row_dates[i]] = flows.get(row_dates[i], ZERO) + sf_rate.to_reporting(sf.native)
+    rows = [
         AttributionDay(on=on, book=b, rates=r, flow=flows.get(on, ZERO))
         for on, b, r in zip(row_dates, day_books, day_rates, strict=True)
     ]
+    return BookRows(rows, [sf for sf in shortfalls if start < sf.on <= end])
 
 
 class RateBook:

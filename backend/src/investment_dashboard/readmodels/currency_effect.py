@@ -4,8 +4,10 @@ Everything is built per reporting currency from :mod:`domain.fx_attribution`:
 
 * **Daily parts, lifetime, cached.** One attribution over the whole ledger per
   reporting currency (:func:`lifetime`): rows from
-  :func:`readmodels.fx_attribution_rows.build_attribution_rows` (7.1's per-holding
-  values + cash, settled daily rates, the cashflow-legs flows). A range is a slice
+  :func:`readmodels.fx_attribution_rows.build_book_rows` (7.1's per-holding
+  values + cash accounts + each brokerage account's idle cash, settled daily rates,
+  the cashflow-legs flows; a broker balance below zero is an implied deposit,
+  ``book_note``). A range is a slice
   of those daily parts (each part depends only on its own two closes, so slicing
   is exact). Ranges end at the **last stored close (yesterday)**: today's holding
   rows are live, never stored, and today is the 1D range (the Overview's own
@@ -41,7 +43,7 @@ from __future__ import annotations
 import bisect
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, localcontext
 from functools import cached_property
@@ -92,6 +94,12 @@ MAX_DAILY_POINTS = 1100
 BUYS_AMOUNT_EUR = Decimal(1000)
 _CURRENCY_NAMES = {"USD": "dollar", "EUR": "euro", "GBP": "pound", "CHF": "franc"}
 
+#: When a broker account's cash would have gone below zero (see ``fx_attribution_rows``).
+BOOK_NOTE = (
+    "On {days} day{s} your broker cash would have gone below zero, so a deposit may be "
+    "missing from your ledger. Those amounts count as deposits here, so they never show "
+    "up as a gain or a loss."
+)
 #: The returns' one-sentence tip (also on the page beside the return bars).
 RETURNS_TIP = (
     "These returns are time-weighted: each day's growth is chained, so deposits do not "
@@ -223,6 +231,12 @@ class Lifetime:
     reporting: str
     rows: list[fa.AttributionDay]
     parts: list[fa.DayParts]
+    #: Days a broker account's cash would have gone below zero (implied deposits).
+    shortfalls: list[rows_rm.Shortfall] = field(default_factory=list)
+
+    def shortfall_days(self, after: date, through: date) -> int:
+        """Distinct days in ``(after, through]`` with an implied deposit."""
+        return len({sf.on for sf in self.shortfalls if after < sf.on <= through})
 
     def window(self, after: date, through: date) -> list[int]:
         """Indexes into ``parts`` with ``after < on <= through``."""
@@ -259,10 +273,12 @@ def build_lifetime(
     end = through or last_settled_day()
     if first is None or end < first:
         return None
-    rows = rows_rm.build_attribution_rows(
+    book = rows_rm.build_book_rows(
         session, first - timedelta(days=1), end, reporting, source=source
     )
-    return Lifetime(reporting.upper(), rows, fa.attribute_days(rows, reporting))
+    return Lifetime(
+        reporting.upper(), book.rows, fa.attribute_days(book.rows, reporting), book.shortfalls
+    )
 
 
 @cached_read
@@ -1138,6 +1154,7 @@ def _one_side(  # noqa: PLR0912, PLR0915
                 )
             )
 
+    missing = life.shortfall_days(after, through) if life is not None else 0
     explainer = None
     if range_key == "all" and lead == "gap":
         explainer = ALL_GAP_EXPLAINER if ccy == "USD" else None
@@ -1168,6 +1185,10 @@ def _one_side(  # noqa: PLR0912, PLR0915
         "buys": buys,
         "stats": stats,
         "explainer": explainer,
+        "missing_deposit_days": missing,
+        "book_note": BOOK_NOTE.format(days=missing, s="" if missing == 1 else "s")
+        if missing
+        else None,
     }
 
 

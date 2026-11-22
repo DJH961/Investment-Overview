@@ -4886,6 +4886,7 @@
  "GET /api/currency/effect/both?range=1d": {
   "EUR": {
    "as_of": "2026-06-30",
+   "book_note": null,
    "bridge": null,
    "buys": null,
    "ccy": "EUR",
@@ -4909,6 +4910,7 @@
     "usd_return": null
    },
    "holdings": [],
+   "missing_deposit_days": 0,
    "months": [],
    "range": "1d",
    "records": {
@@ -4945,6 +4947,7 @@
   },
   "USD": {
    "as_of": "2026-06-30",
+   "book_note": null,
    "bridge": null,
    "buys": null,
    "ccy": "USD",
@@ -4968,6 +4971,7 @@
     "usd_return": null
    },
    "holdings": [],
+   "missing_deposit_days": 0,
    "months": [],
    "range": "1d",
    "records": {
@@ -5007,6 +5011,7 @@
  "GET /api/currency/effect/both?range=1m": {
   "EUR": {
    "as_of": "2026-06-30",
+   "book_note": null,
    "bridge": null,
    "buys": null,
    "ccy": "EUR",
@@ -5030,6 +5035,7 @@
     "usd_return": null
    },
    "holdings": [],
+   "missing_deposit_days": 0,
    "months": [],
    "range": "1m",
    "records": {
@@ -5066,6 +5072,7 @@
   },
   "USD": {
    "as_of": "2026-06-30",
+   "book_note": null,
    "bridge": null,
    "buys": null,
    "ccy": "USD",
@@ -5089,6 +5096,7 @@
     "usd_return": null
    },
    "holdings": [],
+   "missing_deposit_days": 0,
    "months": [],
    "range": "1m",
    "records": {
@@ -5128,6 +5136,7 @@
  "GET /api/currency/effect/both?range=1w": {
   "EUR": {
    "as_of": "2026-06-30",
+   "book_note": null,
    "bridge": null,
    "buys": null,
    "ccy": "EUR",
@@ -5151,6 +5160,7 @@
     "usd_return": null
    },
    "holdings": [],
+   "missing_deposit_days": 0,
    "months": [],
    "range": "1w",
    "records": {
@@ -5187,6 +5197,7 @@
   },
   "USD": {
    "as_of": "2026-06-30",
+   "book_note": null,
    "bridge": null,
    "buys": null,
    "ccy": "USD",
@@ -5210,6 +5221,7 @@
     "usd_return": null
    },
    "holdings": [],
+   "missing_deposit_days": 0,
    "months": [],
    "range": "1w",
    "records": {
@@ -5249,6 +5261,7 @@
  "GET /api/currency/effect/both?range=1y": {
   "EUR": {
    "as_of": "2026-06-30",
+   "book_note": null,
    "bridge": null,
    "buys": null,
    "ccy": "EUR",
@@ -5272,6 +5285,7 @@
     "usd_return": null
    },
    "holdings": [],
+   "missing_deposit_days": 0,
    "months": [],
    "range": "1y",
    "records": {
@@ -5308,6 +5322,7 @@
   },
   "USD": {
    "as_of": "2026-06-30",
+   "book_note": null,
    "bridge": null,
    "buys": null,
    "ccy": "USD",
@@ -5331,6 +5346,7 @@
     "usd_return": null
    },
    "holdings": [],
+   "missing_deposit_days": 0,
    "months": [],
    "range": "1y",
    "records": {
@@ -5370,6 +5386,7 @@
  "GET /api/currency/effect/both?range=3m": {
   "EUR": {
    "as_of": "2026-06-30",
+   "book_note": null,
    "bridge": null,
    "buys": null,
    "ccy": "EUR",
@@ -5393,6 +5410,7 @@
     "usd_return": null
    },
    "holdings": [],
+   "missing_deposit_days": 0,
    "months": [],
    "range": "3m",
    "records": {
@@ -5429,6 +5447,7 @@
   },
   "USD": {
    "as_of": "2026-06-30",
+   "book_note": null,
    "bridge": null,
    "buys": null,
    "ccy": "USD",
@@ -5452,6 +5471,7 @@
     "usd_return": null
    },
    "holdings": [],
+   "missing_deposit_days": 0,
    "months": [],
    "range": "3m",
    "records": {
@@ -5491,6 +5511,7 @@
  "GET /api/currency/effect/both?range=3y": {
   "EUR": {
    "as_of": "2026-06-30",
+   "book_note": null,
    "bridge": null,
    "buys": null,
    "ccy": "EUR",
@@ -5514,6 +5535,7 @@
     "usd_return": null
    },
    "holdings": [],
+   "missing_deposit_days": 0,
    "months": [],
    "range": "3y",
    "records": {
@@ -5550,6 +5572,7 @@
   },
   "USD": {
    "as_of": "2026-06-30",
+   "book_note": null,
    "bridge": null,
    "buys": null,
    "ccy": "USD",
@@ -5573,6 +5596,7 @@
     "usd_return": null
    },
    "holdings": [],
+   "missing_deposit_days": 0,
    "months": [],
    "range": "3y",
    "records": {
@@ -5612,6 +5636,7 @@
  "GET /api/currency/effect/both?range=all": {
   "EUR": {
    "as_of": "2026-06-30",
+   "book_note": null,
    "bridge": null,
    "buys": null,
    "ccy": "EUR",
@@ -5635,6 +5660,7 @@
     "usd_return": null
    },
    "holdings": [],
+   "missing_deposit_days": 0,
    "months": [],
    "range": "all",
    "records": {
@@ -5671,6 +5697,7 @@
   },
   "USD": {
    "as_of": "2026-06-30",
+   "book_note": null,
    "bridge": null,
    "buys": null,
    "ccy": "USD",
@@ -5694,6 +5721,7 @@
     "usd_return": null
    },
    "holdings": [],
+   "missing_deposit_days": 0,
    "months": [],
    "range": "all",
    "records": {
@@ -5733,6 +5761,7 @@
  "GET /api/currency/effect/both?range=ytd": {
   "EUR": {
    "as_of": "2026-06-30",
+   "book_note": null,
    "bridge": null,
    "buys": null,
    "ccy": "EUR",
@@ -5756,6 +5785,7 @@
     "usd_return": null
    },
    "holdings": [],
+   "missing_deposit_days": 0,
    "months": [],
    "range": "ytd",
    "records": {
@@ -5792,6 +5822,7 @@
   },
   "USD": {
    "as_of": "2026-06-30",
+   "book_note": null,
    "bridge": null,
    "buys": null,
    "ccy": "USD",
@@ -5815,6 +5846,7 @@
     "usd_return": null
    },
    "holdings": [],
+   "missing_deposit_days": 0,
    "months": [],
    "range": "ytd",
    "records": {

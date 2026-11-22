@@ -279,6 +279,11 @@ class CurrencyEffectOut(ApiModel):
     stats: list[EffectStat] = Field(default_factory=list)
     #: An info-tip sentence (the All range: why it differs from the Overview card).
     explainer: str | None = None
+    #: Days in the range a broker account's cash would have gone below zero (the
+    #: book holds each account's idle cash; a shortfall is counted as a deposit).
+    missing_deposit_days: int = 0
+    #: One plain sentence about those days for a tip; null when there are none.
+    book_note: str | None = None
 
 
 __all__ = [

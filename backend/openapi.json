@@ -2873,6 +2873,17 @@
             "title": "As Of",
             "type": "string"
           },
+          "book_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Book Note"
+          },
           "bridge": {
             "anyOf": [
               {
@@ -2952,6 +2963,11 @@
             },
             "title": "Holdings",
             "type": "array"
+          },
+          "missing_deposit_days": {
+            "default": 0,
+            "title": "Missing Deposit Days",
+            "type": "integer"
           },
           "months": {
             "items": {

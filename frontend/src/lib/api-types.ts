@@ -2859,6 +2859,8 @@ export interface components {
         CurrencyEffectOut: {
             /** As Of */
             as_of: string;
+            /** Book Note */
+            book_note?: string | null;
             bridge?: components["schemas"]["EffectBridge"] | null;
             buys?: components["schemas"]["EffectBuys"] | null;
             /**
@@ -2882,6 +2884,11 @@ export interface components {
             headline: components["schemas"]["EffectHeadline"];
             /** Holdings */
             holdings?: components["schemas"]["HoldingEffect"][];
+            /**
+             * Missing Deposit Days
+             * @default 0
+             */
+            missing_deposit_days: number;
             /** Months */
             months?: components["schemas"]["EffectBar"][];
             /** Range */
