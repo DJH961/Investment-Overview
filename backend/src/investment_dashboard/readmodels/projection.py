@@ -367,8 +367,8 @@ def project(
     }
 
 
-#: P5: EUR/USD at the horizon from today's rate - 15 % to + 15 %.
-RATE_BAND_SHIFTS: tuple[Decimal, ...] = tuple(Decimal(s) / 100 for s in range(-15, 16, 5))
+#: P5: EUR/USD at the horizon, today's rate - 15 % to + 15 % in 1 % steps (a slider).
+RATE_BAND_SHIFTS: tuple[Decimal, ...] = tuple(Decimal(s) / 100 for s in range(-15, 16))
 
 
 def _rate_band(
