@@ -8,6 +8,7 @@ import { Money } from "../../../../components/Money";
 import type { StatItem } from "../../../../components/StatStrip";
 import { formatDate, formatMoney, formatNumber, formatPercent } from "../../../../lib/format";
 import { useScenarios, type ScenarioMarkDto, type ScenariosDto } from "../../../../lib/queries/currencyDollar";
+import { RATE_RANGE_LABELS, type RateRange } from "../../../../lib/queries/currencyRate";
 import { toNum } from "../../../../lib/queries/portfolio";
 import type { CurrencySectionComponentProps } from "../../sections";
 import { layoutMarks } from "./layoutMarks";
@@ -21,14 +22,26 @@ const QUOTE_WORDS = {
   "EUR/USD": { thing: "One euro in dollars", mover: "Euro" },
 } as const;
 
-const MARK_NAMES: Record<ScenarioMarkDto["key"], string> = {
-  today: "Today",
-  average: "Your average",
-  breakeven: "Break-even",
-  historic_low: "Past low",
-  historic_high: "Past high",
-};
-const MARK_ORDER: ScenarioMarkDto["key"][] = ["today", "average", "breakeven", "historic_low", "historic_high"];
+/** The range worded for a label: "1Y low", "low since you started", "low since 1999". */
+function rangeWords(range: RateRange): { low: string; high: string; start: string; window: string } {
+  if (range === "all") return { low: "Low since you started", high: "High since you started", start: "You started", window: "since you started" };
+  if (range === "max") return { low: "Low since 1999", high: "High since 1999", start: "1999", window: "since 1999" };
+  const label = RATE_RANGE_LABELS[range];
+  return { low: `${label} low`, high: `${label} high`, start: `${label} start`, window: `over the last ${label}` };
+}
+
+function markNames(range: RateRange): Record<ScenarioMarkDto["key"], string> {
+  const w = rangeWords(range);
+  return {
+    today: "Today",
+    average: "Your average",
+    breakeven: "Break-even",
+    range_start: w.start,
+    historic_low: w.low,
+    historic_high: w.high,
+  };
+}
+const MARK_ORDER: ScenarioMarkDto["key"][] = ["today", "average", "breakeven", "range_start", "historic_low", "historic_high"];
 
 /** A rate in the quote shown, 4 decimals, in the currency it is quoted in (EUR view: "€0.8590"). */
 const rateText = (value: string | number | null, ccy: Ccy) =>
@@ -52,7 +65,8 @@ interface MarkGroup {
   today: boolean;
 }
 
-function groupMarks(marks: ScenarioMarkDto[], ccy: Ccy): MarkGroup[] {
+function groupMarks(marks: ScenarioMarkDto[], ccy: Ccy, range: RateRange): MarkGroup[] {
+  const MARK_NAMES = markNames(range);
   const byRate = new Map<string, ScenarioMarkDto[]>();
   for (const m of marks) {
     const k = rateText(m.rate_display, ccy);
@@ -105,7 +119,7 @@ function ScenarioSlider({ data }: { data: ScenariosDto }) {
   const trackRef = useRef<HTMLDivElement>(null);
   const width = useWidth(trackRef);
   const max = Math.max(rows.length - 1, 1);
-  const groups = useMemo(() => groupMarks(marks, data.ccy), [marks, data.ccy]);
+  const groups = useMemo(() => groupMarks(marks, data.ccy, data.range), [marks, data.ccy, data.range]);
   const usable = Math.max(width - THUMB_PX, 1);
   const placed = useMemo(
     () =>
@@ -122,13 +136,26 @@ function ScenarioSlider({ data }: { data: ScenariosDto }) {
   const pair = data.quote.pair;
   const toBreakeven = row.to_breakeven_pct == null ? null : toNum(row.to_breakeven_pct);
   // Linear presentation maths only: this row's value minus today's, both from the server.
-  const diff = data.value_now == null ? null : (toNum(row.value) ?? 0) - (toNum(data.value_now) ?? 0);
-  const diffScale = Math.max(0, ...(data.stress ?? []).map((s) => Math.abs(toNum(s.change) ?? 0)));
+  // Not exposed: none of the holdings are in the other currency, so this side's own value
+  // never moves with the rate; what moves is their worth in the other one (server figures).
+  const exposed = data.exposed;
+  const shownCcy: Ccy = exposed ? data.ccy : data.other_ccy;
+  const otherName = shownCcy === "EUR" ? "euros" : "dollars";
+  const nowValue = exposed ? data.value_now : data.value_now_other;
+  const rowValue = exposed ? row.value : row.other_value;
+  const diff = nowValue == null || rowValue == null ? null : (toNum(rowValue) ?? 0) - (toNum(nowValue) ?? 0);
+  const diffScale = Math.max(
+    0,
+    ...(data.stress ?? []).map((s) => Math.abs(toNum(exposed ? s.change : s.other_change) ?? 0)),
+  );
 
   return (
     <Card className="what-if__scenario" title="Try another exchange rate">
       <p className="what-if__intro">
         Drag the handle to value today's holdings at another rate. This shows what a rate would mean for you, not where the rate is going.
+        {exposed
+          ? null
+          : ` All your holdings are in ${data.ccy === "EUR" ? "euros" : "dollars"}, so their ${data.ccy === "EUR" ? "euro" : "dollar"} value stays the same at any rate; what the rate changes is their worth in ${otherName}.`}
       </p>
       <div className="what-if__try">
         <div className="scenario-slider">
@@ -185,28 +212,35 @@ function ScenarioSlider({ data }: { data: ScenariosDto }) {
         </div>
         <dl className="scenario-result">
           <div className="scenario-result__item scenario-result__item--lead">
-            <dt className="scenario-result__label">Holdings worth</dt>
+            <dt className="scenario-result__label">{exposed ? "Holdings worth" : `Holdings worth in ${otherName}`}</dt>
             <dd className="scenario-result__value">
-              <Money amount={toNum(row.value)} currency={data.ccy} digits={0} />
+              <Money amount={toNum(exposed ? row.value : row.other_value)} currency={shownCcy} digits={0} />
             </dd>
+            {exposed ? null : (
+              <dd className="scenario-result__note">
+                In {data.ccy === "EUR" ? "euros" : "dollars"} they stay at <Money amount={toNum(row.value)} currency={data.ccy} digits={0} />
+              </dd>
+            )}
           </div>
           {diff !== null ? (
             <div className="scenario-result__item scenario-result__item--lead">
               <dt className="scenario-result__label">Compared with today</dt>
               <dd className="scenario-result__value scenario-result__value--sub">
-                {Math.abs(diff) < 0.5 ? "No change" : <Money amount={diff} currency={data.ccy} signed colored digits={0} />}
+                {Math.abs(diff) < 0.5 ? "No change" : <Money amount={diff} currency={shownCcy} signed colored digits={0} />}
               </dd>
               <dd className="scenario-result__bar">
                 <DeltaBar value={diff} scale={Math.max(diffScale, Math.abs(diff))} />
               </dd>
             </div>
           ) : null}
-          <div className="scenario-result__item">
-            <dt className="scenario-result__label">Currency gain/loss</dt>
-            <dd className="scenario-result__value">
-              <Money amount={toNum(row.gain)} currency={data.ccy} signed colored digits={0} />
-            </dd>
-          </div>
+          {exposed ? (
+            <div className="scenario-result__item">
+              <dt className="scenario-result__label">Currency gain/loss</dt>
+              <dd className="scenario-result__value">
+                <Money amount={toNum(row.gain)} currency={data.ccy} signed colored digits={0} />
+              </dd>
+            </div>
+          ) : null}
           <div className="scenario-result__item">
             <dt className="scenario-result__label">Move to break even</dt>
             <dd className="scenario-result__value">
@@ -228,7 +262,12 @@ function StressCard({ data }: { data: ScenariosDto }) {
   const stress = data.stress ?? [];
   if (!stress.length || data.value_now == null) return null;
   const words = QUOTE_WORDS[data.quote.pair];
-  const scale = Math.max(...stress.map((s) => Math.abs(toNum(s.change) ?? 0)));
+  // Not exposed: the side's own value never moves, so the table shows the other currency.
+  const shownCcy: Ccy = data.exposed ? data.ccy : data.other_ccy;
+  const valueOf = (s: (typeof stress)[number]) => (data.exposed ? s.value : s.other_value);
+  const changeOf = (s: (typeof stress)[number]) => (data.exposed ? s.change : s.other_change);
+  const nowValue = data.exposed ? data.value_now : data.value_now_other;
+  const scale = Math.max(...stress.map((s) => Math.abs(toNum(changeOf(s)) ?? 0)));
   const falls = stress.filter((s) => toNum(s.shift_pct)! < 0);
   const rises = stress.filter((s) => toNum(s.shift_pct)! > 0);
   const cell = (s: (typeof stress)[number]) => (
@@ -236,17 +275,22 @@ function StressCard({ data }: { data: ScenariosDto }) {
       <th scope="row">{formatPercent(toNum(s.shift_pct), { signed: true, digits: 0 })}</th>
       <td>{formatNumber(toNum(s.rate_display), 4)}</td>
       <td>
-        <Money amount={toNum(s.value)} currency={data.ccy} digits={0} />
+        <Money amount={toNum(valueOf(s))} currency={shownCcy} digits={0} />
       </td>
       <td className="rate-table__delta">
-        <Money amount={toNum(s.change)} currency={data.ccy} signed colored digits={0} />
-        <DeltaBar value={toNum(s.change) ?? 0} scale={scale} />
+        <Money amount={toNum(changeOf(s))} currency={shownCcy} signed colored digits={0} />
+        <DeltaBar value={toNum(changeOf(s)) ?? 0} scale={scale} />
       </td>
     </tr>
   );
   return (
     <Card className="what-if__stress" title={`If the ${words.mover.toLowerCase()} moves`}>
-      <p className="what-if__intro">Today's holdings if {data.quote.pair} were 5, 10 or 15% different from today.</p>
+      <p className="what-if__intro">
+        Today's holdings if {data.quote.pair} were 5, 10 or 15% different from today.
+        {data.exposed
+          ? null
+          : ` Your holdings are all in ${data.ccy === "EUR" ? "euros" : "dollars"}, so only their worth in ${shownCcy === "EUR" ? "euros" : "dollars"} changes.`}
+      </p>
       <table className="rate-table" aria-label={`Holdings value if ${data.quote.pair} moves`}>
         <thead>
           <tr className="rate-table__head">
@@ -262,7 +306,7 @@ function StressCard({ data }: { data: ScenariosDto }) {
             <th scope="row">Today</th>
             <td>{formatNumber(toNum(data.rate_now ? data.rate_now[data.quote.field] : null), 4)}</td>
             <td>
-              <Money amount={toNum(data.value_now)} currency={data.ccy} digits={0} />
+              <Money amount={toNum(nowValue)} currency={shownCcy} digits={0} />
             </td>
             <td className="rate-table__delta">
               —
@@ -320,7 +364,16 @@ function RiskCard({ data }: { data: ScenariosDto }) {
       }
     >
       <div className="what-if__groups">
-        <p className="what-if__intro">Your own history, since {formatDate(cushion.since)}.</p>
+        <p className="what-if__intro">
+          Your own history, since {formatDate(cushion.since)}
+          {data.range === "all" || data.range === "max" ? "" : ` (${RATE_RANGE_LABELS[data.range]})`}.
+        </p>
+        {cushion.too_short ? (
+          <p className="what-if__note">
+            This window is too short to say how much your holdings swing. Pick a longer range to compare.
+          </p>
+        ) : (
+          <>
         <PairBars title="Volatility" hint="how much it swings" eur={toNum(cushion.volatility_eur)} usd={toNum(cushion.volatility_usd)} />
         <PairBars
           title="Deepest fall"
@@ -346,6 +399,8 @@ function RiskCard({ data }: { data: ScenariosDto }) {
           </div>
         ) : (
           <p className="what-if__note">There are not enough down days to compare yet.</p>
+        )}
+          </>
         )}
       </div>
     </Card>
@@ -381,17 +436,19 @@ function tiles(data: ScenariosDto): StatItem[] {
       note: pair,
     });
   }
+  const words = rangeWords(data.range);
   for (const [key, label, word] of [
-    ["value_at_low", "Worth at the low", "lowest"],
-    ["value_at_high", "Worth at the high", "highest"],
+    ["value_at_low", `Worth at ${words.low.replace(/^Low/, "low")}`, "lowest"],
+    ["value_at_high", `Worth at ${words.high.replace(/^High/, "high")}`, "highest"],
   ] as const) {
     const s = by.get(key);
     if (!s) continue;
+    const worthCcy = s.currency ?? data.ccy;
     out.push({
       key,
-      label,
-      tip: `What your holdings would be worth at the ${word} ${pair} rate in the available history.`,
-      value: <Money amount={toNum(s.value) ?? 0} currency={data.ccy} digits={0} />,
+      label: worthCcy === data.ccy ? label : `${label} (in ${worthCcy === "EUR" ? "euros" : "dollars"})`,
+      tip: `What your holdings would be worth at the ${word} ${pair} rate ${words.window}.`,
+      value: <Money amount={toNum(s.value) ?? 0} currency={worthCcy} digits={0} />,
       note: `at ${rateText(s.secondary_display ?? s.secondary ?? null, data.ccy)}${s.date ? ` · ${formatDate(s.date)}` : ""}`,
     });
   }
@@ -399,8 +456,8 @@ function tiles(data: ScenariosDto): StatItem[] {
 }
 
 /** Server-calculated what-if scenarios, with a discrete slider that only selects a row. */
-export function WhatIf({ id, label, currency }: CurrencySectionComponentProps) {
-  const q = useScenarios(currency);
+export function WhatIf({ id, label, currency, range }: CurrencySectionComponentProps) {
+  const q = useScenarios(currency, range);
   const data = q.data;
   const hasRows = Boolean(data?.rows?.length);
   return (

@@ -17,7 +17,7 @@ holdings' falls **in dollars**, compared with the settled ECB rate move that day
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -28,6 +28,7 @@ from investment_dashboard.domain.fx_scenarios import Book
 from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.domain.returns import growth_index
 from investment_dashboard.domain.risk import annualized_volatility, max_drawdown
+from investment_dashboard.readmodels import currency_rate
 from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.readmodels.currency_dollar import QUOTES
 from investment_dashboard.repositories import transactions_repo
@@ -69,6 +70,7 @@ def _row(
     ccy: str,
     avg: Decimal | None,
     be: Decimal | None,
+    other: str,
 ) -> Any:
     """One slider row: ``shown`` is the quote's value, ``rate`` the EUR/USD rate behind it."""
     side = "EUR" if ccy == "EUR" else "USD"
@@ -77,6 +79,9 @@ def _row(
         "rate": dec(rate),
         "rate_display": dec(shown),
         "value": dec(fx_scenarios.value_at(book, rate, side)),
+        # The book in the other currency at this rate: what still moves when the
+        # side's own holdings do not (an all-dollar book in the dollar view).
+        "other_value": dec(fx_scenarios.value_at(book, rate, other)),
         "gain": (
             dec(fx_scenarios.gain_at(book, rate, avg, side))
             if avg is not None and avg > 0
@@ -88,8 +93,37 @@ def _row(
     }
 
 
-def _cushion(session: Session, today: date) -> dict[str, Any] | None:
-    """Volatility and deepest fall per currency + the dollar on the holdings' down days."""
+#: Fewer weekday returns than this say nothing about volatility: the card says so.
+MIN_RETURNS = 20
+#: A window shorter than this many days is "too short" without building any curve.
+MIN_WINDOW_DAYS = 25
+
+
+def range_start(range_key: str, today: date, first: date | None) -> date:
+    """First day of the page range. ``all`` = the first transaction; ``max`` = since 1999."""
+    if range_key == "all":
+        return first or fx_service.HISTORY_START
+    if range_key == "1d":
+        return today - timedelta(days=1)
+    if range_key == "1w":
+        return today - timedelta(days=7)
+    return currency_rate.range_start(range_key, today)
+
+
+def _too_short(since: date) -> dict[str, Any]:
+    return {
+        "since": since.isoformat(),
+        "too_short": True,
+        "down_days": 0,
+        "down_days_dollar_rose": 0,
+    }
+
+
+def _cushion(session: Session, today: date, start: date) -> dict[str, Any] | None:
+    """Volatility and deepest fall per currency + the dollar on the holdings' down days.
+
+    The window starts at the page range's start, or at the first investment if later.
+    """
     from investment_dashboard.readmodels.queries.analytics_query import (  # noqa: PLC0415
         CURVE_RECOMPUTE_TAIL_DAYS,
         build_curve,
@@ -98,6 +132,9 @@ def _cushion(session: Session, today: date) -> dict[str, Any] | None:
     first = transactions_repo.earliest_transaction_date(session)
     if first is None or first >= today:
         return None
+    first = max(first, start)
+    if (today - first).days < MIN_WINDOW_DAYS:
+        return _too_short(first)
     indexes: dict[str, list[tuple[date, Decimal]]] = {}
     for ccy in ("EUR", "USD"):
         # The bounded recompute the Analytics page uses: a cold cache omits old days
@@ -121,6 +158,8 @@ def _cushion(session: Session, today: date) -> dict[str, Any] | None:
         index = growth_index([p.portfolio_value for p in curve], new_money)
         indexes[ccy] = [(p.date, v) for p, v in zip(curve, index, strict=True)]
     returns = {c: fx_scenarios.weekday_returns(pts) for c, pts in indexes.items()}
+    if len(returns["USD"]) < MIN_RETURNS:
+        return _too_short(indexes["USD"][0][0])
     vols = {c: annualized_volatility([r for _d, r in rets]) for c, rets in returns.items()}
     mdds = {c: max_drawdown([v for _d, v in pts]) for c, pts in indexes.items()}
     down = fx_scenarios.dollar_on_down_days(returns["USD"], fx_service.get_settled_rates(session))
@@ -136,6 +175,36 @@ def _cushion(session: Session, today: date) -> dict[str, Any] | None:
     }
 
 
+def _stress(book: Book, spot: Decimal, ccy: str, *, inverse: bool) -> list[dict[str, Any]]:
+    """Today's book with the quote shown moved by each shift, in both currencies."""
+    side = "EUR" if ccy == "EUR" else "USD"
+    other = "USD" if ccy == "EUR" else "EUR"
+    now, other_now = (
+        fx_scenarios.value_at(book, spot, side),
+        fx_scenarios.value_at(book, spot, other),
+    )
+    rows = []
+    for s, r in zip(
+        fx_scenarios.STRESS_SHIFTS, fx_scenarios.stress_rates(spot, inverse=inverse), strict=True
+    ):
+        value, other_value = (
+            fx_scenarios.value_at(book, r, side),
+            fx_scenarios.value_at(book, r, other),
+        )
+        rows.append(
+            {
+                "shift_pct": dec(s),
+                "rate": dec(r),
+                "rate_display": dec(_display(r, ccy)),
+                "value": dec(value),
+                "change": dec(value - now),
+                "other_value": dec(other_value),
+                "other_change": dec(other_value - other_now),
+            }
+        )
+    return rows
+
+
 def _stat(key: str, value: Decimal, unit: str, **extra: Any) -> dict[str, Any]:
     return {"key": key, "value": dec(value), "unit": unit, **extra}
 
@@ -148,6 +217,7 @@ def _stats(
     be: Decimal | None,
     lows_highs: dict[str, tuple[date, Decimal, Decimal]],
     cushion: dict[str, Any] | None,
+    value_ccy: str,
 ) -> list[dict[str, Any]]:
     # The cushion card shows volatility, deepest fall and the down days once; the strip
     # keeps only the four what-if figures.
@@ -181,7 +251,7 @@ def _stats(
                     name,
                     value,
                     "money",
-                    currency=ccy,
+                    currency=value_ccy,
                     secondary=dec(rate),
                     secondary_unit="rate",
                     secondary_display=dec(_display(rate, ccy)),
@@ -191,15 +261,34 @@ def _stats(
     return out
 
 
+def _grid(spot: Decimal | None, ccy: str, *, inverse: bool) -> list[tuple[Decimal, Decimal]]:
+    # The grid runs ascending in the quote shown, so the slider reads left to right.
+    grid = fx_scenarios.quote_slider(inverse)
+    if spot is not None and spot > 0 and grid[0][0] <= _display(spot, ccy) <= grid[-1][0]:
+        # Today's own row carries today's exact rate, so the slider rests on today's
+        # value (not on the nearest 0.005 step) and "compared with today" reads zero.
+        at = fx_scenarios.nearest_index([q for q, _r in grid], _display(spot, ccy))
+        grid[at] = (_display(spot, ccy), spot)
+    return grid
+
+
 def build_scenarios_both(
     session: Session,
     overview: dict[str, dict[str, Any]],
+    range_key: str = "max",
     *,
     now: datetime | None = None,
 ) -> dict[str, dict[str, Any]]:
-    """``{"EUR": ScenariosOut, "USD": ScenariosOut}`` payloads (plain dicts)."""
+    """``{"EUR": ScenariosOut, "USD": ScenariosOut}`` payloads (plain dicts).
+
+    ``range_key`` is the Currency page's range: the low/high marks, the "start of
+    range" mark and the cushion window follow it. The stress table and the slider
+    stay valued on today's book.
+    """
     now = now or datetime.now(UTC)
     today = exchange_today(now)
+    first_tx = transactions_repo.earliest_transaction_date(session)
+    start = range_start(range_key, today, first_tx)
     eur_payload = overview["EUR"]
     on_raw = eur_payload.get("kpis", {}).get("daily_growth_as_of")
     on = date.fromisoformat(str(on_raw)[:10]) if on_raw else today
@@ -207,8 +296,11 @@ def build_scenarios_both(
     daily = sorted(
         (d, r) for d, r in fx_service.get_settled_rates(session).items() if r > 0 and d <= today
     )
-    extremes = fx_trend.range_extremes(daily)
-    cushion = _cushion(session, today)
+    in_range = [(d, r) for d, r in daily if d >= start] or daily[-1:]
+    extremes = fx_trend.range_extremes(in_range)
+    start_rate = in_range[0][1] if in_range else None
+    start_on = in_range[0][0] if in_range else None
+    cushion = _cushion(session, today, start)
 
     out: dict[str, dict[str, Any]] = {}
     for ccy in ("EUR", "USD"):
@@ -218,14 +310,11 @@ def build_scenarios_both(
         avg = _d(life.get("avg_invest_rate"))
         be = _d(life.get("breakeven_rate"))
         side = "EUR" if ccy == "EUR" else "USD"
+        other = "USD" if ccy == "EUR" else "EUR"
+        # Holdings in the other currency are the only ones whose value moves with the rate.
+        exposed = (book.usd if ccy == "EUR" else book.eur) > 0
         inverse = QUOTES[ccy]["field"] == "inverse"
-        # The grid runs ascending in the quote shown, so the slider reads left to right.
-        grid = fx_scenarios.quote_slider(inverse)
-        if spot is not None and spot > 0 and grid[0][0] <= _display(spot, ccy) <= grid[-1][0]:
-            # Today's own row carries today's exact rate, so the slider rests on today's
-            # value (not on the nearest 0.005 step) and "compared with today" reads zero.
-            at = fx_scenarios.nearest_index([q for q, _r in grid], _display(spot, ccy))
-            grid[at] = (_display(spot, ccy), spot)
+        grid = _grid(spot, ccy, inverse=inverse)
         shown_grid = [q for q, _r in grid]
         payload: dict[str, Any] = {
             "ccy": ccy,
@@ -238,8 +327,12 @@ def build_scenarios_both(
             "rate_now": _rv(spot),
             "avg_rate": _rv(avg),
             "breakeven": _rv(be),
-            "rows": [_row(book, q, r, ccy, avg, be) for q, r in grid],
+            "rows": [_row(book, q, r, ccy, avg, be, other) for q, r in grid],
             "cushion": cushion,
+            "range": range_key,
+            "range_start": start.isoformat(),
+            "exposed": exposed,
+            "other_ccy": other,
         }
         marks: list[dict[str, Any]] = []
         lows_highs: dict[str, tuple[date, Decimal, Decimal]] = {}
@@ -250,6 +343,7 @@ def build_scenarios_both(
             ("average", avg, None),
             ("breakeven", be, None),
             ("today", spot, None),
+            ("range_start", start_rate, start_on),
             (
                 "historic_low",
                 getattr(extremes, low_end) if extremes else None,
@@ -272,8 +366,11 @@ def build_scenarios_both(
                     "row_index": fx_scenarios.nearest_index(shown_grid, _display(rate, ccy)),
                 }
             )
-            if on_day is not None:
-                lows_highs[key] = (on_day, rate, fx_scenarios.value_at(book, rate, side))
+            if on_day is not None and key != "range_start":
+                # Not exposed: the side's own value never moves, so the figure that
+                # still matters is the book in the other currency at that rate.
+                shown_side = side if exposed else other
+                lows_highs[key] = (on_day, rate, fx_scenarios.value_at(book, rate, shown_side))
         payload["marks"] = marks
         sensitivity: dict[str, Any] | None = None
         if spot is not None and spot > 0:
@@ -283,26 +380,16 @@ def build_scenarios_both(
                 book, fx_scenarios.one_cent_rate(spot, inverse=inverse), side
             )
             payload["value_now"] = dec(value_now)
-            payload["stress"] = [
-                {
-                    "shift_pct": dec(s),
-                    "rate": dec(r),
-                    "rate_display": dec(_display(r, ccy)),
-                    "value": dec(fx_scenarios.value_at(book, r, side)),
-                    "change": dec(fx_scenarios.value_at(book, r, side) - value_now),
+            payload["value_now_other"] = dec(fx_scenarios.value_at(book, spot, other))
+            payload["stress"] = _stress(book, spot, ccy, inverse=inverse)
+            # Not exposed: a cent changes nothing, so no sensitivity tile is shown.
+            if exposed:
+                sensitivity = {
+                    "rate": dec(spot),
+                    "value_at_rate": dec(value_now),
+                    "value_at_rate_plus": dec(plus),
+                    "change": dec(plus - value_now),
                 }
-                for s, r in zip(
-                    fx_scenarios.STRESS_SHIFTS,
-                    fx_scenarios.stress_rates(spot, inverse=inverse),
-                    strict=True,
-                )
-            ]
-            sensitivity = {
-                "rate": dec(spot),
-                "value_at_rate": dec(value_now),
-                "value_at_rate_plus": dec(plus),
-                "change": dec(plus - value_now),
-            }
         payload["sensitivity"] = sensitivity
         payload["stats"] = _stats(
             ccy,
@@ -311,6 +398,7 @@ def build_scenarios_both(
             be=be,
             lows_highs=lows_highs,
             cushion=cushion,
+            value_ccy=ccy if exposed else other,
         )
         out[ccy] = payload
     return out

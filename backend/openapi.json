@@ -3706,6 +3706,11 @@
             "title": "Since",
             "type": "string"
           },
+          "too_short": {
+            "default": false,
+            "title": "Too Short",
+            "type": "boolean"
+          },
           "volatility_eur": {
             "anyOf": [
               {
@@ -15118,6 +15123,7 @@
               "average",
               "breakeven",
               "today",
+              "range_start",
               "historic_low",
               "historic_high"
             ],
@@ -15162,6 +15168,18 @@
               }
             ],
             "title": "Gain"
+          },
+          "other_value": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Value"
           },
           "rate": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
@@ -15398,6 +15416,11 @@
               }
             ]
           },
+          "exposed": {
+            "default": true,
+            "title": "Exposed",
+            "type": "boolean"
+          },
           "generated_at": {
             "title": "Generated At",
             "type": "string"
@@ -15419,8 +15442,45 @@
             "title": "Min Rate",
             "type": "string"
           },
+          "other_ccy": {
+            "default": "USD",
+            "enum": [
+              "EUR",
+              "USD"
+            ],
+            "title": "Other Ccy",
+            "type": "string"
+          },
           "quote": {
             "$ref": "#/components/schemas/DollarQuote"
+          },
+          "range": {
+            "default": "max",
+            "enum": [
+              "1d",
+              "1w",
+              "1m",
+              "3m",
+              "ytd",
+              "1y",
+              "all",
+              "5y",
+              "10y",
+              "max"
+            ],
+            "title": "Range",
+            "type": "string"
+          },
+          "range_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Range Start"
           },
           "rate_now": {
             "anyOf": [
@@ -15479,6 +15539,18 @@
               }
             ],
             "title": "Value Now"
+          },
+          "value_now_other": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Now Other"
           }
         },
         "required": [
@@ -16953,6 +17025,30 @@
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Change",
             "type": "string"
+          },
+          "other_change": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Change"
+          },
+          "other_value": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Value"
           },
           "rate": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
@@ -20929,6 +21025,30 @@
     "/api/currency/scenarios/both": {
       "get": {
         "operationId": "get_scenarios_both_api_currency_scenarios_both_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "range",
+            "required": false,
+            "schema": {
+              "default": "max",
+              "enum": [
+                "1d",
+                "1w",
+                "1m",
+                "3m",
+                "ytd",
+                "1y",
+                "all",
+                "5y",
+                "10y",
+                "max"
+              ],
+              "title": "Range",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -20939,6 +21059,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Get Scenarios Both",

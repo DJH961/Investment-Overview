@@ -1,0 +1,133 @@
+@use "../../styles/mixins" as m;
+
+// Tablet and up: a compact segmented row in the sticky section bar.
+.range-picker {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 2px;
+  padding: 2px;
+  background: var(--color-surface-2);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+
+  &__item {
+    min-width: var(--control-height-sm);
+    height: calc(var(--control-height-sm) - 4px);
+    padding: 0 var(--space-2);
+    border-radius: calc(var(--radius-md) - 3px);
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    font-variant-numeric: tabular-nums;
+    transition:
+      background-color var(--duration-base) var(--ease-standard),
+      color var(--duration-fast) var(--ease-standard);
+
+    &:hover {
+      color: var(--color-fg);
+    }
+
+    &:focus-visible {
+      @include m.focus-ring;
+    }
+
+    // The main range (your whole investing time): heavier type, not another hue.
+    &--emphasis {
+      color: var(--color-fg);
+      font-weight: var(--font-weight-semibold);
+    }
+
+    &[data-state="on"] {
+      background: var(--color-surface);
+      color: var(--color-fg);
+      font-weight: var(--font-weight-semibold);
+      box-shadow:
+        0 0 0 var(--border-width) var(--color-border),
+        var(--shadow-1);
+    }
+
+    &--emphasis[data-state="on"] {
+      font-weight: var(--font-weight-semibold);
+    }
+  }
+
+  // Phone: one chip, the current range always readable on it.
+  &__chip {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: var(--tap-min);
+    padding: 0 var(--space-3);
+    background: var(--color-surface-2);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-full);
+    color: var(--color-fg);
+    font-size: var(--font-size-sm);
+    white-space: nowrap;
+
+    &:focus-visible {
+      @include m.focus-ring;
+    }
+  }
+
+  &__chip-label {
+    color: var(--color-muted);
+  }
+
+  &__chip-value {
+    font-weight: var(--font-weight-semibold);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__chip-icon {
+    width: var(--icon-sm);
+    height: var(--icon-sm);
+    color: var(--color-muted);
+  }
+
+  &__menu {
+    z-index: var(--z-popover);
+    min-width: 12rem;
+    padding: var(--space-1);
+    background: var(--color-surface);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-2);
+  }
+
+  &__option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    min-height: var(--tap-min);
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-md);
+    cursor: pointer;
+    outline: none;
+    user-select: none;
+
+    &[data-highlighted] {
+      background: var(--color-surface-2);
+    }
+
+    &--emphasis {
+      font-weight: var(--font-weight-semibold);
+    }
+
+    &[data-state="checked"] {
+      font-weight: var(--font-weight-semibold);
+    }
+  }
+
+  &__option-check {
+    display: grid;
+
+    svg {
+      width: var(--icon-sm);
+      height: var(--icon-sm);
+    }
+  }
+}

@@ -6,8 +6,8 @@ import { EmptyState } from "../../components/EmptyState";
 import { ErrorState } from "../../components/ErrorState";
 import { PageHeader } from "../../components/PageHeader";
 import { RateChart } from "../../components/RateChart";
-import { SectionBar } from "../../components/SectionBar";
-import { SegmentedControl } from "../../components/SegmentedControl";
+import { RangePicker, SectionBar } from "../../components/SectionBar";
+
 import { Skeleton } from "../../components/Skeleton";
 import { StatStrip } from "../../components/StatStrip";
 import { formatDate } from "../../lib/format";
@@ -76,6 +76,25 @@ const stripRank = (key: string) => {
   return i < 0 ? STRIP_ORDER.length : i;
 };
 
+const RANGE_OPTIONS = RATE_RANGES.map((r) => ({
+  value: r,
+  label: RATE_RANGE_LABELS[r],
+  hint: r === "all" ? "All, since you started" : r === "max" ? "Max, since 1999" : undefined,
+}));
+
+/** The page range picker: in the sticky section bar, so it is in reach from every section. */
+function PageRangePicker({ range }: { range: CurrencyRangeState }) {
+  return (
+    <RangePicker
+      label="Range"
+      options={RANGE_OPTIONS}
+      value={range.range}
+      emphasis="all"
+      onChange={(r) => range.setRange(r as RateRange)}
+    />
+  );
+}
+
 export function Currency() {
   const { sub } = useParams();
   const rangeState = useCurrencyRangeState();
@@ -143,10 +162,11 @@ function CurrencyMain({ range }: { range: CurrencyRangeState }) {
         />
       ) : (
         <div className="currency-page__stack">
-          <SectionBar items={items} label="Currency sections" onSelect={forceUpTo} />
+          <SectionBar items={items} label="Currency sections" onSelect={forceUpTo} extra={<PageRangePicker range={range} />} />
           {/* The page leads with the rate; the strip follows. Today's split stays on the
-              Overview's Currency card: this page shows only views the Overview has not. */}
-          <RateChart currency={currency} range={range.range} onRangeChange={range.setRange} />
+              Overview's Currency card: this page shows only views the Overview has not.
+              The range picker is in the sticky bar above, so the chart hides its own. */}
+          <RateChart currency={currency} range={range.range} onRangeChange={range.setRange} showRangePicker={false} />
           {stats.length > 0 ? (
             <StatStrip
               className="stat-strip--rows"
@@ -192,13 +212,7 @@ function CurrencySubPageView({
         titleOnPhone
         actions={
           page.ranged ? (
-            <SegmentedControl
-              ariaLabel="Range"
-              size="sm"
-              options={RATE_RANGES.map((r) => ({ value: r, label: RATE_RANGE_LABELS[r] }))}
-              value={range.range}
-              onChange={(r) => range.setRange(r as RateRange)}
-            />
+            <PageRangePicker range={range} />
           ) : undefined
         }
       />

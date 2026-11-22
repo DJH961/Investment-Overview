@@ -4,10 +4,10 @@ import { RATE_RANGES, type RateRange } from "../../lib/queries/currencyRate";
 import { usePersistentState } from "../../lib/usePersistentState";
 
 /**
- * The Currency page's one range (v7.2). The picker sits on the rate chart at the top;
- * the rate chart, Impact and The dollar all describe this window. What if has none.
+ * The Currency page's one range (v7.2). The picker sits in the sticky section bar;
+ * the rate chart, Impact, The dollar and What if all describe this window.
  * The URL (`?range=`) wins, so a link or a sub-page keeps the window; otherwise the
- * last choice on this device.
+ * last choice on this device, else `all` (since your first transaction).
  */
 export type CurrencyRange = RateRange;
 
@@ -22,7 +22,7 @@ export const CurrencyRangeContext = createContext<CurrencyRangeState | null>(nul
 
 /** Owner of the range state: the Currency page (and its sub-pages) call this once. */
 export function useCurrencyRangeState(): CurrencyRangeState {
-  const [stored, setStored] = usePersistentState<CurrencyRange>("currency.rate.range", "1y", isCurrencyRange);
+  const [stored, setStored] = usePersistentState<CurrencyRange>("currency.rate.range", "all", isCurrencyRange);
   const [params, setParams] = useSearchParams();
   const asked = params.get("range");
   const range = isCurrencyRange(asked) ? asked : stored;

@@ -112,6 +112,7 @@ GET_ENDPOINTS: tuple[str, ...] = (
     *(f"/api/currency/effect/both?range={r}" for r in EFFECT_RANGES),
     *(f"/api/currency/dollar/both?range={r}" for r in RATE_RANGES),
     "/api/currency/scenarios/both",
+    *(f"/api/currency/scenarios/both?range={r}" for r in dict.fromkeys((*RATE_RANGES, "all"))),
     "/api/brief",
     "/api/accounts",
     "/api/instruments",

@@ -46,8 +46,10 @@ def _dollar_both(session: Session, range_key: str) -> ByCurrency[DollarOut]:
 
 
 @cached_read
-def _scenarios_both(session: Session) -> ByCurrency[ScenariosOut]:
-    payloads = scenarios_readmodel.build_scenarios_both(session, _overview_payloads(session))
+def _scenarios_both(session: Session, range_key: str) -> ByCurrency[ScenariosOut]:
+    payloads = scenarios_readmodel.build_scenarios_both(
+        session, _overview_payloads(session), range_key
+    )
     return ByCurrency[ScenariosOut].model_validate(
         {c: ScenariosOut.model_validate(p) for c, p in payloads.items()}
     )
@@ -67,6 +69,9 @@ def get_dollar_both(
 @router.get("/scenarios/both", response_model=ByCurrency[ScenariosOut])
 @conditional_both("currency_scenarios")
 def get_scenarios_both(
-    request: Request, response: Response, session: SessionDep
+    request: Request,
+    response: Response,
+    session: SessionDep,
+    range_key: Annotated[RateRange, Query(alias="range")] = "max",
 ) -> ByCurrency[ScenariosOut]:
-    return _scenarios_both(session=session)
+    return _scenarios_both(session=session, range_key=range_key)
