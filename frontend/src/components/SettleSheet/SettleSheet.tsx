@@ -80,7 +80,7 @@ function titleOf(row: EstimateRow): string {
  * sent. One Save confirms the row (a buy's core-fund leg follows on the server) and moves on
  * to the next draft, or closes after the last.
  */
-export function SettleSheet({ rows, onClose }: SettleSheetProps) {
+function SettleSheetBody({ rows, onClose }: SettleSheetProps) {
   const open = rows.length > 0;
   const [index, setIndex] = useState(0);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
@@ -262,4 +262,9 @@ export function SettleSheet({ rows, onClose }: SettleSheetProps) {
       </div>
     </Sheet>
   );
+}
+
+/** Mounts the sheet only while there are drafts, so a closed sheet reads no prefs or queries. */
+export function SettleSheet(props: SettleSheetProps) {
+  return props.rows.length > 0 ? <SettleSheetBody {...props} /> : null;
 }
