@@ -8,12 +8,12 @@ import { EmptyState } from "../../components/EmptyState";
 import { ErrorState } from "../../components/ErrorState";
 import { PageHeader } from "../../components/PageHeader";
 import { ReminderCard } from "../../components/ReminderCard";
-import { Sheet } from "../../components/Sheet";
 import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
 import { formatDate, formatMoney } from "../../lib/format";
 import { usePlanAction, usePlans, type RecurringPlan } from "../../lib/queries/recurring";
 import { KIND_LABEL, PlanForm } from "./PlanForm";
+import { FormShell } from "./FormShell";
 import { SetupFlow } from "./SetupFlow";
 import "./Recurring.scss";
 
@@ -180,7 +180,21 @@ export function Recurring() {
       <Card flush>{body}</Card>
 
       <SetupFlow open={setup} onClose={() => setSetup(false)} />
-      <Sheet open={adding !== null} onOpenChange={(o) => !o && setAdding(null)} title="Add a plan">
+      <FormShell
+        open={adding !== null}
+        onClose={() => setAdding(null)}
+        title="Add a plan"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setAdding(null)}>
+              Cancel
+            </Button>
+            <Button type="submit" form="recurring-plan-form" variant="primary">
+              Add plan
+            </Button>
+          </>
+        }
+      >
         {adding && (
           <>
             <div className="recurring-page__kinds" role="group" aria-label="Kind of plan">
@@ -190,16 +204,32 @@ export function Recurring() {
                 </Button>
               ))}
             </div>
-            <PlanForm key={adding} kind={adding} hideKind onSaved={() => setAdding(null)} />
+            <PlanForm key={adding} kind={adding} hideKind hideActions formId="recurring-plan-form" onSaved={() => setAdding(null)} />
           </>
         )}
-      </Sheet>
-      <Sheet open={editing !== null} onOpenChange={(o) => !o && setEditing(null)} title="Edit plan">
+      </FormShell>
+      <FormShell
+        open={editing !== null}
+        onClose={() => setEditing(null)}
+        title="Edit plan"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setEditing(null)}>
+              Cancel
+            </Button>
+            <Button type="submit" form="recurring-plan-form" variant="primary">
+              Save plan
+            </Button>
+          </>
+        }
+      >
         {editing && (
           <PlanForm
             key={editing.id}
             kind={editing.kind}
             id={editing.id}
+            hideActions
+            formId="recurring-plan-form"
             initial={{
               unit: editing.unit,
               every: editing.every,
@@ -215,7 +245,7 @@ export function Recurring() {
             onSaved={() => setEditing(null)}
           />
         )}
-      </Sheet>
+      </FormShell>
       <Dialog
         open={deleting !== null}
         onOpenChange={(o) => !o && setDeleting(null)}

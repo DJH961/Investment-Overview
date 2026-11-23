@@ -1,5 +1,5 @@
 import { Plus, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "../../components/Button";
 import { Field } from "../../components/Field";
 import { Input } from "../../components/Input";
@@ -54,12 +54,14 @@ export interface PlanFormProps {
   skipLabel?: string;
   /** The deposit these buys are paid from (dollars): shows "Total $X of $Y" under the holdings. */
   depositTotal?: number;
+  /** Reports the cadence as it is edited (the setup flow re-splits the buys when it changes). */
+  onCadenceChange?: (c: { unit: string; every: number; anchor: number | null }) => void;
   onSaved: (body?: RecurringPlanInput) => void;
   onSkip?: () => void;
 }
 
 /** One form for the three plan kinds (the setup flow and the edit sheet both use it). */
-export function PlanForm({ kind, id, initial, hideKind, hideActions, formId, depositTotal, saveLabel = "Save plan", skipLabel, onSaved, onSkip }: PlanFormProps) {
+export function PlanForm({ kind, id, initial, hideKind, hideActions, formId, depositTotal, onCadenceChange, saveLabel = "Save plan", skipLabel, onSaved, onSkip }: PlanFormProps) {
   const accounts = useAccounts();
   const instruments = useInstruments();
   const save = useSavePlan();
@@ -83,6 +85,11 @@ export function PlanForm({ kind, id, initial, hideKind, hideActions, formId, dep
   const [provider, setProvider] = useState<string>(initial?.provider ?? "revolut");
   const [fee, setFee] = useState(plain(initial?.expected_fee));
 
+  const anchorNum = anchor === "" || unit === "days" ? null : Number(anchor);
+  useEffect(() => {
+    onCadenceChange?.({ unit, every: Number(every) || 1, anchor: anchorNum });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- report only when the cadence itself changes
+  }, [unit, every, anchorNum]);
   const legsTotal = legs.reduce((sum, l) => sum + (l.mode === "amount" ? Number(l.value) || 0 : 0), 0);
   const fmtUsd = (n: number) => formatMoney(n, "USD", { digits: Number.isInteger(n) ? 0 : 2 });
 
@@ -209,7 +216,7 @@ export function PlanForm({ kind, id, initial, hideKind, hideActions, formId, dep
           ))}
           {depositTotal != null && depositTotal > 0 && (
             <p className="recurring-page__legs-total" aria-live="polite">
-              Total {fmtUsd(legsTotal)} of {fmtUsd(depositTotal)} deposited
+              Total {fmtUsd(legsTotal)} of {fmtUsd(depositTotal)} for each buy
               {legsTotal > depositTotal ? " (more than the deposit)" : legsTotal < depositTotal ? " (less than the deposit)" : ""}
             </p>
           )}

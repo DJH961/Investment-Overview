@@ -189,6 +189,9 @@ class ConversionEstimateOut(ApiModel):
     off_pct: DecStr | None = Field(description="The provider's average distance from the ECB rate.")
     rate: DecStr = Field(description="ecb_rate x (1 + off_pct): USD per EUR.")
     usd: DecStr = Field(description="Whole dollars the conversion yields: (eur - fee) x rate.")
+    deposit_usd: DecStr = Field(
+        description="What each deposit run takes from it (spread over the deposit cadence)."
+    )
 
 
 class SplitLegOut(ApiModel):
@@ -198,7 +201,8 @@ class SplitLegOut(ApiModel):
 
 
 class BuySplitOut(ApiModel):
-    total: DecStr
+    total: DecStr = Field(description="What each buy run invests (whole dollars).")
+    deposit_total: DecStr = Field(description="The deposit it is paid from, per deposit run.")
     method: Literal["allocation", "history", "equal", "none"] = Field(
         description="What the split follows: the allocation plan, the recent buys, or equal parts."
     )

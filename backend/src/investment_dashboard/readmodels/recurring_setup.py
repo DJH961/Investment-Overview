@@ -38,6 +38,8 @@ class ConversionEstimate:
     rate: Decimal
     #: Whole dollars the conversion yields: ``(eur - fee) * rate``.
     usd: Decimal
+    #: What each deposit run takes from it: ``usd`` spread over the deposit cadence (whole dollars).
+    deposit_usd: Decimal
 
 
 @dataclass(frozen=True)
@@ -49,7 +51,10 @@ class SplitLeg:
 
 @dataclass(frozen=True)
 class BuySplit:
+    #: What each buy run invests (whole dollars).
     total: Decimal
+    #: The deposit it comes from, per deposit run (whole dollars; equals ``total`` without cadences).
+    deposit_total: Decimal
     #: ``allocation`` | ``history`` | ``equal`` | ``none`` (no holdings known for the account).
     method: str
     allocation_name: str | None
@@ -59,7 +64,13 @@ class BuySplit:
 
 
 def conversion_estimate(
-    session: Session, *, eur: Decimal, provider: str, fee_eur: Decimal | None = None
+    session: Session,
+    *,
+    eur: Decimal,
+    provider: str,
+    fee_eur: Decimal | None = None,
+    conversion: tuple[str, int] | None = None,
+    deposit: tuple[str, int] | None = None,
 ) -> ConversionEstimate | None:
     """What converting ``eur`` with ``provider`` yields in whole dollars; ``None`` without an ECB rate."""
     ecb = fx_service.get_settled_rate(session, exchange_today(), base="EUR", quote="USD")
@@ -73,8 +84,16 @@ def conversion_estimate(
         else recurring_service.last_fee_for_provider(session, provider)
     )
     fee = fee or Decimal(0)
-    usd = ((eur - fee) * rate).quantize(_ONE, rounding=ROUND_HALF_UP)
-    return ConversionEstimate(eur, fee, ecb, avg, rate, usd)
+    exact = (eur - fee) * rate
+    usd = exact.quantize(_ONE, rounding=ROUND_HALF_UP)
+    per_deposit = (
+        exact
+        if conversion is None or deposit is None
+        else recurrence.per_run_amount(exact, paid=conversion, spent=deposit)
+    )
+    return ConversionEstimate(
+        eur, fee, ecb, avg, rate, usd, per_deposit.quantize(_ONE, rounding=ROUND_HALF_UP)
+    )
 
 
 def split_whole_dollars(total: Decimal, weights: Mapping[int, Decimal]) -> dict[int, Decimal]:
@@ -117,12 +136,31 @@ def _account_holdings(
     return symbols, recent
 
 
-def buy_split(session: Session, *, account_id: int, total: Decimal) -> BuySplit:
-    """Split ``total`` dollars across the holdings ``account_id`` buys (see the module docstring)."""
+def buy_split(
+    session: Session,
+    *,
+    account_id: int,
+    total: Decimal,
+    deposit: tuple[str, int] | None = None,
+    buy: tuple[str, int] | None = None,
+) -> BuySplit:
+    """Split what each buy run invests across the holdings ``account_id`` buys.
+
+    ``total`` is the deposit amount. With both cadences known (``deposit`` and ``buy`` as
+    ``(unit, every)``) each buy run invests its share of it: a monthly deposit spent weekly
+    is ``total x 12 / 52`` a run, so the deposit is invested in full each month. Without
+    them the whole ``total`` is one run.
+    """
     symbols, recent = _account_holdings(session, account_id)
-    whole = total.quantize(_ONE, rounding=ROUND_HALF_UP)
+    deposit_whole = total.quantize(_ONE, rounding=ROUND_HALF_UP)
+    run = (
+        total
+        if deposit is None or buy is None
+        else recurrence.per_run_amount(total, paid=deposit, spent=buy)
+    )
+    whole = run.quantize(_ONE, rounding=ROUND_HALF_UP)
     if not symbols or whole <= 0:
-        return BuySplit(whole, "none", None, False, ())
+        return BuySplit(whole, deposit_whole, "none", None, False, ())
 
     def legs_of(parts: Mapping[int, Decimal]) -> tuple[SplitLeg, ...]:
         return tuple(
@@ -145,11 +183,11 @@ def buy_split(session: Session, *, account_id: int, total: Decimal) -> BuySplit:
         }
         parts = split_whole_dollars(whole, weights)
         if parts:
-            return BuySplit(whole, "allocation", name, True, legs_of(parts))
+            return BuySplit(whole, deposit_whole, "allocation", name, True, legs_of(parts))
     except rebalance.RebalanceInputError:
         pass
     history = split_whole_dollars(whole, recent)
     if history:
-        return BuySplit(whole, "history", name, has_plan, legs_of(history))
+        return BuySplit(whole, deposit_whole, "history", name, has_plan, legs_of(history))
     equal = split_whole_dollars(whole, {i: Decimal(1) for i in symbols})
-    return BuySplit(whole, "equal", name, has_plan, legs_of(equal))
+    return BuySplit(whole, deposit_whole, "equal", name, has_plan, legs_of(equal))

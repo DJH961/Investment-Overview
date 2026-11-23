@@ -125,6 +125,29 @@ def roll_to_session(day: date) -> date:
     return day
 
 
+_RUNS_PER_YEAR = {"months": 12, "weeks": 52, "days": 365}
+
+
+def runs_per_year(unit: str, every: int) -> Decimal:
+    """How many times a plan runs in a year (12 months, 52 weeks or 365 days, divided by ``every``)."""
+    if unit not in _RUNS_PER_YEAR or every < 1:
+        raise ValueError("unit must be days, weeks or months and every at least 1")
+    return Decimal(_RUNS_PER_YEAR[unit]) / every
+
+
+def per_run_amount(total: Decimal, *, paid: tuple[str, int], spent: tuple[str, int]) -> Decimal:
+    """What each run of a ``spent`` cadence invests so ``total`` paid on a ``paid`` cadence is used up.
+
+    ``total x runs_per_year(paid) / runs_per_year(spent)``: a monthly 2,750 spent weekly is
+    2,750 x 12 / 52 = 634.62 a week; spent monthly it stays 2,750. Unrounded.
+    """
+    # One division at the end, so the same cadence on both sides gives ``total`` exactly.
+    runs_paid, runs_spent = runs_per_year(*paid), runs_per_year(*spent)  # validates both
+    del runs_paid, runs_spent
+    num = total * _RUNS_PER_YEAR[paid[0]] * spent[1]
+    return num / (_RUNS_PER_YEAR[spent[0]] * paid[1])
+
+
 def buy_figures(
     *, close: Decimal, amount: Decimal | None, shares: Decimal | None
 ) -> tuple[Decimal, Decimal]:

@@ -1680,6 +1680,12 @@
             ],
             "title": "Allocation Name"
           },
+          "deposit_total": {
+            "description": "The deposit it is paid from, per deposit run.",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Deposit Total",
+            "type": "string"
+          },
           "has_allocation_plan": {
             "title": "Has Allocation Plan",
             "type": "boolean"
@@ -1703,6 +1709,7 @@
             "type": "string"
           },
           "total": {
+            "description": "What each buy run invests (whole dollars).",
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Total",
             "type": "string"
@@ -1710,6 +1717,7 @@
         },
         "required": [
           "total",
+          "deposit_total",
           "method",
           "allocation_name",
           "has_allocation_plan",
@@ -2817,6 +2825,12 @@
       },
       "ConversionEstimateOut": {
         "properties": {
+          "deposit_usd": {
+            "description": "What each deposit run takes from it (spread over the deposit cadence).",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Deposit Usd",
+            "type": "string"
+          },
           "ecb_rate": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Ecb Rate",
@@ -2864,7 +2878,8 @@
           "ecb_rate",
           "off_pct",
           "rate",
-          "usd"
+          "usd",
+          "deposit_usd"
         ],
         "title": "ConversionEstimateOut",
         "type": "object"
@@ -27989,6 +28004,102 @@
                 }
               ],
               "title": "Account Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "conversion_unit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "days",
+                    "weeks",
+                    "months"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Conversion Unit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "conversion_every",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Conversion Every",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "deposit_unit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "days",
+                    "weeks",
+                    "months"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Deposit Unit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "deposit_every",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Deposit Every",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "buy_unit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "days",
+                    "weeks",
+                    "months"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Buy Unit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "buy_every",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Buy Every",
+              "type": "integer"
             }
           }
         ],

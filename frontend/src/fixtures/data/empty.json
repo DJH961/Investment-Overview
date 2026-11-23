@@ -60270,15 +60270,35 @@
   "rows": []
  },
  "GET /api/recurring/plans": [],
- "GET /api/recurring/setup-plan?eur_amount=250&provider=revolut&buy_total_usd=2750&account_id=1": {
+ "GET /api/recurring/setup-plan?buy_total_usd=134&account_id=1&deposit_unit=weeks&deposit_every=2&buy_unit=weeks&buy_every=1": {
   "conversion": null,
   "split": {
    "allocation_name": null,
+   "deposit_total": "134",
    "has_allocation_plan": false,
    "legs": [],
    "method": "none",
-   "total": "2750"
+   "total": "67"
   }
+ },
+ "GET /api/recurring/setup-plan?buy_total_usd=2750&account_id=1&deposit_unit=months&deposit_every=1&buy_unit=weeks&buy_every=1": {
+  "conversion": null,
+  "split": {
+   "allocation_name": null,
+   "deposit_total": "2750",
+   "has_allocation_plan": false,
+   "legs": [],
+   "method": "none",
+   "total": "635"
+  }
+ },
+ "GET /api/recurring/setup-plan?eur_amount=250&provider=revolut&conversion_unit=months&conversion_every=1&deposit_unit=months&deposit_every=1": {
+  "conversion": null,
+  "split": null
+ },
+ "GET /api/recurring/setup-plan?eur_amount=250&provider=revolut&conversion_unit=months&conversion_every=1&deposit_unit=weeks&deposit_every=2": {
+  "conversion": null,
+  "split": null
  },
  "GET /api/recurring/suggestions": [],
  "GET /api/refresh/status": {

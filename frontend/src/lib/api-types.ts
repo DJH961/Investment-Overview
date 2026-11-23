@@ -2740,6 +2740,11 @@ export interface components {
         BuySplitOut: {
             /** Allocation Name */
             allocation_name: string | null;
+            /**
+             * Deposit Total
+             * @description The deposit it is paid from, per deposit run.
+             */
+            deposit_total: string;
             /** Has Allocation Plan */
             has_allocation_plan: boolean;
             /** Legs */
@@ -2750,7 +2755,10 @@ export interface components {
              * @enum {string}
              */
             method: "allocation" | "history" | "equal" | "none";
-            /** Total */
+            /**
+             * Total
+             * @description What each buy run invests (whole dollars).
+             */
             total: string;
         };
         /** ByCurrency[AllocationsResponse] */
@@ -3121,6 +3129,11 @@ export interface components {
         };
         /** ConversionEstimateOut */
         ConversionEstimateOut: {
+            /**
+             * Deposit Usd
+             * @description What each deposit run takes from it (spread over the deposit cadence).
+             */
+            deposit_usd: string;
             /** Ecb Rate */
             ecb_rate: string;
             /** Eur */
@@ -13463,6 +13476,12 @@ export interface operations {
                 /** @description Step 3: the dollars to buy with (step 2's deposit). */
                 buy_total_usd?: number | string | null;
                 account_id?: number | null;
+                conversion_unit?: ("days" | "weeks" | "months") | null;
+                conversion_every?: number;
+                deposit_unit?: ("days" | "weeks" | "months") | null;
+                deposit_every?: number;
+                buy_unit?: ("days" | "weeks" | "months") | null;
+                buy_every?: number;
             };
             header?: never;
             path?: never;
