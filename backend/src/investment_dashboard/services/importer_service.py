@@ -416,7 +416,7 @@ def import_csv(  # noqa: PLR0912, PLR0915
     # unless the user chose "import as new" for them in the preview.
     matches = import_update_service.classify_rows(session, account_id, parsed_rows)
     updates = import_update_service.apply_updates(
-        session, account_id, parsed_rows, matches, resolutions
+        session, account_id, parsed_rows, matches, resolutions, import_batch_id
     )
 
     inserted = 0

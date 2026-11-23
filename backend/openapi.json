@@ -10170,6 +10170,11 @@
               }
             ],
             "title": "Undone Rows"
+          },
+          "updated_count": {
+            "default": 0,
+            "title": "Updated Count",
+            "type": "integer"
           }
         },
         "required": [
@@ -11139,6 +11144,11 @@
             ],
             "title": "Latest Date"
           },
+          "restored": {
+            "default": 0,
+            "title": "Restored",
+            "type": "integer"
+          },
           "rows": {
             "items": {
               "$ref": "#/components/schemas/ImportUndoRow"
@@ -11209,6 +11219,11 @@
               }
             ],
             "title": "Invalidated From"
+          },
+          "restored": {
+            "default": 0,
+            "title": "Restored",
+            "type": "integer"
           }
         },
         "required": [

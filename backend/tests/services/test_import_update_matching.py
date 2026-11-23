@@ -151,7 +151,7 @@ def test_confirm_overwrites_existing_row_and_keeps_its_id(
     assert after.id == buy_id
     assert after.net_native == Decimal("-2204.99")
     assert after.external_id == new_ext != old_ext
-    assert after.import_batch_id == old_batch
+    assert after.import_batch_id == result.import_batch_id != old_batch  # joins this batch
     assert len(transactions_repo.list_transactions(session, account_id=account_id)) == 6
     # The same file again is now all exact duplicates.
     again = _stage(session, account_id, NEAR)

@@ -6,8 +6,9 @@ still attached to the batch:
 
 1. typed confirmation (``UNDO``) — checked here, server side;
 2. a sealed backup first (when backups are configured; a failed backup aborts);
-3. delete the batch's transactions (rows edited by hand since the import were
-   detached from the batch and are kept);
+3. put the transactions the import *updated* back as they were (figures, external id,
+   est. flag), then delete the batch's inserted transactions (rows edited by hand since
+   the import were detached from the batch and are kept as they are);
 4. drop cached valuations from the earliest affected trade date and the
    intraday week curve, and tell open tabs to refresh;
 5. mark the batch ``undone`` and log it in the ``imports`` activity log.
@@ -29,6 +30,7 @@ from investment_dashboard.activity_log import activity
 from investment_dashboard.errors import ConflictError, NotFoundError, ValidationError
 from investment_dashboard.repositories import accounts_repo, import_batches_repo
 from investment_dashboard.repositories.import_batches_repo import BATCH_ACTIVE
+from investment_dashboard.services import import_update_service
 
 if TYPE_CHECKING:
     from investment_dashboard.models import ImportBatch
@@ -52,6 +54,8 @@ class BatchView:
     row_count: int
     current_rows: int
     duplicate_count: int
+    #: Existing transactions the import updated (undo restores them).
+    updated_count: int
     status: str
     actor: str | None
     undone_at: datetime | None
@@ -78,6 +82,8 @@ class UndoPreview:
     total: int
     #: Rows imported by the batch but edited/deleted by hand since (kept on undo).
     detached: int
+    #: Updated rows an undo would put back as they were (not deleted).
+    restored: int
     earliest_date: date | None
     latest_date: date | None
     confirm_word: str
@@ -89,6 +95,7 @@ class UndoResult:
     deleted: int
     backup: str | None
     invalidated_from: date | None
+    restored: int = 0
 
 
 def _views(session: Session, batches: list[ImportBatch]) -> list[BatchView]:
@@ -105,6 +112,7 @@ def _views(session: Session, batches: list[ImportBatch]) -> list[BatchView]:
             row_count=b.row_count,
             current_rows=counts.get(b.id, 0),
             duplicate_count=b.duplicate_count,
+            updated_count=b.updated_count,
             status=b.status,
             actor=b.actor,
             undone_at=b.undone_at,
@@ -132,7 +140,10 @@ def preview(session: Session, batch_id: int) -> UndoPreview:
     """What an undo of ``batch_id`` would delete (nothing is changed)."""
     batch = _batch(session, batch_id)
     view = _views(session, [batch])[0]
-    txns = list(import_batches_repo.transactions_of(session, batch_id))
+    images = {int(i["id"]): i for i in import_update_service.load_images(batch.update_images)}  # type: ignore[call-overload]
+    attached = list(import_batches_repo.transactions_of(session, batch_id))
+    txns = [t for t in attached if t.id not in images]
+    restored = len(attached) - len(txns)
     dates = [t.date for t in txns]
     return UndoPreview(
         batch=view,
@@ -149,7 +160,8 @@ def preview(session: Session, batch_id: int) -> UndoPreview:
             for t in txns[:PREVIEW_ROWS]
         ],
         total=len(txns),
-        detached=max(batch.row_count - len(txns), 0),
+        detached=max(batch.row_count + batch.updated_count - len(attached), 0),
+        restored=restored,
         earliest_date=min(dates) if dates else None,
         latest_date=max(dates) if dates else None,
         confirm_word=CONFIRM_WORD,
@@ -193,10 +205,20 @@ def undo(
     if batch.status != BATCH_ACTIVE:
         raise ConflictError("this import was already undone")
     backup = _backup_first()
-    trades = [
-        (t.instrument_id, t.date) for t in import_batches_repo.transactions_of(session, batch_id)
-    ]
-    deleted, dates = import_batches_repo.delete_transactions_of(session, batch_id)
+    images = {int(i["id"]): i for i in import_update_service.load_images(batch.update_images)}  # type: ignore[call-overload]
+    attached = list(import_batches_repo.transactions_of(session, batch_id))
+    trades = [(t.instrument_id, t.date) for t in attached if t.id not in images]
+    # Updated rows still in the batch (not edited by hand since) go back as they were.
+    restored = 0
+    for txn in [t for t in attached if t.id in images]:
+        before = (txn.instrument_id, txn.date)
+        import_update_service.restore_before_image(session, txn, images[txn.id])
+        trades.extend([before, (txn.instrument_id, txn.date)])
+        restored += 1
+    deleted, dates = import_batches_repo.delete_transactions_of(
+        session, batch_id, keep_ids=set(images)
+    )
+    dates = dates | {on for _, on in trades}
     if dates:
         snapshots_service.invalidate_for_trade_dates(session, dates)
         holding_values_service.invalidate_instruments_for_trades(session, trades)
@@ -206,12 +228,13 @@ def undo(
         session, batch, at=moment, actor=actor, rows=deleted, backup=backup
     )
     activity("imports").info(
-        "import batch %d (%s, %s) undone by %s: %d transaction(s) deleted, backup=%s",
+        "import batch %d (%s, %s) undone by %s: %d transaction(s) deleted, %d restored, backup=%s",
         batch_id,
         batch.broker,
         batch.filename,
         actor,
         deleted,
+        restored,
         backup or "none",
     )
     refresh_status._publish({"type": "refresh", "reason": "import undone"})
@@ -220,4 +243,5 @@ def undo(
         deleted=deleted,
         backup=backup,
         invalidated_from=min(dates) if dates else None,
+        restored=restored,
     )

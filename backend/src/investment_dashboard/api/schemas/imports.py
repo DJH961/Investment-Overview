@@ -201,6 +201,8 @@ class ImportBatchOut(ApiModel):
     #: Rows still attached (hand-edited / deleted rows are no longer counted).
     current_rows: int
     duplicate_count: int
+    #: Existing transactions the import updated (undo puts them back).
+    updated_count: int = 0
     status: Literal["active", "undone"]
     actor: str | None
     undone_at: datetime | None
@@ -231,6 +233,8 @@ class ImportUndoPreview(ApiModel):
     rows_truncated: bool
     total: int
     detached: int
+    #: Updated rows undo would restore to their old figures.
+    restored: int = 0
     earliest_date: str | None
     latest_date: str | None
     confirm_word: str
@@ -255,6 +259,8 @@ class ImportUndoRequest(ApiModel):
 class ImportUndoResult(ApiModel):
     batch: ImportBatchOut
     deleted: int
+    #: Updated rows put back as they were.
+    restored: int = 0
     backup: str | None
     invalidated_from: str | None
 

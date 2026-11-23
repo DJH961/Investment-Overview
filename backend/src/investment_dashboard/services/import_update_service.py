@@ -9,6 +9,7 @@ overwrites an existing transaction; the import wins, the row keeps its id (so
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -27,7 +28,7 @@ from investment_dashboard.domain.import_match import (
     TxnFigures,
     match_updates,
 )
-from investment_dashboard.repositories import transactions_repo
+from investment_dashboard.repositories import import_batches_repo, transactions_repo
 from investment_dashboard.services import (
     recurring_service,
     transaction_edit_service,
@@ -195,11 +196,14 @@ def apply_import_update(
     The row keeps its id; account, instrument and kind stay (they matched). Date,
     quantity, price, fees, net, description, ``external_id`` and ``source`` come from
     ``incoming`` and the frozen FX legs are recomputed for the new date and amount.
-    The row's import batch is left as it was: it was not inserted by this import,
-    so undoing this import must not delete it.
+    The caller records :func:`before_image` first so an undo can restore the row.
 
     Callers refresh the caches once for all updates (see :func:`apply_updates`).
     """
+    if existing.is_estimate:
+        # The broker's figures settle a recurring plan's est. row (and a buy's core-fund
+        # leg). Done first: the leg is found through the row's pre-update identity.
+        recurring_service.confirm_estimate(session, existing)
     account = existing.account
     native = account.native_currency if account is not None else (incoming.native_currency or "USD")
     legs = transaction_fx_service.compute_legs(
@@ -222,9 +226,99 @@ def apply_import_update(
         external_id=incoming.external_id,
         source=incoming.source,
     )
-    if existing.is_estimate:
-        # The broker's figures settle a recurring plan's est. row (and a buy's core-fund leg).
-        recurring_service.confirm_estimate(session, existing)
+
+
+#: Columns :func:`apply_import_update` overwrites (plus the batch link and the est. flag).
+_IMAGE_FIELDS: tuple[str, ...] = (
+    "date",
+    "settlement_date",
+    "quantity",
+    "price_native",
+    "gross_native",
+    "fees_native",
+    "net_native",
+    "fx_rate_to_eur",
+    "net_eur",
+    "net_usd",
+    "description",
+    "external_id",
+    "source",
+    "import_batch_id",
+    "is_estimate",
+)
+_DATE_FIELDS = frozenset({"date", "settlement_date"})
+_DECIMAL_FIELDS = frozenset(
+    {
+        "quantity",
+        "price_native",
+        "gross_native",
+        "fees_native",
+        "net_native",
+        "fx_rate_to_eur",
+        "net_eur",
+        "net_usd",
+    }
+)
+
+
+def _dump(field_name: str, value: object) -> object:
+    if value is None or isinstance(value, bool | int):
+        return value
+    if isinstance(value, date | Decimal):
+        return value.isoformat() if isinstance(value, date) else str(value)
+    return str(value)
+
+
+def _load(field_name: str, value: object) -> object:
+    if value is None:
+        return None
+    if field_name in _DATE_FIELDS:
+        return date.fromisoformat(str(value))
+    if field_name in _DECIMAL_FIELDS:
+        return Decimal(str(value))
+    return value
+
+
+def before_image(session: Session, txn: Transaction) -> dict[str, object]:
+    """What an undo needs to put ``txn`` back: every overwritten field, and its core-fund leg.
+
+    For an estimate the paired core-fund leg is noted too (confirming the buy confirms the
+    leg), so undo can turn both back into estimates. Take it *before* the update.
+    """
+    image: dict[str, object] = {"id": txn.id}
+    image.update({f: _dump(f, getattr(txn, f)) for f in _IMAGE_FIELDS})
+    if txn.is_estimate:
+        leg = transaction_edit_service.find_existing_settlement_leg(
+            session,
+            account_id=txn.account_id,
+            external_id=txn.external_id,
+            on=txn.date,
+            net_native=txn.net_native,
+        )
+        if leg is not None and leg.id != txn.id:
+            image["leg"] = {"id": leg.id, "is_estimate": leg.is_estimate}
+    return image
+
+
+def restore_before_image(session: Session, txn: Transaction, image: Mapping[str, object]) -> None:
+    """Put ``txn`` (and a noted core-fund leg) back as :func:`before_image` found them."""
+    transactions_repo.update_transaction(
+        session, txn.id, **{f: _load(f, image.get(f)) for f in _IMAGE_FIELDS}
+    )
+    leg_info = image.get("leg")
+    if isinstance(leg_info, dict):
+        leg = transactions_repo.get_transaction(session, int(leg_info["id"]))
+        if leg is not None:
+            leg.is_estimate = bool(leg_info["is_estimate"])
+            session.flush()
+
+
+def load_images(raw: str | None) -> list[dict[str, object]]:
+    """The before-images stored on an import batch (empty when none)."""
+    if not raw:
+        return []
+    loaded = json.loads(raw)
+    return [i for i in loaded if isinstance(i, dict)] if isinstance(loaded, list) else []
 
 
 @dataclass(frozen=True)
@@ -245,16 +339,20 @@ def apply_updates(
     rows: Sequence[ParsedTransactionRow],
     matches: Sequence[RowMatch],
     resolutions: Mapping[str, str] | None = None,
+    import_batch_id: int | None = None,
 ) -> AppliedUpdates:
     """Apply every ``update`` row (except those the user chose to import as new).
 
-    Refreshes caches once, the same way a manual edit does (cached valuations,
-    snapshots, live ticks), and leaves one ``changes`` log line with the count.
+    With an ``import_batch_id`` each updated row gets a before-image stored on the batch
+    (so the import can be undone) and joins the batch, so a later hand edit detaches it
+    like any imported row. Refreshes caches once, the same way a manual edit does, and
+    leaves one ``changes`` log line with the count.
     """
     force_new = {e for e, fix in (resolutions or {}).items() if fix == FIX_IMPORT_NEW}
     handled: set[int] = set()
     dates: set[date] = set()
     instrument_ids: list[int | None] = []
+    images: list[dict[str, object]] = []
     for i, (row, match) in enumerate(zip(rows, matches, strict=True)):
         if match.status != "update" or match.existing is None or row.external_id in force_new:
             continue
@@ -263,9 +361,17 @@ def apply_updates(
             continue
         dates.update({target.date, row.date})
         instrument_ids.append(target.instrument_id)
+        images.append(before_image(session, target))
         apply_import_update(session, target, row)
+        if import_batch_id is not None:
+            target.import_batch_id = import_batch_id
         handled.add(i)
     if handled:
+        session.flush()
+        if import_batch_id is not None:
+            import_batches_repo.set_updates(
+                session, import_batch_id, images=json.dumps(images), count=len(images)
+            )
         transaction_edit_service.after_write(session, dates, instrument_ids)
         activity("changes").info(
             "import updated %d existing transaction(s): account_id=%s earliest=%s",
