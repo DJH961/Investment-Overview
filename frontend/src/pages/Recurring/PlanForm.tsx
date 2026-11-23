@@ -17,9 +17,9 @@ export const KIND_LABEL: Record<PlanKind, string> = {
 
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const UNIT_OPTIONS = [
-  { value: "days", label: "days" },
-  { value: "weeks", label: "weeks" },
-  { value: "months", label: "months" },
+  { value: "days", label: "Days" },
+  { value: "weeks", label: "Weeks" },
+  { value: "months", label: "Months" },
 ];
 const PROVIDER_OPTIONS = [
   { value: "revolut", label: "Revolut" },
@@ -46,6 +46,9 @@ export interface PlanFormProps {
   initial?: Partial<RecurringPlanInput>;
   /** Hide the kind line when the surrounding UI already names it (setup step, kind buttons). */
   hideKind?: boolean;
+  /** The surrounding wizard renders the buttons (a footer that stays visible) and submits this form by id. */
+  hideActions?: boolean;
+  formId?: string;
   saveLabel?: string;
   skipLabel?: string;
   onSaved: () => void;
@@ -53,7 +56,7 @@ export interface PlanFormProps {
 }
 
 /** One form for the three plan kinds (the setup flow and the edit sheet both use it). */
-export function PlanForm({ kind, id, initial, hideKind, saveLabel = "Save plan", skipLabel, onSaved, onSkip }: PlanFormProps) {
+export function PlanForm({ kind, id, initial, hideKind, hideActions, formId, saveLabel = "Save plan", skipLabel, onSaved, onSkip }: PlanFormProps) {
   const accounts = useAccounts();
   const instruments = useInstruments();
   const save = useSavePlan();
@@ -117,6 +120,7 @@ export function PlanForm({ kind, id, initial, hideKind, saveLabel = "Save plan",
 
   return (
     <form
+      id={formId}
       className="recurring-page__form"
       onSubmit={(e) => {
         e.preventDefault();
@@ -234,16 +238,18 @@ export function PlanForm({ kind, id, initial, hideKind, saveLabel = "Save plan",
         <Field label="Starts">{(c) => <Input id={c.id} type="date" value={start} onChange={(e) => setStart(e.target.value)} />}</Field>
         <Field label="Ends (optional)">{(c) => <Input id={c.id} type="date" value={end} onChange={(e) => setEnd(e.target.value)} />}</Field>
       </div>
-      <div className="recurring-page__form-actions">
-        {onSkip && (
-          <Button variant="ghost" onClick={onSkip}>
-            {skipLabel ?? "Skip"}
+      {!hideActions && (
+        <div className="recurring-page__form-actions">
+          {onSkip && (
+            <Button variant="ghost" onClick={onSkip}>
+              {skipLabel ?? "Skip"}
+            </Button>
+          )}
+          <Button type="submit" variant="primary" loading={save.isPending}>
+            {saveLabel}
           </Button>
-        )}
-        <Button type="submit" variant="primary" loading={save.isPending}>
-          {saveLabel}
-        </Button>
-      </div>
+        </div>
+      )}
     </form>
   );
 }
