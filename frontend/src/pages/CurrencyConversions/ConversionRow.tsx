@@ -3,32 +3,49 @@ import { useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { Chip } from "../../components/Chip";
 import { Money } from "../../components/Money";
-import { formatDate, formatMoney, formatNumber } from "../../lib/format";
+import { formatDate, formatMoney, formatNumber, getFormatPrefs } from "../../lib/format";
 import type { FxConversion } from "../../lib/queries/manage";
 import { EstChip } from "../Transactions/EstChip";
 import { ecbCell, offPctText, offPctWords, providerLabel } from "./matching";
 
-/** The deposits a conversion paid for, as chips that jump to them; "In the pool" when none. */
+/** "20 Oct": the short day a deposit chip shows (the year is the fold's title). */
+function shortDay(iso: string): string {
+  return new Intl.DateTimeFormat(getFormatPrefs().locale, { day: "numeric", month: "short", timeZone: "UTC" }).format(
+    new Date(`${iso}T00:00:00Z`),
+  );
+}
+
+/**
+ * The deposits a conversion paid for. Wide: pills that jump to them (under the "Paid for deposits"
+ * column). Phones: one labelled line of plain links ("Paid for deposits on 20 Oct · 22 Sep +1 more").
+ */
 function PaidChips({ c }: { c: FxConversion }) {
   const n = c.used_by.length;
   const left = Number(c.remaining_usd);
   return (
     <span className="conv__chips">
       {n === 0 ? (
-        <Chip size="sm">In the pool</Chip>
+        <>
+          <span className="conv__paid-label">Not used yet:</span>
+          <span className="conv__paid-date conv__paid-date--pool">In the pool</span>
+        </>
       ) : (
-        c.used_by.slice(0, 2).map((u) => (
-          <Link key={`${u.deposit_id}-${u.pinned}`} to={{ hash: `#deposit-${u.deposit_id}` }} className="conv__chip-link">
-            <Chip size="sm" outline>
-              {formatDate(u.date)}
-            </Chip>
-          </Link>
-        ))
+        <>
+          <span className="conv__paid-label">Paid for deposits on</span>
+          {c.used_by.slice(0, 2).map((u, i) => (
+            <span key={`${u.deposit_id}-${u.pinned}`} className="conv__paid-item">
+              {i > 0 && <span className="conv__paid-sep"> · </span>}
+              <Link to={{ hash: `#deposit-${u.deposit_id}` }} className="conv__chip-link">
+                <span className="conv__paid-date">{shortDay(u.date)}</span>
+              </Link>
+            </span>
+          ))}
+        </>
       )}
       {n > 2 && <span className="conv__sub">+{n - 2} more</span>}
       {n > 0 && left > 0.005 && (
         <span className="conv__sub">
-          <Money amount={left} currency="USD" /> left
+          · <Money amount={left} currency="USD" /> left
         </span>
       )}
     </span>
@@ -47,14 +64,16 @@ function KeptSplit({ c }: { c: FxConversion }) {
   const pct = (n: number) => `${total > 0 ? (n / total) * 100 : 0}%`;
   return (
     <span className="conv__kept">
+      <span className="conv__kept-text">
+        <Wallet aria-hidden className="conv__kept-icon" />
+        <span className="conv__kept-label">
+          Kept in your USD account: <Money amount={kept} currency="USD" />
+        </span>
+      </span>
       <span className="conv__split" aria-hidden>
         <span className="conv__seg conv__seg--used" style={{ width: pct(used) }} />
         <span className="conv__seg conv__seg--pool" style={{ width: pct(left) }} />
         <span className="conv__seg conv__seg--kept" style={{ width: pct(kept) }} />
-      </span>
-      <span className="conv__kept-text">
-        <Wallet aria-hidden className="conv__kept-icon" />
-        Kept in your USD account: <Money amount={kept} currency="USD" />
       </span>
     </span>
   );
@@ -77,6 +96,8 @@ function Fact({ label, children, title }: { label: string; children: ReactNode; 
 export function ConversionRow({ c, menu, onSettle }: { c: FxConversion; menu: ReactNode; onSettle?: () => void }) {
   const [open, setOpen] = useState(false);
   const e = ecbCell(c);
+  // An estimate already wears the "est." chip: the plan's own "est. (recurring plan)" note would say it twice.
+  const note = c.is_estimate && c.note?.startsWith("est.") ? null : c.note;
   const fees = c.fees_eur && Number(c.fees_eur) > 0 ? Number(c.fees_eur) : 0;
   const allIn = Number(c.all_in_rate) !== Number(c.rate);
   const cost = c.cost_eur === null || c.cost_eur === undefined ? null : Number(c.cost_eur);
@@ -91,9 +112,9 @@ export function ConversionRow({ c, menu, onSettle }: { c: FxConversion; menu: Re
           </Chip>
         )}
         {c.is_estimate && onSettle && <EstChip onOpen={onSettle} />}
-        {c.note && (
-          <span className="conv__note conv__note--wide" title={c.note} data-truncate-ok>
-            {c.note}
+        {note && (
+          <span className="conv__note conv__note--wide" title={note} data-truncate-ok>
+            {note}
           </span>
         )}
       </div>
@@ -108,9 +129,9 @@ export function ConversionRow({ c, menu, onSettle }: { c: FxConversion; menu: Re
             </>
           )}
         </span>
-        {kept > 0 && <KeptSplit c={c} />}
       </div>
       <div className="conv__menu">{menu}</div>
+      {kept > 0 && <KeptSplit c={c} />}
 
       <div className="conv__cell conv__cell--rate">
         {formatNumber(Number(c.rate), 4)}
@@ -172,7 +193,7 @@ export function ConversionRow({ c, menu, onSettle }: { c: FxConversion; menu: Re
               <Money amount={kept} currency="USD" />
             </Fact>
           )}
-          {c.note && <p className="conv__note conv__note--detail">{c.note}</p>}
+          {note && <p className="conv__note conv__note--detail">{note}</p>}
         </dl>
       )}
     </li>
@@ -188,7 +209,7 @@ export function ConversionHead() {
       <span>Rate</span>
       <span>ECB that day</span>
       <span>vs ECB</span>
-      <span>Paid for</span>
+      <span>Paid for deposits</span>
       <span />
     </div>
   );
