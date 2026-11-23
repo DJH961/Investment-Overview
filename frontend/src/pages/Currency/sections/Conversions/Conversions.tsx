@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowRight, ArrowUp, Coins, Minus } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUp, Check, Coins, Minus } from "lucide-react";
 import { useMemo, type ReactNode } from "react";
 import { Link } from "react-router";
 import { Card } from "../../../../components/Card";
@@ -12,7 +12,6 @@ import { chartMoneyFormat, formatAxisDate, formatDate, formatNumber, formatPerce
 import {
   useFxCosts,
   type FxCostProviderDto,
-  type FxCostRowDto,
   type FxCostsDto,
   type FxCostYearDto,
 } from "../../../../lib/queries/fxCosts";
@@ -40,11 +39,6 @@ const pctText = (v: string | null | undefined) => formatPercent(toNum(v ?? null)
 function Cost({ value, ccy }: { value: string | null | undefined; ccy: FxCostsDto["currency"] }) {
   // Signed plain text on purpose: for a cost, "up" is bad, so no gain/loss colour.
   return <Money amount={toNum(value ?? null)} currency={ccy} signed digits={2} />;
-}
-
-function rowNote(r: FxCostRowDto | null | undefined) {
-  if (!r) return undefined;
-  return `${formatDate(r.date)} · ${offText(r.off_pct)}`;
 }
 
 function stats(d: FxCostsDto): StatItem[] {
@@ -79,16 +73,11 @@ function stats(d: FxCostsDto): StatItem[] {
       tip: "All-in rate (fees included) against the ECB daily reference, averaged with each conversion weighted by the euros it converted, not a plain mean of percentages. Negative: fewer dollars per euro than the reference.",
     },
     {
-      key: "best",
-      label: "Best",
-      value: offText(d.best?.off_pct),
-      note: rowNote(d.best),
-    },
-    {
-      key: "worst",
-      label: "Worst",
-      value: offText(d.worst?.off_pct),
-      note: rowNote(d.worst),
+      key: "bestworst",
+      label: "Best / worst",
+      value: `${offText(d.best?.off_pct)} · ${offText(d.worst?.off_pct)}`,
+      note: d.best && d.worst ? `${formatDate(d.best.date)} · ${formatDate(d.worst.date)}` : undefined,
+      tip: "The best and the worst conversion, as the all-in distance from the ECB daily reference.",
     },
   ];
 }
@@ -175,20 +164,6 @@ function YearsCard({ d }: { d: FxCostsDto }) {
       sortValue: (r) => toNum(r.converted),
     },
     {
-      key: "fees",
-      header: "Fees",
-      align: "right",
-      cell: (r) => <Money amount={toNum(r.fees)} currency={ccy} digits={2} />,
-      sortValue: (r) => toNum(r.fees),
-    },
-    {
-      key: "spread",
-      header: "Spread",
-      align: "right",
-      cell: (r) => <Cost value={r.spread} ccy={ccy} />,
-      sortValue: (r) => toNum(r.spread),
-    },
-    {
       key: "cost",
       header: "Cost",
       align: "right",
@@ -199,7 +174,7 @@ function YearsCard({ d }: { d: FxCostsDto }) {
     },
     {
       key: "pct",
-      header: "% of converted",
+      header: "Cost %",
       align: "right",
       cell: (r) => pctText(r.cost_pct),
       sortValue: (r) => toNum(r.cost_pct),
@@ -218,73 +193,78 @@ function YearsCard({ d }: { d: FxCostsDto }) {
   );
 }
 
+/**
+ * Providers side by side (the owner will mostly use two): a column each with what it
+ * converted, what that cost and the distance from the ECB. The cheaper one carries a word
+ * and an icon, never colour alone. One provider is a single summary line.
+ */
 function ProvidersCard({ d }: { d: FxCostsDto }) {
   const ccy = d.currency;
+  const named = d.by_provider.filter((p): p is FxCostProviderDto & { provider: NonNullable<FxCostProviderDto["provider"]> } => p.provider !== null);
+  const unnamed = d.by_provider.find((p) => p.provider === null);
   const gap = toNum(d.cheaper_gap_pct);
-  const sentence: ReactNode =
-    d.cheaper_provider && gap !== null ? (
+  const compare = named.length >= 2;
+  const lead: ReactNode =
+    compare && d.cheaper_provider && d.cheaper_than && gap !== null ? (
       <>
-        <strong>{providerName(d.cheaper_provider)}</strong> has been cheaper for you:{" "}
-        {formatNumber(gap * 100, 2)} percentage points less of what you converted went on fees and spread.
+        {providerName(d.cheaper_provider)} is cheaper than {providerName(d.cheaper_than)} by{" "}
+        {formatNumber(gap * 100, 2)} points of what you converted.
       </>
+    ) : named.length === 1 ? (
+      "Compare once you use a second provider."
     ) : (
-      "Add a provider to your conversions to compare them. Two are needed to say which is cheaper."
+      "Add a provider to your conversions to compare them."
     );
-  const columns: Column<FxCostProviderDto>[] = [
-    {
-      key: "provider",
-      header: "Provider",
-      primary: true,
-      cell: (r) => providerName(r.provider),
-      sortValue: (r) => providerName(r.provider),
-    },
-    {
-      key: "count",
-      header: "Conversions",
-      align: "right",
-      phone: "sub",
-      cell: (r) => `${r.count} ${r.count === 1 ? "conversion" : "conversions"}`,
-      sortValue: (r) => r.count,
-    },
-    {
-      key: "converted",
-      header: "Converted",
-      align: "right",
-      cell: (r) => <Money amount={toNum(r.converted)} currency={ccy} digits={0} />,
-      sortValue: (r) => toNum(r.converted),
-    },
-    {
-      key: "cost",
-      header: "Cost",
-      align: "right",
-      phone: "headline",
-      emphasis: true,
-      cell: (r) => <Cost value={r.cost} ccy={ccy} />,
-      sortValue: (r) => toNum(r.cost),
-    },
-    {
-      key: "pct",
-      header: "% of converted",
-      align: "right",
-      cell: (r) => pctText(r.cost_pct),
-      sortValue: (r) => toNum(r.cost_pct),
-    },
-    {
-      key: "avg",
-      header: "Average vs ECB",
-      align: "right",
-      cell: (r) => offText(r.avg_off_pct),
-      sortValue: (r) => toNum(r.avg_off_pct),
-    },
-  ];
   return (
-    <Card title="Cost per provider" subtitle={sentence} flush>
-      <DataTable
-        caption="What converting cost, per provider"
-        columns={columns}
-        rows={d.by_provider}
-        rowKey={(r) => r.provider ?? "none"}
-      />
+    <Card title="Cost per provider" subtitle={lead} className="conv-section__providers">
+      {named.length === 0 ? null : (
+        <div className="conv-section__compare">
+          {named.map((p) => {
+            const cheaper = compare && p.provider === d.cheaper_provider;
+            return (
+              <section key={p.provider} className="conv-section__prov" aria-label={providerName(p.provider)}>
+                <h4 className="conv-section__prov-name">
+                  {providerName(p.provider)}
+                  {cheaper ? (
+                    <span className="conv-section__prov-flag">
+                      <Check aria-hidden className="conv-section__prov-flag-icon" />
+                      Cheaper
+                    </span>
+                  ) : null}
+                </h4>
+                <dl className="conv-section__prov-list">
+                  <div className="conv-section__prov-row">
+                    <dt className="conv-section__prov-label">Converted</dt>
+                    <dd className="conv-section__prov-value">
+                      <Money amount={toNum(p.converted)} currency={ccy} digits={0} />
+                    </dd>
+                  </div>
+                  <div className="conv-section__prov-row">
+                    <dt className="conv-section__prov-label">Cost</dt>
+                    <dd className="conv-section__prov-value">
+                      <Cost value={p.cost} ccy={ccy} />
+                    </dd>
+                  </div>
+                  <div className="conv-section__prov-row">
+                    <dt className="conv-section__prov-label">Cost %</dt>
+                    <dd className="conv-section__prov-value">{pctText(p.cost_pct)}</dd>
+                  </div>
+                  <div className="conv-section__prov-row">
+                    <dt className="conv-section__prov-label">vs ECB</dt>
+                    <dd className="conv-section__prov-value">{offText(p.avg_off_pct)}</dd>
+                  </div>
+                </dl>
+              </section>
+            );
+          })}
+        </div>
+      )}
+      {unnamed ? (
+        <p className="conv-section__muted">
+          {unnamed.count} {unnamed.count === 1 ? "conversion has" : "conversions have"} no provider and{" "}
+          {unnamed.count === 1 ? "is" : "are"} not compared.
+        </p>
+      ) : null}
     </Card>
   );
 }
