@@ -151,9 +151,9 @@ DEFS: tuple[SettingDef, ...] = (
         "display",
         "Regional preset",
         help=(
-            "What the date, number and time formats below follow while they are on "
-            "'auto'. en-US: 12/31/2026, 12h, 1,234.56 · de-DE: 31.12.2026, 24h, "
-            "1.234,56. Also picks the currency symbol placement."
+            "What the number and time formats below follow while they are on "
+            "'auto'. en-US: 1,234.56, 12h · de-DE: 1.234,56, 24h. Dates have their own "
+            "setting. Also picks the currency symbol placement."
         ),
         choices=LOCALES,
     ),
