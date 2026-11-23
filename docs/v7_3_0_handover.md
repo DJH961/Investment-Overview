@@ -49,6 +49,20 @@ the offset (`fx_cost_service.conversions_with_fixings`); `apply_import_update` c
 `recurring_service.confirm_estimate`. openapi, api-types and fixtures regenerated.
 Targeted backend tests: 120 passed after the last merge; frontend typecheck clean.
 
+## Impact € vs pp: real inconsistency found (2026-11-23, waiting for the owner's go)
+
+The "Mixed" tag (fix/v7.3-impact-sign, merged) only hides the symptom. Root cause:
+`readmodels/fx_attribution_rows.py` feeds the EUR flows **with the FX-pool overrides** (a matched
+deposit's euro flow = the conversion's EUR cost), while the book is valued at that day's rate.
+So the currency move while the dollars waited outside the app (conversion date → deposit date),
+plus the conversion spread, land in the residual **market** part `M_t` and in the EUR TWR chain
+(so in the pp gap), but never in the € currency total `ΣC_t`. With conversions made months
+before deposits during a falling dollar this gives e.g. −9 pp next to +€500.
+Proposed fix: value deposit flows at that day's rate inside the attribution, and show the
+difference as its own lines: "while your dollars waited" (`usd/r_deposit − usd/r_conv_ecb`) and
+"conversion cost" (fx_spread). The € total = book + waiting + cost then agrees with the pp gap;
+"Mixed" stays only for genuine timing cases. Needs golden tests (convert at 1.03, deposit at 1.17).
+
 ## Left to do
 
 1. Merge lane B's undo and the Impact fix; regenerate openapi/api-types/fixtures; targeted tests.
