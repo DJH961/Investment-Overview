@@ -32,12 +32,10 @@ export function ReminderCard() {
                 <Button className="reminder-card__btn" variant="primary" fullWidth onClick={() => setQueue(rows)}>
                   Settle
                 </Button>
-                {g.input === "import" ? (
+                {g.input === "import" && (
                   <LinkButton className="reminder-card__btn" to="/import" fullWidth leftIcon={<Upload aria-hidden />}>
                     Import file
                   </LinkButton>
-                ) : (
-                  <span className="reminder-card__btn-slot" aria-hidden />
                 )}
               </span>
             </li>

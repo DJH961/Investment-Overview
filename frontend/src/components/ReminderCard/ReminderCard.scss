@@ -37,12 +37,15 @@
   &__line {
     display: grid;
     grid-template-columns: minmax(0, 1fr) var(--reminder-actions-w);
-    align-items: center;
+    align-items: start;
     gap: var(--space-2) var(--space-4);
   }
 
   &__message {
+    display: flex;
+    align-items: center;
     min-width: 0;
+    min-height: var(--tap-min);
   }
 
   &__actions {
@@ -51,14 +54,8 @@
     gap: var(--space-1);
   }
 
-  &__btn,
-  &__btn-slot {
+  &__btn {
     min-height: var(--tap-min);
-  }
-
-  // Keeps the rows of the action column the same on every line (no Import for conversions).
-  &__btn-slot {
-    visibility: hidden;
   }
 
   // Phones: the message on top, the actions stacked full width underneath (same column
@@ -66,10 +63,6 @@
   @include m.phone {
     &__line {
       grid-template-columns: minmax(0, 1fr);
-    }
-
-    &__btn-slot {
-      display: none;
     }
   }
 }
