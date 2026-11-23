@@ -11,6 +11,7 @@ from investment_dashboard.api.deps import SessionDep
 from investment_dashboard.api.schemas.recurring import (
     EstimateOut,
     EstimatesOut,
+    LegOut,
     PlanIn,
     PlanKind,
     PlanOut,
@@ -20,6 +21,7 @@ from investment_dashboard.api.schemas.recurring import (
     RowType,
     SettleIn,
     SettleOut,
+    SuggestedLegOut,
     SuggestionOut,
     Unit,
 )
@@ -47,10 +49,17 @@ def _plan_out(session: SessionDep, plan_id: int) -> PlanOut:
         paused=p.paused,
         account_id=p.account_id,
         account=view.account,
-        instrument_id=p.instrument_id,
-        symbol=view.symbol,
+        legs=[
+            LegOut(
+                id=leg.id,
+                instrument_id=leg.instrument_id,
+                symbol=leg.symbol,
+                amount=_s(leg.amount),
+                shares=_s(leg.shares),
+            )
+            for leg in view.legs
+        ],
         amount=_s(p.amount),
-        shares=_s(p.shares),
         provider=cast("Provider | None", p.provider),
         expected_fee=_s(p.expected_fee),
         next_due=view.next_due.isoformat() if view.next_due else None,
@@ -67,9 +76,10 @@ def _input(body: PlanIn) -> service.PlanInput:
         start_date=body.start_date,
         end_date=body.end_date,
         account_id=body.account_id,
-        instrument_id=body.instrument_id,
         amount=body.amount,
-        shares=body.shares,
+        legs=tuple(
+            service.LegInput(leg.instrument_id, leg.amount, leg.shares) for leg in body.legs
+        ),
         provider=body.provider,
         expected_fee=body.expected_fee,
     )
@@ -128,8 +138,12 @@ def suggestions(session: SessionDep) -> list[SuggestionOut]:
             occurrences=s.cadence.occurrences,
             account_id=s.account_id,
             account=s.account,
-            instrument_id=s.instrument_id,
-            symbol=s.symbol,
+            legs=[
+                SuggestedLegOut(
+                    instrument_id=g.instrument_id, symbol=g.symbol, amount=format(g.amount, "f")
+                )
+                for g in s.legs
+            ],
             provider=cast("Provider | None", s.provider),
         )
         for s in service.suggest_routine(session)

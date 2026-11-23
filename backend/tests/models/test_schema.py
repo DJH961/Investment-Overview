@@ -46,6 +46,7 @@ EXPECTED_TABLES = {
     "fx_conversions",
     "fx_conversion_pins",
     "recurring_plans",
+    "recurring_plan_legs",
     "usd_received_deposits",
     "app_config_audit",
     "import_batches",

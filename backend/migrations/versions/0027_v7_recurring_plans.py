@@ -26,6 +26,7 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 _PLANS = "recurring_plans"
+_LEGS = "recurring_plan_legs"
 _TARGETS = ("transactions", "fx_conversions")
 _BATCHES = "import_batches"
 
@@ -50,9 +51,7 @@ def upgrade() -> None:
             sa.Column("paused", sa.Boolean(), server_default=sa.text("0"), nullable=False),
             sa.Column("generated_through", sa.Date(), nullable=True),
             sa.Column("account_id", sa.Integer(), nullable=True),
-            sa.Column("instrument_id", sa.Integer(), nullable=True),
             sa.Column("amount", sa.Numeric(precision=18, scale=6), nullable=True),
-            sa.Column("shares", sa.Numeric(precision=18, scale=8), nullable=True),
             sa.Column("provider", sa.String(length=16), nullable=True),
             sa.Column("expected_fee", sa.Numeric(precision=18, scale=6), nullable=True),
             sa.Column(
@@ -67,15 +66,29 @@ def upgrade() -> None:
             ),
             sa.CheckConstraint("every >= 1", name="ck_recurring_plans_every"),
             sa.CheckConstraint("amount IS NULL OR amount > 0", name="ck_recurring_plans_amount"),
-            sa.CheckConstraint("shares IS NULL OR shares > 0", name="ck_recurring_plans_shares"),
             sa.CheckConstraint(
                 "provider IS NULL OR provider IN ('wise', 'revolut', 'other')",
                 name="ck_recurring_plans_provider",
             ),
             sa.ForeignKeyConstraint(["account_id"], ["accounts.id"], ondelete="CASCADE"),
+            sa.PrimaryKeyConstraint("id"),
+        )
+    if _LEGS not in tables:
+        op.create_table(
+            _LEGS,
+            sa.Column("id", sa.Integer(), nullable=False),
+            sa.Column("plan_id", sa.Integer(), nullable=False),
+            sa.Column("instrument_id", sa.Integer(), nullable=False),
+            sa.Column("amount", sa.Numeric(precision=18, scale=6), nullable=True),
+            sa.Column("shares", sa.Numeric(precision=18, scale=8), nullable=True),
+            sa.Column("position", sa.Integer(), nullable=False),
+            sa.CheckConstraint("amount IS NULL OR amount > 0", name="ck_recurring_plan_legs_amount"),
+            sa.CheckConstraint("shares IS NULL OR shares > 0", name="ck_recurring_plan_legs_shares"),
+            sa.ForeignKeyConstraint(["plan_id"], [f"{_PLANS}.id"], ondelete="CASCADE"),
             sa.ForeignKeyConstraint(["instrument_id"], ["instruments.id"], ondelete="CASCADE"),
             sa.PrimaryKeyConstraint("id"),
         )
+        op.create_index(f"ix_{_LEGS}_plan_id", _LEGS, ["plan_id"])
     if _BATCHES in tables:
         batch_cols = {c["name"] for c in inspector.get_columns(_BATCHES)}
         with op.batch_alter_table(_BATCHES, schema=None) as batch_op:
@@ -101,7 +114,18 @@ def upgrade() -> None:
                 sa.Column("is_estimate", sa.Boolean(), server_default=sa.text("0"), nullable=False)
             )
             batch_op.create_foreign_key(fk_name, _PLANS, ["estimate_plan_id"], ["id"], ondelete="SET NULL")
-            batch_op.create_unique_constraint(uq_name, ["estimate_plan_id", "estimate_due_date"])
+            if table == "transactions":
+                # One est. buy per plan leg and due date (0 = not a buy leg).
+                batch_op.add_column(
+                    sa.Column(
+                        "estimate_leg_id", sa.Integer(), server_default=sa.text("0"), nullable=False
+                    )
+                )
+                batch_op.create_unique_constraint(
+                    uq_name, ["estimate_plan_id", "estimate_due_date", "estimate_leg_id"]
+                )
+            else:
+                batch_op.create_unique_constraint(uq_name, ["estimate_plan_id", "estimate_due_date"])
 
 
 def downgrade() -> None:
@@ -117,6 +141,8 @@ def downgrade() -> None:
         with op.batch_alter_table(table, schema=None) as batch_op:
             batch_op.drop_constraint(uq_name, type_="unique")
             batch_op.drop_constraint(fk_name, type_="foreignkey")
+            if table == "transactions":
+                batch_op.drop_column("estimate_leg_id")
             batch_op.drop_column("is_estimate")
             batch_op.drop_column("estimate_due_date")
             batch_op.drop_column("estimate_plan_id")
@@ -127,5 +153,8 @@ def downgrade() -> None:
                 batch_op.drop_column("updated_count")
             if "update_images" in batch_cols:
                 batch_op.drop_column("update_images")
+    if _LEGS in tables:
+        op.drop_index(f"ix_{_LEGS}_plan_id", table_name=_LEGS)
+        op.drop_table(_LEGS)
     if _PLANS in tables:
         op.drop_table(_PLANS)

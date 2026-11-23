@@ -38,7 +38,7 @@ from investment_dashboard.models.position_snapshot import PositionSnapshot
 from investment_dashboard.models.price_cache_metadata import PriceCacheMetadata
 from investment_dashboard.models.price_history import PriceHistory
 from investment_dashboard.models.price_split import PriceSplit
-from investment_dashboard.models.recurring_plan import RecurringPlan
+from investment_dashboard.models.recurring_plan import RecurringPlan, RecurringPlanLeg
 from investment_dashboard.models.target_allocation import (
     TargetAllocation,
     TargetAllocationItem,
@@ -69,6 +69,7 @@ __all__ = [
     "PriceHistory",
     "PriceSplit",
     "RecurringPlan",
+    "RecurringPlanLeg",
     "TargetAllocation",
     "TargetAllocationItem",
     "Transaction",

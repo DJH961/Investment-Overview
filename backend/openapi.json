@@ -12365,6 +12365,102 @@
         "title": "LastSessionMove",
         "type": "object"
       },
+      "LegIn": {
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Native amount per run.",
+            "title": "Amount"
+          },
+          "instrument_id": {
+            "title": "Instrument Id",
+            "type": "integer"
+          },
+          "shares": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Or shares per run.",
+            "title": "Shares"
+          }
+        },
+        "required": [
+          "instrument_id"
+        ],
+        "title": "LegIn",
+        "type": "object"
+      },
+      "LegOut": {
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "instrument_id": {
+            "title": "Instrument Id",
+            "type": "integer"
+          },
+          "shares": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shares"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "instrument_id",
+          "symbol",
+          "amount",
+          "shares"
+        ],
+        "title": "LegOut",
+        "type": "object"
+      },
       "LiveResponse": {
         "properties": {
           "boot_id": {
@@ -14358,7 +14454,7 @@
                 "type": "null"
               }
             ],
-            "description": "Buy: native amount per run; conversion: EUR sent.",
+            "description": "Deposit: USD per run; conversion: EUR sent.",
             "title": "Amount"
           },
           "anchor": {
@@ -14408,18 +14504,6 @@
             "description": "Conversion plans: EUR fee per run. Defaults to the last real conversion's fee with that provider.",
             "title": "Expected Fee"
           },
-          "instrument_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Buy plans.",
-            "title": "Instrument Id"
-          },
           "kind": {
             "enum": [
               "buy",
@@ -14428,6 +14512,14 @@
             ],
             "title": "Kind",
             "type": "string"
+          },
+          "legs": {
+            "description": "Buy plans: the holdings bought together on every due date (same account).",
+            "items": {
+              "$ref": "#/components/schemas/LegIn"
+            },
+            "title": "Legs",
+            "type": "array"
           },
           "provider": {
             "anyOf": [
@@ -14445,23 +14537,6 @@
             ],
             "description": "Conversion plans.",
             "title": "Provider"
-          },
-          "shares": {
-            "anyOf": [
-              {
-                "exclusiveMinimum": 0.0,
-                "type": "number"
-              },
-              {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Buy plans, instead of amount.",
-            "title": "Shares"
           },
           "start_date": {
             "format": "date",
@@ -14565,17 +14640,6 @@
             "title": "Id",
             "type": "integer"
           },
-          "instrument_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Instrument Id"
-          },
           "kind": {
             "enum": [
               "buy",
@@ -14584,6 +14648,13 @@
             ],
             "title": "Kind",
             "type": "string"
+          },
+          "legs": {
+            "items": {
+              "$ref": "#/components/schemas/LegOut"
+            },
+            "title": "Legs",
+            "type": "array"
           },
           "next_due": {
             "anyOf": [
@@ -14629,18 +14700,6 @@
             ],
             "title": "Provider"
           },
-          "shares": {
-            "anyOf": [
-              {
-                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Shares"
-          },
           "start_date": {
             "title": "Start Date",
             "type": "string"
@@ -14653,17 +14712,6 @@
             ],
             "title": "Status",
             "type": "string"
-          },
-          "symbol": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Symbol"
           },
           "unit": {
             "enum": [
@@ -14687,10 +14735,8 @@
           "paused",
           "account_id",
           "account",
-          "instrument_id",
-          "symbol",
+          "legs",
           "amount",
-          "shares",
           "provider",
           "expected_fee",
           "next_due"
@@ -19457,6 +19503,30 @@
         "title": "StressRow",
         "type": "object"
       },
+      "SuggestedLegOut": {
+        "properties": {
+          "amount": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Amount",
+            "type": "string"
+          },
+          "instrument_id": {
+            "title": "Instrument Id",
+            "type": "integer"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instrument_id",
+          "symbol",
+          "amount"
+        ],
+        "title": "SuggestedLegOut",
+        "type": "object"
+      },
       "SuggestionOut": {
         "properties": {
           "account": {
@@ -19501,17 +19571,6 @@
             "title": "Every",
             "type": "integer"
           },
-          "instrument_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Instrument Id"
-          },
           "kind": {
             "enum": [
               "buy",
@@ -19520,6 +19579,14 @@
             ],
             "title": "Kind",
             "type": "string"
+          },
+          "legs": {
+            "description": "Buy plans.",
+            "items": {
+              "$ref": "#/components/schemas/SuggestedLegOut"
+            },
+            "title": "Legs",
+            "type": "array"
           },
           "occurrences": {
             "description": "How many past rows the suggestion is based on.",
@@ -19541,17 +19608,6 @@
               }
             ],
             "title": "Provider"
-          },
-          "symbol": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Symbol"
           },
           "unit": {
             "enum": [

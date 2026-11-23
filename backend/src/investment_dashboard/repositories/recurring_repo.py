@@ -10,7 +10,12 @@ from sqlalchemy import ColumnElement, and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from investment_dashboard.domain.money_market import SETTLEMENT_EXTERNAL_ID_SUFFIX
-from investment_dashboard.models import FxConversion, RecurringPlan, Transaction
+from investment_dashboard.models import (
+    FxConversion,
+    RecurringPlan,
+    RecurringPlanLeg,
+    Transaction,
+)
 
 #: Plan kinds whose est. rows never ask the owner for anything (a fixed deposit has no
 #: variation): they carry the flag so an import can update them (P15), but are left out of
@@ -65,26 +70,56 @@ def delete_plan(session: Session, row: RecurringPlan) -> None:
         .where(FxConversion.estimate_plan_id == row.id)
         .values(estimate_plan_id=None)
     )
+    for leg in list_legs(session, row.id):
+        session.delete(leg)
+    session.flush()
     session.expire_all()
     session.delete(row)
     session.flush()
 
 
-def estimate_exists(session: Session, plan_id: int, due: date) -> bool:
-    """Whether a row (estimated or settled) already exists for ``(plan, due date)``."""
-    for model in (Transaction, FxConversion):
-        stmt = select(model.id).where(
-            model.estimate_plan_id == plan_id, model.estimate_due_date == due
-        )
-        if session.scalar(stmt) is not None:
-            return True
-    return False
+def estimate_exists(session: Session, plan_id: int, due: date, leg_id: int = 0) -> bool:
+    """Whether a row (estimated or settled) already exists for ``(plan, due date, leg)``."""
+    txn = select(Transaction.id).where(
+        Transaction.estimate_plan_id == plan_id,
+        Transaction.estimate_due_date == due,
+        Transaction.estimate_leg_id == leg_id,
+    )
+    conv = select(FxConversion.id).where(
+        FxConversion.estimate_plan_id == plan_id, FxConversion.estimate_due_date == due
+    )
+    if session.scalar(txn) is not None:
+        return True
+    return leg_id == 0 and session.scalar(conv) is not None
 
 
-def mark_estimate(row: Transaction | FxConversion, plan_id: int, due: date) -> None:
+def mark_estimate(
+    row: Transaction | FxConversion, plan_id: int, due: date, leg_id: int = 0
+) -> None:
     row.estimate_plan_id = plan_id
     row.estimate_due_date = due
     row.is_estimate = True
+    if isinstance(row, Transaction):
+        row.estimate_leg_id = leg_id
+
+
+def list_legs(session: Session, plan_id: int) -> Sequence[RecurringPlanLeg]:
+    stmt = (
+        select(RecurringPlanLeg)
+        .where(RecurringPlanLeg.plan_id == plan_id)
+        .order_by(RecurringPlanLeg.position, RecurringPlanLeg.id)
+    )
+    return session.scalars(stmt).all()
+
+
+def replace_legs(session: Session, plan_id: int, legs: Sequence[dict[str, Any]]) -> None:
+    """Replace a plan's legs (new ids; est. rows already written keep the old leg id)."""
+    for old in list_legs(session, plan_id):
+        session.delete(old)
+    session.flush()
+    for position, leg in enumerate(legs):
+        session.add(RecurringPlanLeg(plan_id=plan_id, position=position, **leg))
+    session.flush()
 
 
 def list_estimate_transactions(

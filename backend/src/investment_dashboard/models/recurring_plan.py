@@ -34,7 +34,6 @@ class RecurringPlan(Base):
         CheckConstraint("unit IN ('days', 'weeks', 'months')", name="ck_recurring_plans_unit"),
         CheckConstraint("every >= 1", name="ck_recurring_plans_every"),
         CheckConstraint("amount IS NULL OR amount > 0", name="ck_recurring_plans_amount"),
-        CheckConstraint("shares IS NULL OR shares > 0", name="ck_recurring_plans_shares"),
         CheckConstraint(
             "provider IS NULL OR provider IN ('wise', 'revolut', 'other')",
             name="ck_recurring_plans_provider",
@@ -55,17 +54,34 @@ class RecurringPlan(Base):
     )
     #: Due dates up to here were already handled (so a deleted est. row stays deleted).
     generated_through: Mapped[date | None] = mapped_column(Date)
-    # Buy plan.
+    # Buy and deposit plans: the broker account (a buy plan's holdings are its legs).
     account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"))
-    instrument_id: Mapped[int | None] = mapped_column(
-        ForeignKey("instruments.id", ondelete="CASCADE")
-    )
-    #: Buy: native amount per run (or ``shares``); conversion: EUR sent per run.
+    #: Deposit: USD per run; conversion: EUR sent per run. Buy plans use their legs.
     amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
-    shares: Mapped[Decimal | None] = mapped_column(Numeric(18, 8))
     # Conversion plan.
     provider: Mapped[str | None] = mapped_column(String(16))
     expected_fee: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), server_default=func.current_timestamp(), nullable=False
     )
+
+
+class RecurringPlanLeg(Base):
+    """One holding a buy plan buys on every due date (amount or shares, same account)."""
+
+    __tablename__ = "recurring_plan_legs"
+    __table_args__ = (
+        CheckConstraint("amount IS NULL OR amount > 0", name="ck_recurring_plan_legs_amount"),
+        CheckConstraint("shares IS NULL OR shares > 0", name="ck_recurring_plan_legs_shares"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    plan_id: Mapped[int] = mapped_column(
+        ForeignKey("recurring_plans.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    instrument_id: Mapped[int] = mapped_column(
+        ForeignKey("instruments.id", ondelete="CASCADE"), nullable=False
+    )
+    amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+    shares: Mapped[Decimal | None] = mapped_column(Numeric(18, 8))
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

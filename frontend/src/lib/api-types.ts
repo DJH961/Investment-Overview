@@ -6434,6 +6434,34 @@ export interface components {
             /** Value Now Est */
             value_now_est?: string | null;
         };
+        /** LegIn */
+        LegIn: {
+            /**
+             * Amount
+             * @description Native amount per run.
+             */
+            amount?: number | string | null;
+            /** Instrument Id */
+            instrument_id: number;
+            /**
+             * Shares
+             * @description Or shares per run.
+             */
+            shares?: number | string | null;
+        };
+        /** LegOut */
+        LegOut: {
+            /** Amount */
+            amount: string | null;
+            /** Id */
+            id: number;
+            /** Instrument Id */
+            instrument_id: number;
+            /** Shares */
+            shares: string | null;
+            /** Symbol */
+            symbol: string;
+        };
         /** LiveResponse */
         LiveResponse: {
             /**
@@ -7081,7 +7109,7 @@ export interface components {
             account_id?: number | null;
             /**
              * Amount
-             * @description Buy: native amount per run; conversion: EUR sent.
+             * @description Deposit: USD per run; conversion: EUR sent.
              */
             amount?: number | string | null;
             /**
@@ -7099,25 +7127,20 @@ export interface components {
              */
             expected_fee?: number | string | null;
             /**
-             * Instrument Id
-             * @description Buy plans.
-             */
-            instrument_id?: number | null;
-            /**
              * Kind
              * @enum {string}
              */
             kind: "buy" | "deposit" | "conversion";
             /**
+             * Legs
+             * @description Buy plans: the holdings bought together on every due date (same account).
+             */
+            legs?: components["schemas"]["LegIn"][];
+            /**
              * Provider
              * @description Conversion plans.
              */
             provider?: ("wise" | "revolut" | "other") | null;
-            /**
-             * Shares
-             * @description Buy plans, instead of amount.
-             */
-            shares?: number | string | null;
             /**
              * Start Date
              * Format: date
@@ -7147,13 +7170,13 @@ export interface components {
             expected_fee: string | null;
             /** Id */
             id: number;
-            /** Instrument Id */
-            instrument_id: number | null;
             /**
              * Kind
              * @enum {string}
              */
             kind: "buy" | "deposit" | "conversion";
+            /** Legs */
+            legs: components["schemas"]["LegOut"][];
             /**
              * Next Due
              * @description Next due date still to be handled; null if none.
@@ -7168,8 +7191,6 @@ export interface components {
             paused: boolean;
             /** Provider */
             provider: ("wise" | "revolut" | "other") | null;
-            /** Shares */
-            shares: string | null;
             /** Start Date */
             start_date: string;
             /**
@@ -7177,8 +7198,6 @@ export interface components {
              * @enum {string}
              */
             status: "active" | "paused" | "ended";
-            /** Symbol */
-            symbol: string | null;
             /**
              * Unit
              * @enum {string}
@@ -8642,6 +8661,15 @@ export interface components {
             /** Value */
             value: string;
         };
+        /** SuggestedLegOut */
+        SuggestedLegOut: {
+            /** Amount */
+            amount: string;
+            /** Instrument Id */
+            instrument_id: number;
+            /** Symbol */
+            symbol: string;
+        };
         /** SuggestionOut */
         SuggestionOut: {
             /** Account */
@@ -8654,13 +8682,16 @@ export interface components {
             anchor: number | null;
             /** Every */
             every: number;
-            /** Instrument Id */
-            instrument_id?: number | null;
             /**
              * Kind
              * @enum {string}
              */
             kind: "buy" | "deposit" | "conversion";
+            /**
+             * Legs
+             * @description Buy plans.
+             */
+            legs?: components["schemas"]["SuggestedLegOut"][];
             /**
              * Occurrences
              * @description How many past rows the suggestion is based on.
@@ -8668,8 +8699,6 @@ export interface components {
             occurrences: number;
             /** Provider */
             provider?: ("wise" | "revolut" | "other") | null;
-            /** Symbol */
-            symbol?: string | null;
             /**
              * Unit
              * @enum {string}
