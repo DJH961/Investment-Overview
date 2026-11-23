@@ -34,7 +34,7 @@ def test_refresh_prices_uses_provider_symbol_and_skips_frozen(session: Session) 
     a, b, _c = _seed(session)
     asked: list[list[str]] = []
 
-    def fake(symbols: list[str], start: date, end: date) -> dict[str, Any]:
+    def fake(symbols: list[str], start: date, end: date, **_k: object) -> dict[str, Any]:
         asked.append(list(symbols))
         return {s: {DAY: Decimal("10")} for s in symbols}
 

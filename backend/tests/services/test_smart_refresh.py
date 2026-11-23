@@ -180,7 +180,7 @@ def test_refresh_due_prices_stamps_provider_market_time(session: Session, monkey
 
     monkeypatch.setattr(prices_service, "fetch_closes", lambda *a, **k: {"VTI": {}})
     market = datetime(2024, 6, 24, 19, 59)
-    monkeypatch.setattr(prices_service, "fetch_market_times", lambda symbols: {"VTI": market})
+    monkeypatch.setattr(prices_service, "fetch_market_times", lambda symbols, **_k: {"VTI": market})
 
     now = _utc_naive(datetime.now(UTC))
     prices_service.refresh_due_prices(session, now=now)
@@ -199,7 +199,7 @@ def test_refresh_due_prices_tolerates_market_time_failure(session: Session, monk
 
     monkeypatch.setattr(prices_service, "fetch_closes", lambda *a, **k: {"VTI": {}})
 
-    def boom(symbols):  # type: ignore[no-untyped-def]
+    def boom(symbols, **_k):  # type: ignore[no-untyped-def]
         raise RuntimeError("quote endpoint down")
 
     monkeypatch.setattr(prices_service, "fetch_market_times", boom)
