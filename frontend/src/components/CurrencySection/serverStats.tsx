@@ -1,4 +1,4 @@
-import { ArrowDownRight, ArrowUpDown, ArrowUpRight, Minus } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
 import type { ReactNode } from "react";
 import { Money } from "../Money";
 import type { StatItem } from "../StatStrip";
@@ -28,8 +28,8 @@ export interface StatMeta {
   fractionFormat?: "percent" | "pp";
 }
 
-const KIND_WORD = { tailwind: "Tailwind", headwind: "Headwind", neutral: "Neutral", mixed: "Mixed" } as const;
-const KIND_ICON = { tailwind: ArrowUpRight, headwind: ArrowDownRight, neutral: Minus, mixed: ArrowUpDown } as const;
+const KIND_WORD = { tailwind: "Tailwind", headwind: "Headwind", neutral: "Neutral" } as const;
+const KIND_ICON = { tailwind: ArrowUpRight, headwind: ArrowDownRight, neutral: Minus } as const;
 
 export function statFigure(
   unit: string | null | undefined,
@@ -46,7 +46,7 @@ export function statFigure(
 }
 
 /** Tailwind / headwind as an arrow and a word, never colour alone. */
-export function KindTag({ kind }: { kind: "tailwind" | "headwind" | "neutral" | "mixed" }) {
+export function KindTag({ kind }: { kind: "tailwind" | "headwind" | "neutral" }) {
   const Icon = KIND_ICON[kind];
   return (
     <span className={`currency-stat__kind currency-stat__kind--${kind}`}>

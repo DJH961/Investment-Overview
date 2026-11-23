@@ -71,13 +71,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Received in USD:** mark a deposit as received in dollars (no conversion). It keeps the ECB
   valuation, shows as "Received in USD", and the Data Health note "deposits valued at the ECB
   rate with no conversion" (info only) leaves it out. Migration 0027a.
-### Fixed
-- **Currency, Impact: the headline no longer says "Tailwind" beside a negative gap.** The
-  euro amount adds up each day's rate move on what you held that day, while the gap in
-  points weighs each stretch of time equally, so a large deposit made after the rate had
-  moved can turn one positive and the other negative. When the two print opposite signs the
-  tag now reads "Mixed" (with a plain-language tip about your timing) instead of
-  one word; when they agree it is unchanged. `headline.kind` gains the value `mixed`.
 
 ## [7.2.1] — 2026-11-22
 
