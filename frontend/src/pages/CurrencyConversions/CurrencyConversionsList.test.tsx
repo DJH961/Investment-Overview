@@ -79,27 +79,28 @@ afterEach(() => {
 });
 
 describe("CurrencyConversions folds and filters", () => {
-  it("opens the two newest months, folds the rest and renders only open groups", async () => {
+  it("opens the running year, folds an older one (both can fold) and renders only open years", async () => {
     renderAt("/conversions");
-    // One list per open month.
-    expect(await screen.findAllByRole("list", { name: "Currency conversions" })).toHaveLength(2);
-    // June and May are open (their rows are there); March and the 2024 year are folded.
-    expect(screen.getAllByRole("button", { name: /June 2026/ })[0]).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getAllByRole("button", { name: /May 2026/ })[0]).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getAllByRole("button", { name: /March 2026/ })[0]).toHaveAttribute("aria-expanded", "false");
-    expect(document.getElementById("conversion-1")).not.toBeNull();
-    expect(document.getElementById("conversion-3")).toBeNull();
-    expect(document.getElementById("conversion-4")).toBeNull();
-    // Opening a month renders its rows, and the choice is remembered.
-    fireEvent.click(screen.getAllByRole("button", { name: /March 2026/ })[0]);
+    // One list: the 2026 year is open, 2024 is folded.
+    expect(await screen.findAllByRole("list", { name: "Currency conversions" })).toHaveLength(1);
+    const y2026 = screen.getAllByRole("button", { name: /2026/ })[0];
+    expect(y2026).toHaveAttribute("aria-expanded", "true");
+    expect(screen.queryByRole("button", { name: /June 2026/ })).toBeNull();
+    expect(screen.getAllByRole("button", { name: /2024/ })[0]).toHaveAttribute("aria-expanded", "false");
     expect(document.getElementById("conversion-3")).not.toBeNull();
+    expect(document.getElementById("conversion-4")).toBeNull();
+    // The running year folds, the older one opens, and the choice is remembered.
+    fireEvent.click(y2026);
+    expect(document.getElementById("conversion-1")).toBeNull();
+    fireEvent.click(screen.getAllByRole("button", { name: /2024/ })[0]);
+    expect(document.getElementById("conversion-4")).not.toBeNull();
     expect(localStorage.getItem("iv.conversions.folds") ?? localStorage.getItem("conversions.folds")).toContain("true");
   });
 
   it("opens the folds of a row a link points at", async () => {
     window.HTMLElement.prototype.scrollIntoView = vi.fn();
     renderAt("/conversions#conversion-4");
-    // The 2024 row sits in a folded year: the link opens the year and the month.
+    // The 2024 row sits in a folded year: the link opens the year.
     expect(document.getElementById("conversion-4")).toBeNull();
     await vi.waitFor(() => expect(document.getElementById("conversion-4")).not.toBeNull());
   });

@@ -72,6 +72,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   valuation, shows as "Received in USD", and the Data Health note "deposits valued at the ECB
   rate with no conversion" (info only) leaves it out. Migration 0027a.
 
+### Fixed
+- **Conversions page folds:** every year, the running one included, folds and unfolds;
+  the month level is gone (year, then conversions, newest first); rows get more
+  vertical room so entries no longer touch.
+
 ## [7.2.1] — 2026-11-22
 
 ### Added

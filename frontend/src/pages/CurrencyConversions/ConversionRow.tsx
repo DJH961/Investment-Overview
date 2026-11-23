@@ -92,7 +92,7 @@ export function ConversionRow({ c, menu, onSettle }: { c: FxConversion; menu: Re
         )}
         {c.is_estimate && onSettle && <EstChip onOpen={onSettle} />}
         {c.note && (
-          <span className="conv__note conv__note--wide" title={c.note}>
+          <span className="conv__note conv__note--wide" title={c.note} data-truncate-ok>
             {c.note}
           </span>
         )}

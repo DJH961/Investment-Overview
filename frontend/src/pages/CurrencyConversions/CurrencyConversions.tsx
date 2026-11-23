@@ -39,15 +39,11 @@ import { DepositRow } from "./DepositRow";
 import { activeCount, FilterBar, NO_FILTERS, PROVIDER_FILTER_OPTIONS, ToggleChip, type ConversionFilters } from "./Filters";
 import { Fold } from "./Fold";
 import {
-  buildSections,
-  groupByMonth,
+  groupByYear,
   inPeriod,
-  monthLabel,
-  newestMonths,
   PERIOD_ALL,
   periodOptions,
   validPeriod,
-  type MonthGroup,
 } from "./grouping";
 import { PinDialog } from "./PinDialog";
 import "./CurrencyConversions.scss";
@@ -249,8 +245,8 @@ const isFolds = (v: unknown): v is Record<string, boolean> =>
 type Folds = Record<string, boolean>;
 
 /**
- * Month folds (and year folds for years before this one) around any dated list. Only the
- * open groups render their rows. `prefix` keeps the remembered open/closed state of the
+ * One fold per year (the running year included, open at first) around any dated list. Only
+ * open years render their rows. `prefix` keeps the remembered open/closed state of the
  * conversions and of the deposits apart.
  */
 function FoldedList<T>({
@@ -275,42 +271,21 @@ function FoldedList<T>({
   meta: (items: readonly T[]) => ReactNode;
   children: (items: readonly T[]) => ReactNode;
 }) {
-  const groups = groupByMonth(items, dateOf);
-  const sections = buildSections(groups, thisYear);
-  const recent = newestMonths(groups.map((g) => g.key));
-  const isOpen = (key: string, fallback: boolean) => folds[key] ?? (filtered ? true : fallback);
-  const toggle = (key: string, now: boolean) => setFolds((prev) => ({ ...prev, [key]: !now }));
-  const month = (g: MonthGroup<T>, nested = false) => {
-    const key = `${prefix}:${g.key}`;
-    const open = isOpen(key, recent.has(g.key));
-    return (
-      <Fold
-        key={key}
-        nested={nested}
-        open={open}
-        onToggle={() => toggle(key, open)}
-        title={monthLabel(g.key)}
-        meta={meta(g.items)}
-      >
-        {children(g.items)}
-      </Fold>
-    );
-  };
+  const blocks = groupByYear(items, dateOf);
   return (
     <div className="conversions__folds">
-      {sections.map((s) => {
-        if (s.kind === "month") return month(s.group);
-        const key = `${prefix}:y${s.block.year}`;
-        const open = isOpen(key, s.block.months.some((g) => recent.has(g.key)));
+      {blocks.map((b) => {
+        const key = `${prefix}:y${b.year}`;
+        const open = folds[key] ?? (filtered ? true : b.year >= thisYear);
         return (
           <Fold
             key={key}
             open={open}
-            onToggle={() => toggle(key, open)}
-            title={s.block.year}
-            meta={meta(s.block.months.flatMap((g) => g.items))}
+            onToggle={() => setFolds((prev) => ({ ...prev, [key]: !open }))}
+            title={b.year}
+            meta={meta(b.items)}
           >
-            {s.block.months.map((g) => month(g, true))}
+            {children(b.items)}
           </Fold>
         );
       })}
@@ -398,9 +373,8 @@ export function CurrencyConversions() {
         navigate({ search: "", hash: location.hash }, { replace: true });
         return;
       }
-      const month = item.date.slice(0, 7);
       const prefix = isConversion ? "c" : "d";
-      setFolds((prev) => ({ ...prev, [`${prefix}:${month}`]: true, [`${prefix}:y${month.slice(0, 4)}`]: true }));
+      setFolds((prev) => ({ ...prev, [`${prefix}:y${item.date.slice(0, 4)}`]: true }));
       if (!isConversion) setOpenDeposits((prev) => new Set(prev).add(n));
       setPending(id);
     });
