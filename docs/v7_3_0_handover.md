@@ -53,9 +53,9 @@ Targeted backend tests: 120 passed after the last merge; frontend typecheck clea
 
 Owner: no Impact/"Mixed" changes in 7.3.0 (reverted, d4ad2df2); money-maths inconsistencies go
 to 7.3.1 (`docs/v7_3_1_money_math_issues.md`). Polish branches off feat/v7.3.0, merge when done:
-- `lane/v7.3-conv-folds`: Conversions page: every year foldable (current year too), no month
+- DONE (merged, checked at 360/390/1280: year folds, indent, "Paid for deposits on…", kept line, 4-line phone rows) `lane/v7.3-conv-folds`+`conv-polish{,2,3}`: Conversions page: every year foldable (current year too), no month
   level (year → conversions), consistent vertical spacing so entries never touch.
-- `lane/v7.3-costs-polish`: Currency Conversions section: Best/Worst as one tile (no lone
+- DONE (merged, checked) `lane/v7.3-costs-polish`: Currency Conversions section; still running: By-year phone rows + `/currency` overflow fixes (lane A): Best/Worst as one tile (no lone
   tile on a 2nd row), By-year/provider tables fit without horizontal scroll.
 - `lane/v7.3-recurring-polish`: proper provider/account names and short plan titles, a fixture
   account with an MMF, price shown at stepped precision, 360/390 checks.
