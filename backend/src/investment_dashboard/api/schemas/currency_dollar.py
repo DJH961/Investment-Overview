@@ -25,6 +25,7 @@ from pydantic import Field
 from investment_dashboard.api.deps import Ccy
 from investment_dashboard.api.schemas.common import ApiModel, DecStr
 from investment_dashboard.api.schemas.currency_rate import (
+    RangeWindow,
     RateChange,
     RateHistoryPoint,
     RatePercentiles,
@@ -300,6 +301,10 @@ class DollarOut(ApiModel):
     trend: DollarTrend = Field(default_factory=DollarTrend)
     rolling: list[RollingSeries] = Field(default_factory=list)
     stats: list[DollarStat] = Field(default_factory=list)
+    #: 1D / 1W: trailing month-plus changes say nothing about so short a range.
+    rolling_too_short: bool = False
+    #: The range as dates (one meaning for the whole page, 7.3.1).
+    window: RangeWindow | None = None
 
 
 # -- GET /currency/scenarios/both ---------------------------------------------
@@ -441,6 +446,8 @@ class ScenariosOut(ApiModel):
     sensitivity: Sensitivity | None = None
     cushion: Cushion | None = None
     stats: list[ScenarioStat] = Field(default_factory=list)
+    #: The range as dates (one meaning for the whole page, 7.3.1).
+    window: RangeWindow | None = None
 
 
 __all__ = [

@@ -26,9 +26,10 @@ from pydantic import Field
 
 from investment_dashboard.api.deps import Ccy
 from investment_dashboard.api.schemas.common import ApiModel, DecStr
+from investment_dashboard.api.schemas.currency_rate import RangeWindow
 
 #: ``1d|1w|1m|3m|ytd|1y|3y|5y|10y|all`` or a calendar year (``2025``).
-EFFECT_RANGE_PATTERN = r"^(1d|1w|1m|3m|ytd|1y|3y|5y|10y|all|\d{4})$"
+EFFECT_RANGE_PATTERN = r"^(1d|1w|1m|3m|ytd|1y|3y|5y|10y|all|max|\d{4})$"
 
 EffectKind = Literal["tailwind", "headwind", "neutral"]
 EffectGranularity = Literal["intraday", "daily", "weekly"]
@@ -365,6 +366,8 @@ class CurrencyEffectOut(ApiModel):
     book_note: str | None = None
     #: USD view only: the investing perspective (null without USD deposits).
     investing: InvestingEffect | None = None
+    #: The range as dates (one meaning for the whole page, 7.3.1).
+    window: RangeWindow | None = None
 
 
 __all__ = [

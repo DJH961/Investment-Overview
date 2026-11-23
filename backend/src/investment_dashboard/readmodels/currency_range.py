@@ -20,8 +20,10 @@ from, exclusive, so adjacent windows chain exactly), plus ``live`` for today.
 
 from __future__ import annotations
 
+import bisect
 from dataclasses import dataclass
 from datetime import date, timedelta
+from decimal import Decimal
 from typing import Any
 
 from investment_dashboard.domain.market_hours import exchange_today
@@ -73,6 +75,14 @@ class Window:
         return self.after + timedelta(days=1)
 
     @property
+    def start_on(self) -> date:
+        """The day a chart of the range starts on: the close the range is measured from
+        (``after``), or for ``all`` the first transaction (never a day before it)."""
+        if self.key in ("all", "max"):
+            return self.start
+        return self.after
+
+    @property
     def own_after(self) -> date:
         """``after`` clamped to your investing window (never before the first transaction)."""
         if self.first is None:
@@ -82,7 +92,7 @@ class Window:
     def to_dict(self) -> dict[str, Any]:
         return {
             "key": self.key,
-            "start": self.start.isoformat(),
+            "start": self.start_on.isoformat(),
             "through": self.through.isoformat(),
             "live": self.live,
             "intraday": self.intraday,
@@ -120,3 +130,19 @@ def resolve(range_key: str, today: date, first: date | None) -> Window:  # noqa:
     if key in MONTHS:
         return Window(key, minus_months(today, MONTHS[key]), end, True, False, first)
     raise ValueError(f"unknown range {range_key!r}")
+
+
+def start_rate(daily: list[tuple[date, Decimal]], window: Window) -> tuple[date, Decimal] | None:
+    """The rate a range's change is measured from, the same for every section.
+
+    The close the range starts from (the last fixing on or before ``after``, so 1Y
+    and Impact's 1Y chain from the same close). ``all`` starts at the first fixing
+    inside your investing window: nothing before your first transaction is quoted.
+    ``daily`` is sorted by date.
+    """
+    if not daily:
+        return None
+    if window.key == "all":
+        return next(((d, r) for d, r in daily if d >= window.start_on), daily[-1])
+    i = bisect.bisect_right([d for d, _ in daily], window.after)
+    return daily[i - 1] if i else daily[0]

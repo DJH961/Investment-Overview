@@ -88,6 +88,22 @@ class RateSession(ApiModel):
     close: str
 
 
+class RangeWindow(ApiModel):
+    """The page range as dates (``readmodels/currency_range``), the same in every section."""
+
+    key: str
+    #: The day the range is measured from (``all``: your first transaction).
+    start: str
+    #: The last settled close inside the range.
+    through: str
+    #: Today's live move is part of the range.
+    live: bool
+    #: Drawn from intraday samples (1D / 1W).
+    intraday: bool
+    #: ``max`` only: days on or before this are before you started (context only).
+    context_until: str | None = None
+
+
 class RateHistoryOut(ApiModel):
     range: RateRange
     granularity: Literal["intraday", "daily", "weekly"]
@@ -110,6 +126,8 @@ class RateHistoryOut(ApiModel):
     trend: RateTrend | None = None
     percentiles: RatePercentiles = Field(default_factory=RatePercentiles)
     markers: list[ConversionMarker] = Field(default_factory=list)
+    #: The range as dates (one meaning for the whole page, 7.3.1).
+    window: RangeWindow | None = None
 
 
 __all__ = [

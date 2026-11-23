@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.domain import fx_spread, fx_trend, market_hours
 from investment_dashboard.domain.market_hours import exchange_today
+from investment_dashboard.readmodels import currency_range
 from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.repositories import transactions_repo
 from investment_dashboard.services import (
@@ -47,7 +48,6 @@ SAMPLE_FILL_GAP_S = 20 * 60
 INTRADAY_RANGES = frozenset({"1d", "1w"})
 WEEKLY_RANGES = frozenset({"10y", "max"})
 MA_RANGES = frozenset({"1y", "5y", "10y", "max"})
-_MONTHS = {"1m": 1, "3m": 3, "1y": 12, "5y": 60, "10y": 120}
 SIX_DP = Decimal("0.000001")
 ONE = Decimal(1)
 SOURCE_ECB = "ECB reference rate"
@@ -58,31 +58,14 @@ def _q6(value: Decimal) -> Decimal:
     return value.quantize(SIX_DP)
 
 
-def _minus_months(day: date, months: int) -> date:
-    total = day.year * 12 + (day.month - 1) - months
-    year, month = divmod(total, 12)
-    month += 1
-    for dd in (day.day, 30, 29, 28):
-        try:
-            return date(year, month, dd)
-        except ValueError:
-            continue
-    return date(year, month, 28)  # pragma: no cover - unreachable
+_minus_months = currency_range.minus_months
 
 
 def range_start(range_key: str, today: date, first_ledger: date | None = None) -> date:
-    """First calendar day of a daily/weekly range (``all``: the first ledger day)."""
-    if range_key == "all":
-        return (
-            first_ledger
-            if first_ledger is not None and first_ledger <= today
-            else (fx_service.HISTORY_START)
-        )
-    if range_key == "ytd":
-        return date(today.year, 1, 1)
-    if range_key == "max":
+    """First calendar day of a daily/weekly range (one meaning: :mod:`currency_range`)."""
+    if range_key == "all" and first_ledger is None:
         return fx_service.HISTORY_START
-    return _minus_months(today, _MONTHS[range_key])
+    return currency_range.resolve(range_key, today, first_ledger).start_on
 
 
 def _iso_utc(at: datetime) -> str:
@@ -117,10 +100,13 @@ def _point(t: str, rate: Decimal, inverse: Decimal | None = None) -> dict[str, A
 
 
 def _weekly(points: Sequence[tuple[date, Decimal]]) -> list[tuple[date, Decimal]]:
-    """The last row of each ISO week."""
+    """The last row of each ISO week; the range's very first row is always kept, so the
+    line starts at the rate its change is measured from."""
     out: list[tuple[date, Decimal]] = []
     for d, r in points:
         if out and out[-1][0].isocalendar()[:2] == d.isocalendar()[:2]:
+            if len(out) == 1:
+                continue  # the first week keeps the range's first row
             out[-1] = (d, r)
         else:
             out.append((d, r))
@@ -241,6 +227,7 @@ def build_rate_history(
     sessions: list[dict[str, str]] = []
     stock_hours: list[dict[str, str]] = []
     first_ledger = transactions_repo.earliest_transaction_date(session)
+    window = currency_range.resolve(range_key, today, first_ledger)
     if range_key in INTRADAY_RANGES:
         granularity, source = "intraday", SOURCE_LIVE
         raw, sessions, start_at, end_at = _intraday(session, range_key, now)
@@ -254,6 +241,9 @@ def build_rate_history(
         granularity = "weekly" if weekly else "daily"
         source = SOURCE_ECB
         in_range = [(d, r) for d, r in daily if d >= start]
+        anchor = currency_range.start_rate(daily, window)
+        if anchor is not None and (not in_range or anchor[0] < in_range[0][0]):
+            in_range = [anchor, *in_range]  # the close before a weekend start
         as_of = in_range[-1][0].isoformat() if in_range else None
         if live is not None and live.observed_on == today and start <= today:
             # Today's live spot is the newest point (replacing today's own fixing);
@@ -306,11 +296,26 @@ def build_rate_history(
         ),
         "low": _point(extremes.low_at, extremes.low) if extremes else None,
         "high": _point(extremes.high_at, extremes.high) if extremes else None,
-        "change": _change(raw[0][1], raw[-1][1]) if raw else None,
+        "change": _range_change(daily, window, raw),
+        "window": window.to_dict(),
         "trend": _trend(daily),
         "percentiles": {k: dec(v) for k, v in percentiles.items()},
         "markers": _markers(session, marker_start, marker_end),
     }
+
+
+def _range_change(
+    daily: list[tuple[date, Decimal]], window: currency_range.Window, raw: list[tuple[str, Decimal]]
+) -> dict[str, Any] | None:
+    """From the range's start rate (:func:`currency_range.start_rate`) to the newest point.
+
+    Intraday ranges keep their first sample (the session's own start).
+    """
+    if not raw:
+        return None
+    if window.intraday:
+        return _change(raw[0][1], raw[-1][1])
+    return _change(raw[0][1], raw[-1][1])
 
 
 __all__ = ["RANGES", "build_rate_history", "range_start"]

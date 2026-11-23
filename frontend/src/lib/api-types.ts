@@ -3432,6 +3432,7 @@ export interface components {
              * @description Conversions with no fixing close enough; not counted.
              */
             unpriced: number;
+            window?: components["schemas"]["RangeWindow"] | null;
             worst: components["schemas"]["CostRowOut"] | null;
         };
         /** CurrencyBlock */
@@ -3517,6 +3518,7 @@ export interface components {
             start_on?: string | null;
             /** Stats */
             stats?: components["schemas"]["EffectStat"][];
+            window?: components["schemas"]["RangeWindow"] | null;
             /** Years */
             years?: components["schemas"]["EffectBar"][];
         };
@@ -4147,9 +4149,15 @@ export interface components {
             range: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "all" | "5y" | "10y" | "max";
             /** Rolling */
             rolling?: components["schemas"]["RollingSeries"][];
+            /**
+             * Rolling Too Short
+             * @default false
+             */
+            rolling_too_short: boolean;
             /** Stats */
             stats?: components["schemas"]["DollarStat"][];
             trend?: components["schemas"]["DollarTrend"];
+            window?: components["schemas"]["RangeWindow"] | null;
         };
         /**
          * DollarPosition
@@ -4347,6 +4355,8 @@ export interface components {
          * @description ``start + deposits + market + currency == end`` exactly, in ``ccy``.
          */
         EffectBridge: {
+            /** Conversion Cost */
+            conversion_cost?: string | null;
             /** Currency */
             currency: string;
             /** Deposits */
@@ -4357,10 +4367,14 @@ export interface components {
             end_on: string;
             /** Market */
             market: string;
+            /** Revaluation */
+            revaluation?: string | null;
             /** Start */
             start: string;
             /** Start On */
             start_on: string;
+            /** Waiting */
+            waiting?: string | null;
         };
         /**
          * EffectBuys
@@ -7696,6 +7710,24 @@ export interface components {
             /** Status */
             status: string | null;
         };
+        /**
+         * RangeWindow
+         * @description The page range as dates (``readmodels/currency_range``), the same in every section.
+         */
+        RangeWindow: {
+            /** Context Until */
+            context_until?: string | null;
+            /** Intraday */
+            intraday: boolean;
+            /** Key */
+            key: string;
+            /** Live */
+            live: boolean;
+            /** Start */
+            start: string;
+            /** Through */
+            through: string;
+        };
         /** RateChange */
         RateChange: {
             /** End Rate */
@@ -7742,6 +7774,7 @@ export interface components {
             trend?: components["schemas"]["RateTrend"] | null;
             /** Us Market Hours */
             us_market_hours?: components["schemas"]["RateSession"][];
+            window?: components["schemas"]["RangeWindow"] | null;
         };
         /** RateHistoryPoint */
         RateHistoryPoint: {
@@ -8220,6 +8253,7 @@ export interface components {
             value_now?: string | null;
             /** Value Now Other */
             value_now_other?: string | null;
+            window?: components["schemas"]["RangeWindow"] | null;
         };
         /** SchedulerJob */
         SchedulerJob: {

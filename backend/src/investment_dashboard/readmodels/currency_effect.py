@@ -1268,6 +1268,7 @@ def _one_side(  # noqa: PLR0912, PLR0915
         if missing
         else None,
         "investing": investing,
+        "window": window.to_dict(),
     }
 
 

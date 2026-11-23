@@ -9,6 +9,7 @@ from typing import Literal
 from pydantic import Field, field_validator
 
 from investment_dashboard.api.schemas.common import ApiModel, DecStr
+from investment_dashboard.api.schemas.currency_rate import RangeWindow
 
 Provider = Literal["wise", "revolut", "other"]
 DepositStatus = Literal["matched", "partial", "ecb_only", "received_usd"]
@@ -179,6 +180,8 @@ class CostsOut(ApiModel):
     cheaper_than: Provider | None = Field(description="The next-cheapest provider.")
     cheaper_gap_pct: DecStr | None
     rows: list[CostRowOut]
+    #: The range as dates (one meaning for the whole page, 7.3.1).
+    window: RangeWindow | None = None
 
 
 class SliceOut(ApiModel):

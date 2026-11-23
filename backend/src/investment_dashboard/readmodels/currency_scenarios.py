@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -30,7 +30,7 @@ from investment_dashboard.domain.fx_scenarios import Book
 from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.domain.returns import growth_index
 from investment_dashboard.domain.risk import annualized_volatility, max_drawdown
-from investment_dashboard.readmodels import currency_rate
+from investment_dashboard.readmodels import currency_range
 from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.readmodels.currency_dollar import QUOTES
 from investment_dashboard.repositories import transactions_repo
@@ -137,14 +137,8 @@ MIN_WINDOW_DAYS = 25
 
 
 def range_start(range_key: str, today: date, first: date | None) -> date:
-    """First day of the page range. ``all`` = the first transaction; ``max`` = since 1999."""
-    if range_key == "all":
-        return first or fx_service.HISTORY_START
-    if range_key == "1d":
-        return today - timedelta(days=1)
-    if range_key == "1w":
-        return today - timedelta(days=7)
-    return currency_rate.range_start(range_key, today)
+    """First day of the page range (one meaning: :mod:`currency_range`)."""
+    return currency_range.resolve(range_key, today, first).start_on
 
 
 def _too_short(since: date) -> dict[str, Any]:
@@ -335,7 +329,7 @@ def _add_mark(
         lows_highs[key] = (on_day, rate, worth_at(rate))
 
 
-def build_scenarios_both(
+def build_scenarios_both(  # noqa: PLR0915
     session: Session,
     overview: dict[str, dict[str, Any]],
     range_key: str = "max",
@@ -359,7 +353,13 @@ def build_scenarios_both(
     daily = sorted(
         (d, r) for d, r in fx_service.get_settled_rates(session).items() if r > 0 and d <= today
     )
-    in_range = [(d, r) for d, r in daily if d >= start] or daily[-1:]
+    window = currency_range.resolve(range_key, today, first_tx)
+    in_range = [(d, r) for d, r in daily if d >= start]
+    # Measured from the close the range starts from, as every Currency section is
+    # (1D: yesterday's close to now), so a short range never collapses to one point.
+    anchor = currency_range.start_rate(daily, window)
+    if anchor is not None and (not in_range or anchor[0] < in_range[0][0]):
+        in_range = [anchor, *in_range]
     extremes = fx_trend.range_extremes(in_range)
     start_rate = in_range[0][1] if in_range else None
     start_on = in_range[0][0] if in_range else None
@@ -395,6 +395,7 @@ def build_scenarios_both(
             "rows": [_row(book, q, r, ccy, avg, be, other, invest, spot) for q, r in grid],
             "cushion": cushion,
             "range": range_key,
+            "window": window.to_dict(),
             "range_start": start.isoformat(),
             "perspective": "invest" if invest else "value",
             "invest": (

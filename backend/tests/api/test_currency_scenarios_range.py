@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -17,11 +17,13 @@ def test_range_start_windows() -> None:
     today = date(2026, 11, 20)
     first = date(2023, 3, 1)
     assert sc.range_start("all", today, first) == first
-    assert sc.range_start("all", today, None) == date(1999, 1, 4)
+    # All is your investing window only: an empty ledger has none (yesterday's close).
+    assert sc.range_start("all", today, None) == date(2026, 11, 20)
     assert sc.range_start("max", today, first) == date(1999, 1, 4)
+    # One meaning per range (currency_range): measured from the close it starts from.
     assert sc.range_start("1w", today, first) == date(2026, 11, 13)
     assert sc.range_start("1d", today, first) == date(2026, 11, 19)
-    assert sc.range_start("ytd", today, first) == date(2026, 1, 1)
+    assert sc.range_start("ytd", today, first) == date(2025, 12, 31)
     assert sc.range_start("1y", today, first) == date(2025, 11, 20)
 
 
@@ -36,9 +38,10 @@ def test_marks_follow_the_range(api_client: TestClient, seeded: None) -> None:  
     assert narrow["USD"]["range_start"] is not None
     w, n = _marks(wide["USD"]), _marks(narrow["USD"])
     assert "range_start" in n
+    # The start mark is the close the range is measured from (weekend: the Friday).
     assert date.fromisoformat(n["range_start"]["date"]) >= date.fromisoformat(
         narrow["USD"]["range_start"]
-    )
+    ) - timedelta(days=4)
     # The low/high of a window sit inside the all-time ones.
     assert Decimal(n["historic_low"]["rate_display"]) >= Decimal(w["historic_low"]["rate_display"])
     assert Decimal(n["historic_high"]["rate_display"]) <= Decimal(

@@ -3659,6 +3659,16 @@
             "title": "Unpriced",
             "type": "integer"
           },
+          "window": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RangeWindow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "worst": {
             "anyOf": [
               {
@@ -3962,6 +3972,16 @@
             },
             "title": "Stats",
             "type": "array"
+          },
+          "window": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RangeWindow"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "years": {
             "items": {
@@ -5816,6 +5836,11 @@
             "title": "Rolling",
             "type": "array"
           },
+          "rolling_too_short": {
+            "default": false,
+            "title": "Rolling Too Short",
+            "type": "boolean"
+          },
           "stats": {
             "items": {
               "$ref": "#/components/schemas/DollarStat"
@@ -5825,6 +5850,16 @@
           },
           "trend": {
             "$ref": "#/components/schemas/DollarTrend"
+          },
+          "window": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RangeWindow"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -6427,6 +6462,18 @@
       "EffectBridge": {
         "description": "``start + deposits + market + currency == end`` exactly, in ``ccy``.",
         "properties": {
+          "conversion_cost": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversion Cost"
+          },
           "currency": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Currency",
@@ -6451,6 +6498,18 @@
             "title": "Market",
             "type": "string"
           },
+          "revaluation": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revaluation"
+          },
           "start": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Start",
@@ -6459,6 +6518,18 @@
           "start_on": {
             "title": "Start On",
             "type": "string"
+          },
+          "waiting": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Waiting"
           }
         },
         "required": [
@@ -16269,6 +16340,51 @@
         "title": "ProviderOut",
         "type": "object"
       },
+      "RangeWindow": {
+        "description": "The page range as dates (``readmodels/currency_range``), the same in every section.",
+        "properties": {
+          "context_until": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Until"
+          },
+          "intraday": {
+            "title": "Intraday",
+            "type": "boolean"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "live": {
+            "title": "Live",
+            "type": "boolean"
+          },
+          "start": {
+            "title": "Start",
+            "type": "string"
+          },
+          "through": {
+            "title": "Through",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "start",
+          "through",
+          "live",
+          "intraday"
+        ],
+        "title": "RangeWindow",
+        "type": "object"
+      },
       "RateChange": {
         "properties": {
           "end_rate": {
@@ -16434,6 +16550,16 @@
             },
             "title": "Us Market Hours",
             "type": "array"
+          },
+          "window": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RangeWindow"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -17940,6 +18066,16 @@
               }
             ],
             "title": "Value Now Other"
+          },
+          "window": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RangeWindow"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -24074,7 +24210,7 @@
             "required": false,
             "schema": {
               "default": "ytd",
-              "pattern": "^(1d|1w|1m|3m|ytd|1y|3y|5y|10y|all|\\d{4})$",
+              "pattern": "^(1d|1w|1m|3m|ytd|1y|3y|5y|10y|all|max|\\d{4})$",
               "title": "Range",
               "type": "string"
             }
