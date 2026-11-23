@@ -17,6 +17,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 
@@ -90,15 +91,45 @@ async def _allow() -> None:
     return None
 
 
+#: Built apps, keyed by the settings ``create_app`` reads. Building one registers
+#: every route (about 0.3 s, far more than a typical API test), and the app keeps no
+#: per-request state: a test only changes ``dependency_overrides`` and ``app.state``,
+#: which ``_shared_app`` resets.
+_APPS: dict[tuple[object, ...], FastAPI] = {}
+
+
+def _shared_app() -> FastAPI:
+    settings = get_settings()
+    key = (
+        settings.server_mode,
+        settings.expose_api_docs,
+        tuple(settings.dev_cors_origins or ()),
+        str(settings.frontend_dist) if settings.frontend_dist is not None else None,
+    )
+    app = _APPS.get(key)
+    if app is None:
+        app = _APPS[key] = create_app(lifespan=False)
+    app.dependency_overrides.clear()
+    app.state._state.clear()
+    return app
+
+
 @pytest.fixture
 def api_client(api_db: Path) -> Iterator[TestClient]:
-    app = create_app(lifespan=False)
+    app = _shared_app()
     app.dependency_overrides[require_auth] = _allow
-    with TestClient(app) as client:
-        yield client
+    try:
+        with TestClient(app) as client:
+            yield client
+    finally:
+        app.dependency_overrides.clear()
 
 
 @pytest.fixture
 def anon_client(api_db: Path) -> Iterator[TestClient]:
-    with TestClient(create_app(lifespan=False)) as client:
-        yield client
+    app = _shared_app()
+    try:
+        with TestClient(app) as client:
+            yield client
+    finally:
+        app.dependency_overrides.clear()
