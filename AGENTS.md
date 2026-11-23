@@ -173,6 +173,38 @@ Adapted from the owner's starter-project convention (see plan §4a):
 - Adapters are tested with mocked HTTP (`respx`) or patched downloaders. Live-API
   tests are `@pytest.mark.network` and skipped unless `--run-network`.
 
+## Testing for agents
+
+`uv run pytest` runs in parallel by default (`-n auto --dist loadfile` in
+`backend/pyproject.toml`); add `-n0` only to debug one test with `pdb` or `-s`. Run
+the tests for what you touched, from `backend/` (or the npm folder):
+
+| Change | Command |
+| --- | --- |
+| `domain/` money maths | `uv run pytest tests/domain` (then `HYPOTHESIS_PROFILE=ci` once for full counts) |
+| `readmodels/`, `services/` | `uv run pytest tests/readmodels tests/services` (or the matching files) |
+| `api/` endpoint | `uv run pytest tests/api/test_<resource>.py`, plus the contract regen above |
+| models / migrations | `uv run pytest tests/test_migration_*.py tests/test_added_columns_guard.py` |
+| `storage/`, `db.py`, boot, backups | `uv run pytest tests/storage tests/test_db_tiers.py tests/services/test_backup_*.py` |
+| `adapters/` | `uv run pytest tests/adapters/<broker or client>` |
+| frontend | `npm run typecheck && npx vitest run src/<path>` in `frontend/` |
+| web demo | `npm run typecheck && npm run test` in `web/` |
+
+- While iterating: `uv run pytest <files> -x --lf` (stop at the first failure, rerun
+  the last failures). Never run the full suite serially; CI runs it on every push.
+- When a run feels slow, add `--durations=15` and fix the slowest tests first.
+- Hypothesis: the local `dev` profile caps every property test at 30 examples; CI
+  (`HYPOTHESIS_PROFILE=ci`) runs each test's own count. Keep `max_examples` ≤ 300,
+  and ≤ 40 for tests that touch a database or the API.
+- Test databases skip fsync; a test that checks durability, journal mode, WAL files
+  or backups is marked `@pytest.mark.durable_sqlite` (or listed in
+  `_DURABLE_SQLITE_MODULES` in `tests/conftest.py`). The API tests copy a schema
+  template, so never rely on `create_all` running per test.
+- No `time.sleep` (use fake clocks or events), no real network (`respx`, patched
+  downloaders; live calls only under `@pytest.mark.network`), no OS keychain (tests
+  use a failing keyring backend) and no real home, AppData or cloud folders
+  (`monkeypatch` `Path.home` and clear the env vars).
+
 ## UI feedback loop: screenshots first
 
 The owner steers UI work from screenshots, early and often.
@@ -220,17 +252,14 @@ Money maths is the exception: it stays test-first (property tests plus golden va
   changes with no effect on the running app (docs, CI, tests, refactors) or to
   batch a short series of related PRs. Fold it into the next release; no entry
   should sit there longer than a few days, and **a bug fix never waits there**.
-- **Quality gate** before handoff (CI runs the same). The full local `pytest`
-  run takes about 2 hours on the owner's laptop (CI: about 2 minutes), so run the
-  targeted tests for what you touched locally and let CI run the full suite. Known
-  laptop-only failures (they read the real keyring and Dropbox/OneDrive folders):
-  `tests/storage/test_cloud_and_paths.py` cloud-detection tests.
+- **Quality gate** before handoff (CI runs the same). Run the targeted tests for
+  what you touched locally (see "Testing for agents") and let CI run the full suite.
   - From `backend/`:
   - `uv run ruff format .`
   - `uv run ruff check . --fix`
   - `uv run mypy src/investment_dashboard/domain`
   - `uv run lint-imports` (layering contracts)
-  - `uv run pytest`
+  - `uv run pytest <targeted files>` (parallel by default)
   - `npm run typecheck` and `npm run test` inside `frontend/` and `web/`
 - **Keep in step with every feature** (check each one when you add or change behaviour):
   - **Activity logs** (`activity_log.py`, `api/activity.py`, RUNBOOK "Activity logs"):
