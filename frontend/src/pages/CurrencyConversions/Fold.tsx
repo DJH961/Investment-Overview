@@ -8,35 +8,17 @@ export interface FoldProps {
   title: ReactNode;
   /** Quiet line under the title ("3 conversions · €5,000 → US$5,500"). */
   meta?: ReactNode;
-  /** A month inside a year: inset under the year's header instead of a card of its own. */
-  nested?: boolean;
   children: ReactNode;
 }
 
 /**
- * A month (or an older year) that folds its rows away. Same look as the month cards on the
+ * A year that folds its rows away. Same look as the month cards on the
  * Transactions page: a card with the chevron, the title and one quiet line, the rows flush
  * inside it. The children are only rendered while open, so a list of hundreds of rows costs
  * nothing until a group is opened.
  */
-export function Fold({ open, onToggle, title, meta, nested = false, children }: FoldProps) {
+export function Fold({ open, onToggle, title, meta, children }: FoldProps) {
   const bodyId = useId();
-  if (nested) {
-    return (
-      <section className={clsx("fold", open && "fold--open")}>
-        <h3 className="fold__heading">
-          <button type="button" className="fold__button" aria-expanded={open} aria-controls={bodyId} onClick={onToggle}>
-            <ChevronDown aria-hidden className="fold__chevron" />
-            <span className="fold__title">{title}</span>
-          </button>
-        </h3>
-        {meta && <p className="fold__meta">{meta}</p>}
-        <div id={bodyId} className="fold__body" hidden={!open}>
-          {open ? children : null}
-        </div>
-      </section>
-    );
-  }
   return (
     <section className={clsx("card", "card--collapsible", !open && "card--collapsed")}>
       <header className="card__header">
@@ -51,7 +33,7 @@ export function Fold({ open, onToggle, title, meta, nested = false, children }: 
         </div>
       </header>
       <div id={bodyId} className="card__body card__body--flush" hidden={!open}>
-        {open ? children : null}
+        {open ? <div className="fold__rows">{children}</div> : null}
       </div>
     </section>
   );

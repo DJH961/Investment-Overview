@@ -164,7 +164,11 @@ def test_markers_from_conversions(api_client: TestClient, seeded: None) -> None:
     assert (marker["from_ccy"], marker["to_ccy"]) == ("EUR", "USD")
     assert Decimal(marker["amount_from"]) == 1000
     assert Decimal(marker["rate"]) == Decimal("1.15")
-    assert marker["kind"] is None
+    # against the settled fixing of its day (7.3): above or below, with the all-in distance
+    assert marker["kind"] in ("above_reference", "below_reference")
+    assert marker["off_pct"] is not None
+    assert (Decimal(marker["off_pct"]) > 0) == (marker["kind"] == "above_reference")
+    assert Decimal(marker["amount_to"]) == 1150
     assert isinstance(marker["conversion_id"], int)
     assert _get(api_client, "1m")["markers"] == []  # 40 days ago is outside 1m
 

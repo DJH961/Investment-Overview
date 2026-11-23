@@ -30,6 +30,7 @@ const conv = (id: number, date: string, usd = "1000"): FxConversion =>
     usd_received: usd,
     rate: "1.1111",
     all_in_rate: "1.1111",
+    kept_usd: "0",
     fees_eur: null,
     note: null,
     provider: null,
@@ -37,6 +38,7 @@ const conv = (id: number, date: string, usd = "1000"): FxConversion =>
     remaining_usd: usd,
     ecb_rate: null,
     from_ccy: "EUR",
+    is_estimate: false,
     to_ccy: "USD",
     effective_rate: "1.1111",
   }) as FxConversion;
@@ -162,7 +164,7 @@ describe("table cells", () => {
   it("labels a weekend fixing with its own date, and a missing one with a reason", () => {
     const weekend = ecbCell({ date: "2026-11-22", ecb_rate: "1.1612", ecb_rate_date: "2026-11-20" }, "2026-11-23");
     expect(weekend.text).toMatch(/1\D1612/);
-    expect(weekend.from).toContain("20/11/2026");
+    expect(weekend.from).toContain("20 Nov 2026");
     expect(ecbCell({ date: "2026-11-20", ecb_rate: "1.1612", ecb_rate_date: "2026-11-20" }).from).toBeNull();
     expect(ecbCell({ date: "2026-06-06", ecb_rate: null, ecb_rate_date: null }, "2026-11-23").text).toBe("No fixing");
     expect(ecbCell({ date: "2026-11-23", ecb_rate: null, ecb_rate_date: null }, "2026-11-23").text).toBe("Not yet");

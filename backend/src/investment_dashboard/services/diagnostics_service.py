@@ -314,6 +314,49 @@ def _check_frozen_legs(session: Session) -> HealthItem:
 _CASH_DUST = Decimal("0.005")
 
 
+def check_unconverted_deposits(session: Session) -> HealthItem:
+    """Deposits valued at the ECB rate with no conversion (7.3): an *info* note, never a problem.
+
+    The owner always has a few (dollars received directly, old deposits), so this is
+    deliberately quiet: severity is ``info`` or ``ok``, it is not part of
+    :func:`check_health` (so it never raises the badge or the problem count) and
+    deposits marked "Received in USD (no conversion)" are left out. The Data Health
+    read-model shows it and links to the Conversions page.
+    """
+    from investment_dashboard.services import fx_conversion_service  # noqa: PLC0415
+
+    report = fx_conversion_service.pool_report(session)
+    key, title = "ecb_fallback_deposits", "Deposits valued at the ECB rate"
+    if not report.conversions:
+        return HealthItem(
+            key=key,
+            title=title,
+            severity="ok",
+            count=0,
+            detail="No currency conversions recorded, so deposits use their trade-date rate.",
+        )
+    fallen = fx_conversion_service.unconverted_deposits(report)
+    if not fallen:
+        return HealthItem(
+            key=key,
+            title=title,
+            severity="ok",
+            count=0,
+            detail="Every USD deposit is covered by a conversion or marked as received in USD.",
+        )
+    return HealthItem(
+        key=key,
+        title=title,
+        severity="info",
+        count=len(fallen),
+        detail=(
+            f"{len(fallen)} deposits valued at the ECB rate with no conversion. "
+            "Add the conversion, or mark a deposit as received in USD on the Conversions page."
+        ),
+        examples=tuple(f"{m.date.isoformat()} ({m.fallback_usd:f} USD)" for m in fallen[:5]),
+    )
+
+
 def _check_brokerage_cash(session: Session) -> HealthItem:
     """Brokerage accounts whose ledger cash balance is not zero (B-017, check only).
 
@@ -579,6 +622,32 @@ def _check_import_age(session: Session, *, today: date | None = None) -> HealthI
             f"{_IMPORT_STALE_DAYS} days: new dividends and trades may be missing."
             if stale
             else "Every imported brokerage account was imported recently."
+        ),
+        examples=_examples(lines),
+    )
+
+
+def _check_estimated_rows(session: Session) -> HealthItem:
+    """One quiet prompt for recurring-plan est. rows still to settle (7.3, P14)."""
+    from investment_dashboard.repositories import recurring_repo  # noqa: PLC0415
+    from investment_dashboard.services import recurring_service  # noqa: PLC0415
+
+    txns = recurring_repo.list_estimate_transactions(session)
+    convs = recurring_repo.list_estimate_conversions(session)
+    count = recurring_service.estimate_count(session)  # a plan's due date is one item
+    lines = [f"Buy on {t.date.isoformat()}" for t in txns[:3]] + [
+        f"Conversion on {c.date.isoformat()}" for c in convs[:3]
+    ]
+    return HealthItem(
+        key="estimated_rows",
+        title="Estimated rows to settle",
+        severity="warning" if count else "ok",
+        count=count,
+        detail=(
+            f"{count} estimated row(s) from recurring plans: import the broker file or type "
+            "what you got to settle them."
+            if count
+            else "No estimated rows waiting to be settled."
         ),
         examples=_examples(lines),
     )
@@ -1004,6 +1073,7 @@ def check_health(session: Session) -> HealthReport:
         *_check_splits(session),
         _check_share_counts(session),
         _check_import_age(session),
+        _check_estimated_rows(session),
         _check_intraday_graph(session),
         _check_holding_intraday(session),
         _check_price_feed(session),

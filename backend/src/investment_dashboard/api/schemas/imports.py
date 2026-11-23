@@ -17,8 +17,21 @@ class ImportIssue(ApiModel):
 
 
 #: ``keep`` = import as the file has it; ``fix_price`` = recompute the price from
-#: amount and quantity; ``skip`` = leave the row out.
-RowFix = Literal["keep", "fix_price", "skip"]
+#: amount and quantity; ``skip`` = leave the row out; ``import_new`` = import a row
+#: that matches an existing transaction as a new row instead of updating it.
+RowFix = Literal["keep", "fix_price", "skip", "import_new"]
+
+
+class ImportExistingFigures(ApiModel):
+    """The existing transaction an ``update`` row would overwrite (its old figures)."""
+
+    transaction_id: int
+    date: str
+    quantity: DecStr | None = None
+    price_native: DecStr | None = None
+    net_native: DecStr | None = None
+    #: The existing row is an estimate (recurring plan): the update confirms it.
+    estimated: bool = False
 
 
 class ImportPreviewRow(ApiModel):
@@ -43,11 +56,19 @@ class ImportPreviewRow(ApiModel):
     fixes: list[RowFix] = Field(default_factory=list)
     #: The resolution picked for this row, if any.
     resolution: RowFix | None = None
+    #: ``new`` / ``duplicate`` (exact, skipped) / ``update`` (near-match: overwrites
+    #: ``existing`` on confirm) / ``skipped`` (left out by the user).
+    status: Literal["new", "duplicate", "update", "skipped"] = "new"
+    #: The existing transaction a near-matching row refers to (old figures); the row's
+    #: own fields are the new figures. Also set while ``import_new`` overrides the update.
+    existing: ImportExistingFigures | None = None
 
 
 class ImportCounts(ApiModel):
     rows: int
     new: int
+    #: Rows that would update an existing transaction.
+    updates: int = 0
     duplicates: int
     sweeps_dropped: int
     errors: int
@@ -144,6 +165,8 @@ class ImportLayoutIn(ApiModel):
 class ImportConfirmResult(ApiModel):
     import_id: str
     inserted: int
+    #: Existing transactions overwritten with the import's figures (near-matches).
+    updated: int = 0
     duplicates: int
     sweeps_dropped: int
     unknown_actions: list[str]
@@ -178,6 +201,8 @@ class ImportBatchOut(ApiModel):
     #: Rows still attached (hand-edited / deleted rows are no longer counted).
     current_rows: int
     duplicate_count: int
+    #: Existing transactions the import updated (undo puts them back).
+    updated_count: int = 0
     status: Literal["active", "undone"]
     actor: str | None
     undone_at: datetime | None
@@ -208,6 +233,8 @@ class ImportUndoPreview(ApiModel):
     rows_truncated: bool
     total: int
     detached: int
+    #: Updated rows undo would restore to their old figures.
+    restored: int = 0
     earliest_date: str | None
     latest_date: str | None
     confirm_word: str
@@ -232,6 +259,8 @@ class ImportUndoRequest(ApiModel):
 class ImportUndoResult(ApiModel):
     batch: ImportBatchOut
     deleted: int
+    #: Updated rows put back as they were.
+    restored: int = 0
     backup: str | None
     invalidated_from: str | None
 

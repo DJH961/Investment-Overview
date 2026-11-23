@@ -14,10 +14,10 @@ export interface AssetClassCardProps {
 }
 
 /**
- * One fixed look per asset class, so a class keeps its colour whatever else is held
- * (the Allocation treemap's Fund view stripes its tiles with the same colours).
- * ETFs, mutual funds and cash are three solid, clearly different colours (violet/blue,
- * gold, dark teal): cash is often a thin sliver, where hatching hides the colour.
+ * One fixed look per asset class, so a class keeps its color whatever else is held
+ * (the Allocation treemap's Fund view stripes its tiles with the same colors).
+ * ETFs, mutual funds and cash are three solid, clearly different colors (violet/blue,
+ * gold, dark teal): cash is often a thin sliver, where hatching hides the color.
  * Stocks take the light teal and are hatched, the one pair (cash) that sits closer
  * for a protan viewer in the dark theme. Pairs are in tokens.cvd.test.ts.
  */

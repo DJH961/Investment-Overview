@@ -76,6 +76,9 @@ other doc.
   commands.
 - The owner does anything involving accounts, logins or secrets; agents prepare,
   check and explain.
+- **Language: American English** in the UI, number/date formats (en-US default; no
+  en-GB option), code comments and docs going forward. Dates default to the month name
+  ("14 Nov 2026"), never month-first numerics.
 - **Subagents:** either invoke a subagent, wait for it to finish (end your turn and let
   reactive wakeup deliver its result), and actually use its work — **or** do not spawn a
   subagent at all. Never spawn a subagent only to do the same work yourself in parallel
@@ -169,6 +172,35 @@ Adapted from the owner's starter-project convention (see plan §4a):
   values checked by hand or against the source spreadsheet.
 - Adapters are tested with mocked HTTP (`respx`) or patched downloaders. Live-API
   tests are `@pytest.mark.network` and skipped unless `--run-network`.
+
+## UI feedback loop: screenshots first
+
+The owner steers UI work from screenshots, early and often.
+
+1. **Build, then shoot.** As soon as the change compiles (`npm run typecheck`), commit it
+   (a `wip:` commit is fine). Then take Playwright screenshots of the changed views against the
+   fixture dev server, at 390 and 1280 px (360 when a phone layout changed). Save them under
+   `.claude/ui-shots/<topic>/` in the session's worktree. Fixture builds (`--mode fixtures`)
+   never start the welcome tour by themselves, so it cannot cover a shot. Add `?tour=1` to
+   the URL only when the shot is of the tour itself.
+2. **Reject bad shots yourself before anyone sees them.** Look at every shot critically:
+   - clipped or overlapping text or chips;
+   - uneven gaps or a lone tile on its own row;
+   - stray scrollbars;
+   - things that run into each other;
+   - unclear labels;
+   - anything you would not call good.
+
+   Fix it and shoot again. Only shots you would defend as good go to the owner, together with
+   a short list of what is unfinished. The owner reviews work you say is good, never work that
+   is obviously broken.
+3. **The owner's feedback goes back to the same agent** (it keeps its context). Repeat 1–3.
+4. **Full checks run once, after the owner is happy:** the whole vitest run,
+   `npm run test:overflow`, targeted pytest, then CI. Do not run long test rounds before the
+   owner has seen the shots.
+
+Money maths is the exception: it stays test-first (property tests plus golden values, see
+"Testing").
 
 ## Workflow
 

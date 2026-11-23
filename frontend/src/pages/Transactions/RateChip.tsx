@@ -1,4 +1,4 @@
-import { Landmark, Pin, Wallet } from "lucide-react";
+import { Banknote, Landmark, Pin, Wallet } from "lucide-react";
 import { Link } from "react-router";
 import { Chip } from "../../components/Chip";
 import { Money } from "../../components/Money";
@@ -7,7 +7,7 @@ import { formatDate, formatMoney, formatNumber } from "../../lib/format";
 import type { DepositMatch, FxConversion } from "../../lib/queries/manage";
 import { providerLabel, rateChipLabel } from "../CurrencyConversions/matching";
 
-/** Tap target on a USD deposit row: which rate paid for it. Icon plus word, never colour alone. */
+/** Tap target on a USD deposit row: which rate paid for it. Icon plus word, never color alone. */
 export function RateChip({ match, onOpen }: { match: DepositMatch; onOpen: (m: DepositMatch) => void }) {
   const label = rateChipLabel(match.status);
   return (
@@ -17,7 +17,7 @@ export function RateChip({ match, onOpen }: { match: DepositMatch; onOpen: (m: D
       aria-label={`${label}: how this deposit was converted`}
       onClick={() => onOpen(match)}
     >
-      <Chip size="sm" outline tone="neutral" icon={label === "ECB" ? <Landmark aria-hidden /> : <Wallet aria-hidden />}>
+      <Chip size="sm" outline tone="neutral" icon={label === "ECB" ? <Landmark aria-hidden /> : label === "USD" ? <Banknote aria-hidden /> : <Wallet aria-hidden />}>
         {label}
       </Chip>
     </button>

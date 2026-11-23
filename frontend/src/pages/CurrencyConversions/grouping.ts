@@ -1,67 +1,24 @@
-import { getFormatPrefs } from "../../lib/format";
-
-/** Pure helpers for folding a long list by year and month and for the period filter. */
-
-export interface MonthGroup<T> {
-  /** "2026-10" */
-  key: string;
-  items: T[];
-}
+/** Pure helpers for folding a long list by year and for the period filter. */
 
 export interface YearBlock<T> {
   /** "2025" */
   year: string;
-  months: MonthGroup<T>[];
-  count: number;
+  items: T[];
 }
-
-/** Month groups, newest first; the items inside keep the order they came in. */
-export function groupByMonth<T>(items: readonly T[], dateOf: (item: T) => string): MonthGroup<T>[] {
-  const map = new Map<string, T[]>();
-  for (const item of items) {
-    const key = dateOf(item).slice(0, 7);
-    const bucket = map.get(key);
-    if (bucket) bucket.push(item);
-    else map.set(key, [item]);
-  }
-  return [...map.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1)).map(([key, list]) => ({ key, items: list }));
-}
-
-export type Section<T> = { kind: "month"; group: MonthGroup<T> } | { kind: "year"; block: YearBlock<T> };
 
 /**
- * Newest first: months of this year (and later) stand on their own; every older year folds
- * into one year header that holds its months.
+ * Year blocks, newest year first. Inside a year the items keep the order they came in
+ * (the caller sorts newest first by date, then entry order).
  */
-export function buildSections<T>(groups: readonly MonthGroup<T>[], thisYear: string): Section<T>[] {
-  const out: Section<T>[] = [];
-  for (const g of groups) {
-    const year = g.key.slice(0, 4);
-    if (year >= thisYear) {
-      out.push({ kind: "month", group: g });
-      continue;
-    }
-    const last = out[out.length - 1];
-    if (last && last.kind === "year" && last.block.year === year) {
-      last.block.months.push(g);
-      last.block.count += g.items.length;
-    } else {
-      out.push({ kind: "year", block: { year, months: [g], count: g.items.length } });
-    }
+export function groupByYear<T>(items: readonly T[], dateOf: (item: T) => string): YearBlock<T>[] {
+  const map = new Map<string, T[]>();
+  for (const item of items) {
+    const year = dateOf(item).slice(0, 4);
+    const bucket = map.get(year);
+    if (bucket) bucket.push(item);
+    else map.set(year, [item]);
   }
-  return out;
-}
-
-/** The two newest months that have entries are open at first (the current and the previous one in daily use). */
-export function newestMonths(keys: readonly string[], n = 2): Set<string> {
-  return new Set([...keys].sort().reverse().slice(0, n));
-}
-
-/** "October 2026" in the user's locale. */
-export function monthLabel(key: string): string {
-  return new Intl.DateTimeFormat(getFormatPrefs().locale, { month: "long", year: "numeric", timeZone: "UTC" }).format(
-    new Date(`${key}-01T00:00:00Z`),
-  );
+  return [...map.entries()].sort((x, y) => (x[0] < y[0] ? 1 : -1)).map(([year, list]) => ({ year, items: list }));
 }
 
 export const PERIOD_ALL = "all";

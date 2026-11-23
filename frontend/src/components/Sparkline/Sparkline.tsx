@@ -4,7 +4,7 @@ import "./Sparkline.scss";
 
 export interface SparklineProps {
   values: (number | null)[];
-  /** auto colours by trend (pos/neg); primary is neutral. */
+  /** auto colors by trend (pos/neg); primary is neutral. */
   tone?: "auto" | "primary" | "pos" | "neg";
   /** A faint dashed horizontal line (e.g. your average entry); the scale always includes it. */
   reference?: number | null;

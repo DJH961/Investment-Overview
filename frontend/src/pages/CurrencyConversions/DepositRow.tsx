@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import { Button } from "../../components/Button";
 import { Money } from "../../components/Money";
 import { formatDate, formatNumber } from "../../lib/format";
-import type { DepositMatch, FxConversion } from "../../lib/queries/manage";
+import { useSetReceivedInUsd, type DepositMatch, type FxConversion } from "../../lib/queries/manage";
 import { providerLabel } from "./matching";
 import { StatusChip } from "./StatusChip";
 
@@ -29,6 +29,7 @@ export function DepositRow({
   onAdd: (d: DepositMatch) => void;
   onPin: (d: DepositMatch) => void;
 }) {
+  const mark = useSetReceivedInUsd();
   const total = Number(d.usd);
   const matched = d.slices.reduce((sum, s) => sum + Number(s.usd), 0);
   const fallback = d.fallback_usd !== null ? Number(d.fallback_usd) : 0;
@@ -107,9 +108,21 @@ export function DepositRow({
                 Add the conversion
               </Button>
             )}
-            <Button size="sm" variant="secondary" onClick={() => onPin(d)}>
-              {d.pinned ? "Change pin…" : "Pin a conversion…"}
-            </Button>
+            {!d.received_in_usd && (
+              <Button size="sm" variant="secondary" onClick={() => onPin(d)}>
+                {d.pinned ? "Change pin…" : "Pin a conversion…"}
+              </Button>
+            )}
+            {(d.received_in_usd || d.status === "ecb_only" || d.status === "partial") && (
+              <Button
+                size="sm"
+                variant="secondary"
+                loading={mark.isPending}
+                onClick={() => mark.mutate({ depositId: d.transaction_id, received: !d.received_in_usd })}
+              >
+                {d.received_in_usd ? "Not received in USD" : "Received in USD (no conversion)"}
+              </Button>
+            )}
           </div>
         </div>
       )}

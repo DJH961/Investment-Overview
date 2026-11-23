@@ -59,6 +59,7 @@ GUARDED_ROUTER_MODULES: tuple[str, ...] = (
     # B3 writes
     "transactions",
     "imports",
+    "wise_imports",
     "settings",
     "accounts",
     "ops",
@@ -80,6 +81,8 @@ GUARDED_ROUTER_MODULES: tuple[str, ...] = (
     "instruments",
     # v7.1
     "lookup",
+    # v7.3
+    "recurring",
 )
 
 _SECURITY_HEADERS = {

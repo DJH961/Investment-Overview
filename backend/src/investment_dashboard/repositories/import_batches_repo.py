@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from datetime import date, datetime
 
 from sqlalchemy import func, select, update
@@ -78,9 +78,11 @@ def transactions_of(session: Session, batch_id: int) -> Sequence[Transaction]:
     return session.scalars(stmt).all()
 
 
-def delete_transactions_of(session: Session, batch_id: int) -> tuple[int, set[date]]:
-    """Delete every transaction attached to ``batch_id``; ``(count, their dates)``."""
-    rows = list(transactions_of(session, batch_id))
+def delete_transactions_of(
+    session: Session, batch_id: int, *, keep_ids: Collection[int] = ()
+) -> tuple[int, set[date]]:
+    """Delete the transactions attached to ``batch_id`` except ``keep_ids``; ``(count, dates)``."""
+    rows = [t for t in transactions_of(session, batch_id) if t.id not in keep_ids]
     dates = {t.date for t in rows}
     for txn in rows:
         session.delete(txn)
@@ -102,6 +104,16 @@ def mark_undone(
     batch.undone_by = actor
     batch.undone_rows = rows
     batch.backup = backup
+    session.flush()
+
+
+def set_updates(session: Session, batch_id: int, *, images: str, count: int) -> None:
+    """Record the before-images (JSON) and the number of transactions the import updated."""
+    batch = session.get(ImportBatch, batch_id)
+    if batch is None:
+        return
+    batch.update_images = images
+    batch.updated_count = count
     session.flush()
 
 

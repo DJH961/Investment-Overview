@@ -3,10 +3,14 @@
 export type Currency = string;
 
 /** Supported number/date locales (Settings → Display; `display.locale`). */
-export type Locale = "en-GB" | "de-DE" | "en-US";
+export type Locale = "de-DE" | "en-US";
 
-/** Date layouts (`display.date_format`); "auto" follows the regional preset. */
-export type DateFormat = "auto" | "DD/MM/YYYY" | "MM/DD/YYYY" | "YYYY-MM-DD" | "DD.MM.YYYY";
+/**
+ * Date layouts (`display.date_format`), independent of the regional preset.
+ * The default spells the month ("14 Nov 2026") so day and month never clash.
+ */
+export type DateFormat = "DD MMM YYYY" | "MMM DD, YYYY" | "DD.MM.YYYY" | "YYYY-MM-DD";
+export const DEFAULT_DATE_FORMAT: DateFormat = "DD MMM YYYY";
 /** Number layouts (`display.number_format`); "auto" follows the regional preset. */
 export type NumberFormat = "auto" | "1,234.56" | "1.234,56" | "1 234,56" | "1'234.56";
 
@@ -23,8 +27,8 @@ export interface FormatPrefs {
 
 // Module-level so plain functions (no hooks) format with the user's prefs.
 // `lib/displayPrefs.tsx` feeds these from the server settings (+ local cache).
-let LOCALE: Locale = "en-GB";
-let DATE_FORMAT: DateFormat = "auto";
+let LOCALE: Locale = "en-US";
+let DATE_FORMAT: DateFormat = DEFAULT_DATE_FORMAT;
 let NUMBER_FORMAT: NumberFormat = "auto";
 let TIME_ZONE: string | undefined;
 let HOUR12: boolean | undefined;
@@ -65,7 +69,6 @@ const NUMBER_SEPARATORS: Record<Exclude<NumberFormat, "auto">, { group: string; 
 };
 
 const LOCALE_NUMBER_FORMAT: Record<Locale, Exclude<NumberFormat, "auto">> = {
-  "en-GB": "1,234.56",
   "de-DE": "1.234,56",
   "en-US": "1,234.56",
 };
@@ -108,7 +111,7 @@ const isMissing = (v: number | null | undefined): v is null | undefined =>
  * Hide mode: the shape of a typical amount ("€••,•••.••", "+US$••,•••.••",
  * "€••.•k"), so hidden figures sit and wrap exactly like real ones. The shape
  * is fixed (a five-digit amount), so it never reveals the real magnitude; the
- * sign is kept because colour already shows it.
+ * sign is kept because color already shows it.
  */
 function maskedMoney(amount: number, currency: Currency, opts: MoneyOptions): string {
   const digits = opts.digits ?? (opts.compact ? 1 : 2);
@@ -117,7 +120,7 @@ function maskedMoney(amount: number, currency: Currency, opts: MoneyOptions): st
     {
       style: "currency",
       currency,
-      currencyDisplay: opts.narrow ? "narrowSymbol" : "symbol",
+      currencyDisplay: "narrowSymbol",
       notation: opts.compact ? "compact" : "standard",
       minimumFractionDigits: digits,
       maximumFractionDigits: digits,
@@ -138,7 +141,7 @@ export function formatMoney(amount: number | null | undefined, currency: Currenc
     {
       style: "currency",
       currency,
-      currencyDisplay: opts.narrow ? "narrowSymbol" : "symbol",
+      currencyDisplay: "narrowSymbol",
       notation: opts.compact ? "compact" : "standard",
       ...(opts.significant
         ? { maximumSignificantDigits: opts.significant }
@@ -181,16 +184,12 @@ export function formatNumber(value: number | null | undefined, digits = 2): stri
 const isCalendarDate = (value: string | Date): value is string =>
   typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
 
-const LOCALE_DATE_FORMAT: Record<Locale, Exclude<DateFormat, "auto">> = {
-  "en-GB": "DD/MM/YYYY",
-  "de-DE": "DD.MM.YYYY",
-  "en-US": "MM/DD/YYYY",
-};
-
-/** The effective date layout: the explicit choice, else the regional preset's. */
-export function effectiveDateFormat(): Exclude<DateFormat, "auto"> {
-  return DATE_FORMAT === "auto" ? LOCALE_DATE_FORMAT[LOCALE] : DATE_FORMAT;
+/** The chosen date layout (its own setting; the regional preset does not change it). */
+export function effectiveDateFormat(): DateFormat {
+  return DATE_FORMAT;
 }
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** `true` = 12-hour clock. An "Auto" clock follows the regional preset (en-US: 12-hour). */
 export function effectiveHour12(): boolean {
@@ -210,8 +209,14 @@ function ymdOf(d: Date, timeZone: string | undefined): Ymd {
 }
 
 /** Lays out the date fields in the effective order / separator, dropping the token `omit`. */
-function layoutDate(v: Ymd, omit: "YYYY" | "DD" | null = null): string {
-  const pattern = effectiveDateFormat();
+function layoutDate(v: Ymd, omit: "YYYY" | "DD" | null = null, pattern: DateFormat = effectiveDateFormat()): string {
+  if (pattern === "DD MMM YYYY" || pattern === "MMM DD, YYYY") {
+    const day = String(Number(v.d));
+    const mon = MONTHS[Number(v.m) - 1] ?? v.m;
+    if (omit === "DD") return `${mon} ${v.y}`;
+    if (pattern === "DD MMM YYYY") return omit === "YYYY" ? `${day} ${mon}` : `${day} ${mon} ${v.y}`;
+    return omit === "YYYY" ? `${mon} ${day}` : `${mon} ${day}, ${v.y}`;
+  }
   const sep = /[^A-Z]/.exec(pattern)?.[0] ?? "/";
   return pattern
     .split(sep)
@@ -220,10 +225,15 @@ function layoutDate(v: Ymd, omit: "YYYY" | "DD" | null = null): string {
     .join(sep);
 }
 
+/** `when` (default: now) laid out in `pattern`, for the Settings date-format examples. */
+export function exampleDate(pattern: DateFormat, when: Date = new Date()): string {
+  return layoutDate(ymdOf(when, TIME_ZONE), null, pattern);
+}
+
 /** Clock time in the chosen 12 / 24-hour style ("14:05" / "2:05 PM"). */
 function clockTime(d: Date, timeZone: string | undefined): string {
   const h12 = effectiveHour12();
-  return new Intl.DateTimeFormat(h12 ? "en-US" : "en-GB", {
+  return new Intl.DateTimeFormat(h12 ? "en-US" : "de-DE", {
     hour: h12 ? "numeric" : "2-digit",
     minute: "2-digit",
     hour12: h12,
@@ -376,7 +386,7 @@ export function chartMoneyFormat(
         const abs = Math.abs(v);
         if (abs < 10_000) return formatMoney(v, currency, { digits: 0, narrow: true });
         if (!step || !(step > 0)) return formatMoney(v, currency, { compact: true, narrow: true, significant: 3 });
-        // Just enough decimals for neighbouring ticks to differ: a tight 1D range on
+        // Just enough decimals for neighboring ticks to differ: a tight 1D range on
         // €1.26m reads €1.260m / €1.265m, never €1.27m twice.
         const unit = abs >= 1_000_000 ? 1_000_000 : 1_000;
         const digits = Math.min(3, Math.max(0, Math.ceil(-Math.log10(step / unit) - 1e-9)));

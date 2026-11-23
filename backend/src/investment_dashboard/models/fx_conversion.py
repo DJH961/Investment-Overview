@@ -11,6 +11,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -20,6 +21,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, synonym
 
@@ -35,6 +37,12 @@ class FxConversion(Base):
             "provider IS NULL OR provider IN ('wise', 'revolut', 'other')",
             name="ck_fx_conversions_provider",
         ),
+        UniqueConstraint(
+            "estimate_plan_id", "estimate_due_date", name="uq_fx_conversions_estimate_plan_due"
+        ),
+        CheckConstraint("kept_usd >= 0", name="ck_fx_conversions_kept_nonneg"),
+        CheckConstraint("kept_usd <= usd_received", name="ck_fx_conversions_kept_le_received"),
+        UniqueConstraint("external_id", name="uq_fx_conversions_external_id"),
         Index("ix_fx_conversions_date", "date"),
     )
 
@@ -48,6 +56,20 @@ class FxConversion(Base):
     from_ccy: Mapped[str] = mapped_column(String(3), nullable=False, server_default="EUR")
     to_ccy: Mapped[str] = mapped_column(String(3), nullable=False, server_default="USD")
     provider: Mapped[str | None] = mapped_column(String(16))
+    #: Recurring-plan estimate (7.3, P14), as on ``transactions``.
+    estimate_plan_id: Mapped[int | None] = mapped_column(
+        ForeignKey("recurring_plans.id", ondelete="SET NULL")
+    )
+    estimate_due_date: Mapped[date | None] = mapped_column(Date)
+    is_estimate: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("0"), default=False
+    )
+    #: The broker's own id (Wise TransferWise ID); unique, used to skip a re-import.
+    external_id: Mapped[str | None] = mapped_column(String(64))
+    #: Dollars kept in the owner's USD account, never sent to the broker (7.3).
+    kept_usd: Mapped[Decimal] = mapped_column(
+        Numeric(18, 6), nullable=False, server_default="0", default=Decimal(0)
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), server_default=func.current_timestamp(), nullable=False
     )
@@ -81,6 +103,19 @@ class FxConversionPin(Base):
         ForeignKey("fx_conversions.id", ondelete="CASCADE"), nullable=False, index=True
     )
     usd: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.current_timestamp(), nullable=False
+    )
+
+
+class UsdReceivedDeposit(Base):
+    """Marks a deposit as "received in USD (no conversion)" (7.3): a relation only."""
+
+    __tablename__ = "usd_received_deposits"
+
+    deposit_txn_id: Mapped[int] = mapped_column(
+        ForeignKey("transactions.id", ondelete="CASCADE"), primary_key=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), server_default=func.current_timestamp(), nullable=False
     )

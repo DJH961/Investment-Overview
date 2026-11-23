@@ -41,7 +41,7 @@ const ELSEWHERE = new Set([
   "buys_now",
   "months_of_contributions",
 ]);
-/** Sizes, not gains: shown as ± without a sign or colour. */
+/** Sizes, not gains: shown as ± without a sign or color. */
 const UNSIGNED = new Set(["typical_day", "typical_month"]);
 
 /** The same figures in the investing view, said of deposits. */

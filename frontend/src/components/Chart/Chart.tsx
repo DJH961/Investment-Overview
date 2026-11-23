@@ -19,7 +19,7 @@ import "./Chart.scss";
 
 /**
  * `invested`: a dashed muted guide line; `estimate`: the dashed twin-estimate line;
- * `ink`: a dashed line in the text colour (a "what it would have been" reference, such
+ * `ink`: a dashed line in the text color (a "what it would have been" reference, such
  * as the constant-currency value next to the actual one).
  */
 export type ChartTone = "primary" | "benchmark" | "muted" | "invested" | "estimate" | "ink";
@@ -27,7 +27,7 @@ export type ChartTone = "primary" | "benchmark" | "muted" | "invested" | "estima
 /**
  * A point mark on the plot: a trade (▲ buy / ▼ sell, the shape carries the meaning), a
  * small dot (a NAV print), or a currency conversion: `conversion` is a neutral ring
- * sized by `r`, `above` / `below` a ▲ / ▼ against a reference rate (shape and colour,
+ * sized by `r`, `above` / `below` a ▲ / ▼ against a reference rate (shape and color,
  * each with an ink outline so it stands off the line). Not part of the scrub; its label
  * is its accessible name.
  */
@@ -45,7 +45,7 @@ export interface ChartMarker {
  * A hatched band between two series (`upper` minus `lower`, by series id): the gap that
  * one cause explains, such as the currency effect between the actual value and the value
  * at a frozen rate. Where `upper` is above `lower` the hatch leans one way (`/`), below
- * it the other (`\`), so the side reads from the shape, not only the colour.
+ * it the other (`\`), so the side reads from the shape, not only the color.
  */
 export interface ChartBand {
   upper: string;
@@ -176,7 +176,7 @@ export function sessionLayout(sessions: ChartSession[], left: number, width: num
   return { bands, index, x };
 }
 
-/** Direction of the primary line versus its reference (colours line, area and end marker). */
+/** Direction of the primary line versus its reference (colors line, area and end marker). */
 export type ChartTrend = "up" | "down" | "flat";
 
 export interface ChartPoint {
@@ -249,7 +249,7 @@ export interface ChartProps {
   onRangeChange?: (range: string) => void;
   ranges?: string[];
   /** Left-axis labels and the tooltip default. On the axis `step` is the tick spacing, so
-   *  a formatter can show just enough digits for neighbouring ticks to differ. */
+   *  a formatter can show just enough digits for neighboring ticks to differ. */
   valueFormat: (v: number, step?: number) => string;
   /** Axis tick labels. */
   timeFormat: (t: number) => string;
@@ -262,7 +262,7 @@ export interface ChartProps {
   /** A note at the right end of the legend row (same line as the series chips). */
   legendExtra?: ReactNode;
   xMode?: ChartXMode;
-  /** Colours the primary series green/red and draws a ▲/▼ end marker. */
+  /** Colors the primary series green/red and draws a ▲/▼ end marker. */
   trend?: ChartTrend;
   /** Keep the drawn curve but dim it while new data loads. */
   busy?: boolean;
@@ -305,8 +305,8 @@ const TWO_AXIS_WIDTH = 720;
 const RIGHT_GUTTER = 64;
 
 /**
- * A clock tick pushed inward at an edge can run into its neighbour ("19:00 20:00"): the
- * edge label then gives way, the neighbour already says the hour.
+ * A clock tick pushed inward at an edge can run into its neighbor ("19:00 20:00"): the
+ * edge label then gives way, the neighbor already says the hour.
  */
 export function crowdsPrevious(
   ticks: number[],

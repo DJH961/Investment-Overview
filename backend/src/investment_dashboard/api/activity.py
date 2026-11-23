@@ -127,6 +127,55 @@ _LABELS: dict[tuple[str, str], tuple[str, str]] = {
         "deposit unpinned",
         "deposit unpin failed",
     ),
+    # v7.3 recurring plans (P14): every write goes to the ``changes`` subject.
+    ("POST", "/api/recurring/plans"): ("recurring plan added", "recurring plan rejected"),
+    ("PUT", "/api/recurring/plans/{plan_id}"): (
+        "recurring plan changed",
+        "recurring plan change rejected",
+    ),
+    ("POST", "/api/recurring/plans/{plan_id}/pause"): (
+        "recurring plan paused",
+        "recurring plan pause failed",
+    ),
+    ("POST", "/api/recurring/plans/{plan_id}/resume"): (
+        "recurring plan resumed",
+        "recurring plan resume failed",
+    ),
+    ("POST", "/api/recurring/plans/{plan_id}/end"): (
+        "recurring plan ended",
+        "recurring plan end failed",
+    ),
+    ("DELETE", "/api/recurring/plans/{plan_id}"): (
+        "recurring plan deleted (its rows stay)",
+        "recurring plan delete failed",
+    ),
+    ("POST", "/api/recurring/settle"): ("estimated rows settled", "estimate settle rejected"),
+    ("GET", "/api/recurring/estimates"): ("estimated rows read", "estimated rows failed"),
+    ("GET", "/api/recurring/setup-plan"): ("setup defaults read", "setup defaults failed"),
+    ("PUT", "/api/fx-conversions/received-in-usd/{deposit_txn_id}"): (
+        "deposit marked as received in USD",
+        "deposit mark rejected",
+    ),
+    ("DELETE", "/api/fx-conversions/received-in-usd/{deposit_txn_id}"): (
+        "deposit unmarked (received in USD)",
+        "deposit unmark failed",
+    ),
+    ("POST", "/api/imports/wise"): (
+        "Wise statement uploaded (preview)",
+        "Wise statement upload rejected",
+    ),
+    ("POST", "/api/imports/wise/{import_id}/layout"): (
+        "Wise statement columns changed (re-previewed)",
+        "Wise statement column change failed",
+    ),
+    ("POST", "/api/imports/wise/{import_id}/confirm"): (
+        "Wise statement import confirmed",
+        "Wise statement import failed",
+    ),
+    ("DELETE", "/api/imports/wise/{import_id}"): (
+        "Wise statement import discarded",
+        "Wise statement discard failed",
+    ),
     ("PUT", "/api/maintenance/splits/{instrument_id}/{on}"): (
         "manual split set",
         "manual split rejected",

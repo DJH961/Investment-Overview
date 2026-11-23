@@ -31,15 +31,24 @@ class PoolReport:
     result: fx_pool.PoolResult
     #: Deposit date by transaction id (for display).
     deposit_ids: tuple[int, ...]
+    #: Deposits marked "received in USD (no conversion)".
+    received_in_usd: frozenset[int] = frozenset()
 
 
 def _validate(
-    *, on: date, eur_sent: Decimal, usd_received: Decimal, fees_eur: Decimal | None
+    *,
+    on: date,
+    eur_sent: Decimal,
+    usd_received: Decimal,
+    fees_eur: Decimal | None,
+    kept_usd: Decimal = Decimal(0),
 ) -> None:
     if eur_sent <= 0 or usd_received <= 0:
         raise ValueError("eur_sent and usd_received must be positive")
     if fees_eur is not None and fees_eur < 0:
         raise ValueError("fees_eur must not be negative")
+    if kept_usd < 0 or kept_usd > usd_received:
+        raise ValueError("kept_usd must be between 0 and the dollars received")
     if on > exchange_today():
         raise ValueError("date must not be in the future")
 
@@ -80,11 +89,17 @@ def create_conversion(
     provider: str | None = None,
     from_ccy: str = "EUR",
     to_ccy: str = "USD",
+    kept_usd: Decimal = Decimal(0),
+    external_id: str | None = None,
 ) -> FxConversion:
-    _validate(on=on, eur_sent=eur_sent, usd_received=usd_received, fees_eur=fees_eur)
+    _validate(
+        on=on, eur_sent=eur_sent, usd_received=usd_received, fees_eur=fees_eur, kept_usd=kept_usd
+    )
     _validate_pair(from_ccy=from_ccy, to_ccy=to_ccy, provider=provider)
     row = repo.add(
         session,
+        kept_usd=kept_usd,
+        external_id=external_id,
         on=on,
         eur_sent=eur_sent,
         usd_received=usd_received,
@@ -110,9 +125,12 @@ def update_conversion(
     provider: str | None = None,
     from_ccy: str = "EUR",
     to_ccy: str = "USD",
+    kept_usd: Decimal = Decimal(0),
 ) -> FxConversion | None:
     """Replace a conversion's fields; ``None`` when the id does not exist."""
-    _validate(on=on, eur_sent=eur_sent, usd_received=usd_received, fees_eur=fees_eur)
+    _validate(
+        on=on, eur_sent=eur_sent, usd_received=usd_received, fees_eur=fees_eur, kept_usd=kept_usd
+    )
     _validate_pair(from_ccy=from_ccy, to_ccy=to_ccy, provider=provider)
     row = repo.get(session, conversion_id)
     if row is None:
@@ -128,6 +146,7 @@ def update_conversion(
         provider=provider,
         from_ccy=from_ccy,
         to_ccy=to_ccy,
+        kept_usd=kept_usd,
     )
     _note_change("updated", conversion_id, on)
     return updated
@@ -151,6 +170,7 @@ def _batches(rows: Sequence[FxConversion]) -> list[fx_pool.Batch]:
             eur_sent=r.eur_sent,
             usd_received=r.usd_received,
             fees_eur=r.fees_eur if r.fees_eur is not None else Decimal(0),
+            kept_usd=r.kept_usd,
         )
         for r in rows
     ]
@@ -204,13 +224,46 @@ def compute_pool(session: Session) -> PoolReport:
     rows = tuple(repo.list_all(session))
     deposits = repo.list_usd_contribution_deposits(session)
     pins = [fx_pool.Pin(p.deposit_txn_id, p.conversion_id, p.usd) for p in repo.list_pins(session)]
+    marked = repo.list_usd_received_marks(session)
     result = fx_pool.match_deposits(
         _batches(rows),
-        [fx_pool.UsdDeposit(id=d.id, date=d.date, usd=d.usd) for d in deposits],
+        [
+            fx_pool.UsdDeposit(id=d.id, date=d.date, usd=d.usd, no_conversion=d.id in marked)
+            for d in deposits
+        ],
         _ecb_lookup(session),
         pins,
     )
-    return PoolReport(conversions=rows, result=result, deposit_ids=tuple(d.id for d in deposits))
+    return PoolReport(
+        conversions=rows,
+        result=result,
+        deposit_ids=tuple(d.id for d in deposits),
+        received_in_usd=frozenset(marked & {d.id for d in deposits}),
+    )
+
+
+def set_received_in_usd(session: Session, deposit_txn_id: int, marked: bool) -> None:
+    """Mark / unmark a USD deposit as "received in USD (no conversion)"."""
+    deposits = {d.id for d in repo.list_usd_contribution_deposits(session)}
+    if deposit_txn_id not in deposits:
+        raise ValueError("deposit is not a positive USD contribution")
+    if marked:
+        repo.delete_pins(session, deposit_txn_id)  # pins make no sense without a conversion
+    repo.set_usd_received_mark(session, deposit_txn_id, marked)
+    activity("changes").info(
+        "deposit %s as received in USD: deposit=%s kind=usd_received_deposit",
+        "marked" if marked else "unmarked",
+        deposit_txn_id,
+    )
+
+
+def unconverted_deposits(report: PoolReport) -> list[fx_pool.DepositMatch]:
+    """Deposits (partly) valued at the ECB rate with no conversion, not marked received in USD."""
+    return [
+        m
+        for m in report.result.deposits
+        if m.is_fallback and m.deposit_id not in report.received_in_usd
+    ]
 
 
 def set_pins(
@@ -221,6 +274,8 @@ def set_pins(
     dep = deposits.get(deposit_txn_id)
     if dep is None:
         raise ValueError("deposit is not a positive USD contribution")
+    if pins and deposit_txn_id in repo.list_usd_received_marks(session):
+        raise ValueError("deposit is marked as received in USD (no conversion); unmark it first")
     rows = {r.id: r for r in repo.list_all(session)}
     seen: set[int] = set()
     total = Decimal(0)

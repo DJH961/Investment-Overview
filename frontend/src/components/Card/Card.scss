@@ -32,7 +32,9 @@
   // after one word ("Asset / classes") even with room to spare.
   &__heading {
     flex: 1 1 auto;
-    min-width: 0;
+    // Never narrower than its longest word: the meta line beside it wraps instead of
+    // squeezing a short title ("Holdings") until it is cut off.
+    min-width: min-content;
   }
 
   &__title {
@@ -77,6 +79,9 @@
 
   &__title-text {
     min-width: 0;
+    // Room for the last glyph's overhang under the tight tracking (it read as a 2 px
+    // overflow on "Holdings").
+    padding-inline-end: var(--space-1);
   }
 
   &__chevron {

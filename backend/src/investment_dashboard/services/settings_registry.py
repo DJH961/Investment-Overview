@@ -45,8 +45,8 @@ SECTIONS: dict[str, str] = {
 }
 
 GRAPH_RANGE_KEYS: tuple[str, ...] = ("1d", "1w", "1m", "3m", "6m", "ytd", "1y", "all")
-LOCALES: tuple[str, ...] = ("en-GB", "de-DE", "en-US")
-DATE_FORMATS: tuple[str, ...] = ("auto", "DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD", "DD.MM.YYYY")
+LOCALES: tuple[str, ...] = ("en-US", "de-DE")
+DATE_FORMATS: tuple[str, ...] = ("DD MMM YYYY", "MMM DD, YYYY", "DD.MM.YYYY", "YYYY-MM-DD")
 NUMBER_FORMATS: tuple[str, ...] = ("auto", "1,234.56", "1.234,56", "1 234,56", "1'234.56")
 #: Sentinels accepted besides IANA zone names. "Browser" = the viewer's device zone.
 TIMEZONE_SENTINELS: tuple[str, ...] = ("Browser", "Local", "UTC")
@@ -147,24 +147,23 @@ DEFS: tuple[SettingDef, ...] = (
     SettingDef(
         "display.locale",
         SettingType.ENUM,
-        "en-GB",
+        "en-US",
         "display",
         "Regional preset",
         help=(
-            "What the date, number and time formats below follow while they are on "
-            "'auto'. en-GB: 31/12/2026, 24h, 1,234.56 · de-DE: 31.12.2026, 24h, "
-            "1.234,56 · en-US: 12/31/2026, 12h, 1,234.56. Also picks the currency "
-            "symbol placement."
+            "What the number and time formats below follow while they are on "
+            "'auto'. en-US: 1,234.56, 12h · de-DE: 1.234,56, 24h. Dates have their own "
+            "setting. Also picks the currency symbol placement."
         ),
         choices=LOCALES,
     ),
     SettingDef(
         "display.date_format",
         SettingType.ENUM,
-        "auto",
+        "DD MMM YYYY",
         "display",
         "Date format",
-        help="Example for 31 December 2026: 31/12/2026, 12/31/2026, 2026-12-31 or 31.12.2026. 'auto' follows the regional preset.",
+        help="How dates are written, independent of the regional preset. Each option shows today's date.",
         choices=DATE_FORMATS,
     ),
     SettingDef(
@@ -437,6 +436,112 @@ DEFS: tuple[SettingDef, ...] = (
         min=_D(50),
         max=_D(5000),
         level="advanced",
+    ),
+    SettingDef(
+        "import.match_updates_enabled",
+        SettingType.BOOL,
+        True,
+        "imports",
+        "Match near-identical rows as updates",
+        help=(
+            "An imported row that is almost identical to a transaction you already have "
+            "(same account, instrument and type, a nearby date, almost the same amount and "
+            "shares) is shown as an update instead of a new row; confirming overwrites the "
+            "existing transaction with the import's figures. Exact duplicates are always "
+            "skipped. Switch off to import such rows as new."
+        ),
+    ),
+    SettingDef(
+        "import.match_relative_tolerance",
+        SettingType.PERCENT,
+        _D("0.005"),
+        "imports",
+        "Update match: relative tolerance",
+        help=(
+            "Amount and shares may differ by this fraction (0.005 = 0.5 %) and still count "
+            "as the same transaction. The larger of this and the absolute tolerances applies."
+        ),
+        min=_D(0),
+        max=_D("0.05"),
+    ),
+    SettingDef(
+        "import.match_absolute_amount",
+        SettingType.DECIMAL,
+        _D("0.05"),
+        "imports",
+        "Update match: amount tolerance",
+        help="Amounts may differ by this much in the account's currency (a few cents).",
+        min=_D(0),
+        max=_D(10),
+    ),
+    SettingDef(
+        "import.match_absolute_quantity",
+        SettingType.DECIMAL,
+        _D("0.0001"),
+        "imports",
+        "Update match: shares tolerance",
+        help="Share quantities may differ by this many shares.",
+        min=_D(0),
+        max=_D(1),
+        unit="shares",
+    ),
+    SettingDef(
+        "import.match_business_days",
+        SettingType.INT,
+        1,
+        "imports",
+        "Update match: date distance",
+        help="Dates may differ by this many NYSE trading days (weekends and holidays do not count).",
+        min=_D(0),
+        max=_D(5),
+        unit="days",
+    ),
+    SettingDef(
+        "import.match_estimated_relative_tolerance",
+        SettingType.PERCENT,
+        _D("0.02"),
+        "imports",
+        "Estimate match: relative tolerance",
+        help=(
+            "Estimated transactions (from your recurring plans) are matched more loosely: "
+            "the amount may differ by this fraction. Shares are ignored for buys and sells."
+        ),
+        min=_D(0),
+        max=_D("0.2"),
+    ),
+    SettingDef(
+        "import.match_estimated_absolute_amount",
+        SettingType.DECIMAL,
+        _D("0.50"),
+        "imports",
+        "Estimate match: amount tolerance",
+        help="Estimated transactions: the amount may differ by this much in the account's currency.",
+        min=_D(0),
+        max=_D(50),
+    ),
+    SettingDef(
+        "import.match_estimated_business_days",
+        SettingType.INT,
+        3,
+        "imports",
+        "Estimate match: date distance",
+        help="Estimated transactions: the broker may book them this many trading days off.",
+        min=_D(0),
+        max=_D(10),
+        unit="days",
+    ),
+    SettingDef(
+        "import.ignore_non_usd_conversions",
+        SettingType.BOOL,
+        True,
+        "imports",
+        "Import: ignore conversions not into USD",
+        help=(
+            "A Wise statement can hold conversions into other currencies (for example "
+            "EUR to GBP). 7.3 only supports EUR to USD, so with this on those rows are "
+            "left out of the preview without a fuss; with it off they are listed but "
+            "cannot be imported."
+        ),
     ),
     SettingDef(
         "import.column_profiles",

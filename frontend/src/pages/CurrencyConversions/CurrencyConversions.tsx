@@ -31,20 +31,19 @@ import {
   type FxProvider,
 } from "../../lib/queries/manage";
 import { offEcbText, trimDecimal, weekdayDate } from "./matching";
+import { costStatItems, PeriodRate, useCostsAll } from "./CostBits";
 import { ConversionHead, ConversionRow } from "./ConversionRow";
+import { SettleSheet } from "../../components/SettleSheet";
+import { useEstimateQueue } from "../Transactions/EstChip";
 import { DepositRow } from "./DepositRow";
 import { activeCount, FilterBar, NO_FILTERS, PROVIDER_FILTER_OPTIONS, ToggleChip, type ConversionFilters } from "./Filters";
 import { Fold } from "./Fold";
 import {
-  buildSections,
-  groupByMonth,
+  groupByYear,
   inPeriod,
-  monthLabel,
-  newestMonths,
   PERIOD_ALL,
   periodOptions,
   validPeriod,
-  type MonthGroup,
 } from "./grouping";
 import { PinDialog } from "./PinDialog";
 import "./CurrencyConversions.scss";
@@ -54,12 +53,14 @@ interface FormState {
   eur: string;
   usd: string;
   fees: string;
+  /** Dollars kept in the USD account, not sent on to the broker ("" = none). */
+  kept: string;
   note: string;
   /** "" = not set. */
   provider: FxProvider | "";
 }
 
-const EMPTY: FormState = { date: "", eur: "", usd: "", fees: "", note: "", provider: "" };
+const EMPTY: FormState = { date: "", eur: "", usd: "", fees: "", kept: "", note: "", provider: "" };
 
 const NO_PROVIDER = "none";
 const PROVIDER_OPTIONS = [
@@ -75,6 +76,7 @@ function fromConversion(c: FxConversion): FormState {
     eur: trimDecimal(c.eur_sent),
     usd: trimDecimal(c.usd_received),
     fees: trimDecimal(c.fees_eur),
+    kept: Number(c.kept_usd) > 0 ? trimDecimal(c.kept_usd) : "",
     note: c.note ?? "",
     provider: c.provider ?? "",
   };
@@ -129,6 +131,11 @@ export function ConversionDialog({ open, onOpenChange, editing, prefill }: Conve
       setError("Fees must be a number, like 2,50 or 2.50.");
       return;
     }
+    const kept = form.kept.trim() === "" ? "0" : toApiDecimal(form.kept);
+    if (kept === null || Number(kept) < 0 || Number(kept) > Number(usd)) {
+      setError("Kept dollars must be between 0 and the USD received.");
+      return;
+    }
     setError(null);
     save.mutate(
       {
@@ -138,6 +145,7 @@ export function ConversionDialog({ open, onOpenChange, editing, prefill }: Conve
           eur_sent: eur,
           usd_received: usd,
           fees_eur: fees,
+          kept_usd: kept,
           note: form.note || null,
           provider: form.provider || null,
           // 7.3 matches EUR→USD only; the server rejects any other pair.
@@ -182,6 +190,9 @@ export function ConversionDialog({ open, onOpenChange, editing, prefill }: Conve
         </Field>
         <Field label="Fees (EUR, optional)">
           {(c) => <Input {...c} inputMode="decimal" value={form.fees} onChange={set("fees")} />}
+        </Field>
+        <Field label="Kept in your USD account (optional)" hint="Dollars you did not send on to the broker.">
+          {(c) => <Input {...c} inputMode="decimal" value={form.kept} onChange={set("kept")} />}
         </Field>
         <Field label="Provider (optional)">
           {(c) => (
@@ -234,8 +245,8 @@ const isFolds = (v: unknown): v is Record<string, boolean> =>
 type Folds = Record<string, boolean>;
 
 /**
- * Month folds (and year folds for years before this one) around any dated list. Only the
- * open groups render their rows. `prefix` keeps the remembered open/closed state of the
+ * One fold per year (the running year included, open at first) around any dated list. Only
+ * open years render their rows. `prefix` keeps the remembered open/closed state of the
  * conversions and of the deposits apart.
  */
 function FoldedList<T>({
@@ -260,42 +271,21 @@ function FoldedList<T>({
   meta: (items: readonly T[]) => ReactNode;
   children: (items: readonly T[]) => ReactNode;
 }) {
-  const groups = groupByMonth(items, dateOf);
-  const sections = buildSections(groups, thisYear);
-  const recent = newestMonths(groups.map((g) => g.key));
-  const isOpen = (key: string, fallback: boolean) => folds[key] ?? (filtered ? true : fallback);
-  const toggle = (key: string, now: boolean) => setFolds((prev) => ({ ...prev, [key]: !now }));
-  const month = (g: MonthGroup<T>, nested = false) => {
-    const key = `${prefix}:${g.key}`;
-    const open = isOpen(key, recent.has(g.key));
-    return (
-      <Fold
-        key={key}
-        nested={nested}
-        open={open}
-        onToggle={() => toggle(key, open)}
-        title={monthLabel(g.key)}
-        meta={meta(g.items)}
-      >
-        {children(g.items)}
-      </Fold>
-    );
-  };
+  const blocks = groupByYear(items, dateOf);
   return (
     <div className="conversions__folds">
-      {sections.map((s) => {
-        if (s.kind === "month") return month(s.group);
-        const key = `${prefix}:y${s.block.year}`;
-        const open = isOpen(key, s.block.months.some((g) => recent.has(g.key)));
+      {blocks.map((b) => {
+        const key = `${prefix}:y${b.year}`;
+        const open = folds[key] ?? (filtered ? true : b.year >= thisYear);
         return (
           <Fold
             key={key}
             open={open}
-            onToggle={() => toggle(key, open)}
-            title={s.block.year}
-            meta={meta(s.block.months.flatMap((g) => g.items))}
+            onToggle={() => setFolds((prev) => ({ ...prev, [key]: !open }))}
+            title={b.year}
+            meta={meta(b.items)}
           >
-            {s.block.months.map((g) => month(g, true))}
+            {children(b.items)}
           </Fold>
         );
       })}
@@ -309,6 +299,8 @@ const sumOf = (rows: readonly FxConversion[], pick: (c: FxConversion) => string)
 export function CurrencyConversions() {
   const list = useFxConversions();
   const pool = useFxPool();
+  const costs = useCostsAll();
+  const est = useEstimateQueue("fx_conversion");
   const del = useDeleteConversion();
   const { toast } = useToast();
   const location = useLocation();
@@ -351,7 +343,7 @@ export function CurrencyConversions() {
       (!filters.pool || Number(c.remaining_usd) > 0.005),
   );
   const shownDeposits = deposits.filter(
-    (d) => inPeriod(d.date, filters.period, today) && (!needs || d.status !== "matched"),
+    (d) => inPeriod(d.date, filters.period, today) && (!needs || (d.status !== "matched" && d.status !== "received_usd")),
   );
   const conversionsFiltered = activeCount(filters) > 0;
   const depositsFiltered = filters.period !== PERIOD_ALL || needs;
@@ -381,9 +373,8 @@ export function CurrencyConversions() {
         navigate({ search: "", hash: location.hash }, { replace: true });
         return;
       }
-      const month = item.date.slice(0, 7);
       const prefix = isConversion ? "c" : "d";
-      setFolds((prev) => ({ ...prev, [`${prefix}:${month}`]: true, [`${prefix}:y${month.slice(0, 4)}`]: true }));
+      setFolds((prev) => ({ ...prev, [`${prefix}:y${item.date.slice(0, 4)}`]: true }));
       if (!isConversion) setOpenDeposits((prev) => new Set(prev).add(n));
       setPending(id);
     });
@@ -427,6 +418,7 @@ export function CurrencyConversions() {
 
   return (
     <div className="conversions">
+      <SettleSheet rows={est.queue} onClose={est.close} />
       <PageHeader
         title="Currency conversions"
         subtitle="What your EUR to USD conversions really cost, and which one paid for each deposit."
@@ -475,9 +467,10 @@ export function CurrencyConversions() {
                 key: "ecb",
                 label: "On the ECB rate",
                 tip: "Deposits that use the ECB rate for all or part of their dollars, because no conversion of yours covers them.",
-                value: pool.data ? deposits.filter((d) => d.status !== "matched").length : "–",
+                value: pool.data ? deposits.filter((d) => d.status !== "matched" && d.status !== "received_usd").length : "–",
                 note: pool.data ? `of ${deposits.length} deposits` : undefined,
               },
+              ...costStatItems(costs),
             ]}
           />
           <Card title="Conversions" flush>
@@ -509,6 +502,7 @@ export function CurrencyConversions() {
                       {plural(rows.length, "conversion", "conversions")} ·{" "}
                       <Money amount={sumOf(rows, (c) => c.eur_sent)} currency="EUR" digits={0} /> →{" "}
                       <Money amount={sumOf(rows, (c) => c.usd_received)} currency="USD" digits={0} />
+                      <PeriodRate rows={rows} costs={costs} filtered={conversionsFiltered} />
                     </>
                   )}
                 >
@@ -517,7 +511,7 @@ export function CurrencyConversions() {
                       <ConversionHead />
                       <ul className="conversions__list" aria-label="Currency conversions">
                         {rows.map((c) => (
-                          <ConversionRow key={c.id} c={c} menu={menuFor(c)} />
+                          <ConversionRow key={c.id} c={c} menu={menuFor(c)} onSettle={() => est.open(c.id)} />
                         ))}
                       </ul>
                     </>
@@ -572,7 +566,7 @@ export function CurrencyConversions() {
               folds={folds}
               setFolds={setFolds}
               meta={(rows) => {
-                const attention = rows.filter((d) => d.status !== "matched").length;
+                const attention = rows.filter((d) => d.status !== "matched" && d.status !== "received_usd").length;
                 return (
                   <>
                     {plural(rows.length, "deposit", "deposits")} ·{" "}

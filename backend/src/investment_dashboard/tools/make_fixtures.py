@@ -120,7 +120,19 @@ GET_ENDPOINTS: tuple[str, ...] = (
     "/api/transactions/all",
     "/api/fx-conversions",
     "/api/fx-conversions/pool",
+    *(f"/api/fx-conversions/costs?range={r}" for r in RATE_RANGES),
     "/api/fx-conversions/reference?date=2026-06-26",
+    # v7.3 recurring plans (P14)
+    "/api/recurring/plans",
+    "/api/recurring/estimates",
+    "/api/recurring/suggestions",
+    # The setup flow's defaults, one exact answer per query the wizard sends: the plain run
+    # (monthly conversion -> monthly deposit -> weekly buys) ...
+    "/api/recurring/setup-plan?eur_amount=250&provider=revolut&conversion_unit=months&conversion_every=1&deposit_unit=months&deposit_every=1",
+    "/api/recurring/setup-plan?buy_total_usd=2750&account_id=1&deposit_unit=months&deposit_every=1&buy_unit=weeks&buy_every=1",
+    # ... and mixed cadences (monthly conversion -> deposit every 2 weeks -> weekly buys).
+    "/api/recurring/setup-plan?eur_amount=250&provider=revolut&conversion_unit=months&conversion_every=1&deposit_unit=weeks&deposit_every=2",
+    "/api/recurring/setup-plan?buy_total_usd=134&account_id=1&deposit_unit=weeks&deposit_every=2&buy_unit=weeks&buy_every=1",
     "/api/onboarding",
     "/api/refresh/status",
     "/api/settings",
@@ -486,6 +498,17 @@ def seed_full(session: Any) -> None:
         walks[sym] = _walk(rng, series_days, start, end, vol)
         prices_repo.upsert_closes(session, inst[sym].id, walks[sym])
 
+    # The brokerage account's core (settlement) fund: constant $1.00 NAV, so a recurring buy
+    # shows its est. money-market draw. The retirement account has none (the plan note shows).
+    inst["FAKEMM"] = instruments_repo.get_or_create(
+        session,
+        symbol="FAKEMM",
+        name="Fake Money Market Settlement Fund",
+        asset_class="mutual_fund",
+    )
+    prices_repo.upsert_closes(session, inst["FAKEMM"].id, {d: D("1") for d in days})
+    instrument_overrides_repo.set_category(session, inst["FAKEMM"].id, "Bonds")
+
     # The default market benchmark (not held), so "Vs market", beta and alpha have a
     # series to compare with: it follows the world fund with its own noise and a lower
     # level, like a real index ETF would. Its own generator keeps the draws above unchanged.
@@ -582,6 +605,7 @@ def seed_full(session: Any) -> None:
     d0 = _dt.date(2023, 3, 1)
     add(brokerage, d0, "deposit", "900000.00")
     add(retirement, d0, "deposit", "180000.00")
+    buy(brokerage, "FAKEMM", d0 + _dt.timedelta(days=1), "5000")
     buy(brokerage, "FAKEL", _dt.date(2023, 3, 2), "4000")
     buy(brokerage, "FAKEL", _dt.date(2024, 1, 16), "250.5")
     buy(brokerage, "FAKEB", _dt.date(2023, 3, 6), "1500")
@@ -635,6 +659,18 @@ def seed_full(session: Any) -> None:
     add(brokerage, top_ups["apr"], "deposit", "3000.00")
     add(brokerage, top_ups["may"], "deposit", "2500.00")
     add(brokerage, top_ups["jun"], "deposit", "4000.00")
+    _seed_recurring(
+        session,
+        rows,
+        add,
+        brokerage,
+        inst["FAKEL"],
+        inst["FAKEMM"],
+        inst["FAKEB"],
+        retirement,
+        px,
+        rate_on,
+    )
     for day, usd in _history_plan()[0]:
         add(brokerage, day, "deposit", usd)
     session.add_all(rows)
@@ -661,6 +697,187 @@ def seed_full(session: Any) -> None:
         market_value_usd=usd_then,
     )
     _seed_open_session(session, inst, today)
+
+
+def _seed_recurring(
+    session: Any,
+    rows: list[Any],
+    add: Callable[..., None],
+    account: Any,
+    instrument: Any,
+    fund: Any,
+    second: Any,
+    no_fund_account: Any,
+    px: Callable[[str, _dt.date], Decimal],
+    rate_on: Callable[[_dt.date], Decimal],
+) -> None:
+    """Recurring plans with est. rows so every state shows (7.3, P14).
+
+    * A monthly $200 buy plan (25th): April is settled, May and June are est. (the 25th
+      rolls to the next session: Saturday, Memorial Day).
+    * A monthly EUR 1,000 conversion plan with Wise (28th): June (a Sunday) is est., the
+      rate 0.4 % below the last fixing, fee 2.50. Dated after every deposit so the
+      matching story of the real conversions stays as it is.
+    * A paused weekly buy plan with no rows, and an ended conversion plan.
+    """
+    from investment_dashboard.domain import recurrence
+    from investment_dashboard.models import FxConversion, RecurringPlan, RecurringPlanLeg
+
+    today = FROZEN_NOW.date()
+    buy_plan = RecurringPlan(
+        kind="buy",
+        unit="months",
+        every=1,
+        anchor=25,
+        start_date=_dt.date(2026, 4, 25),
+        generated_through=_dt.date(2026, 6, 25),
+        account_id=account.id,
+        created_at=_dt.datetime(2026, 4, 20, 9, 0),
+    )
+    conv_plan = RecurringPlan(
+        kind="conversion",
+        unit="months",
+        every=1,
+        anchor=28,
+        start_date=_dt.date(2026, 6, 1),
+        generated_through=_dt.date(2026, 6, 28),
+        amount=D("1000"),
+        provider="wise",
+        expected_fee=D("2.50"),
+        created_at=_dt.datetime(2026, 5, 10, 9, 0),
+    )
+    paused = RecurringPlan(
+        kind="buy",
+        unit="weeks",
+        every=2,
+        anchor=0,
+        start_date=_dt.date(2026, 3, 2),
+        generated_through=today - _dt.timedelta(days=1),
+        paused=True,
+        account_id=no_fund_account.id,
+        created_at=_dt.datetime(2026, 3, 1, 9, 0),
+    )
+    ended = RecurringPlan(
+        kind="conversion",
+        unit="days",
+        every=30,
+        start_date=_dt.date(2026, 1, 1),
+        end_date=_dt.date(2026, 3, 1),
+        generated_through=_dt.date(2026, 3, 1),
+        amount=D("500"),
+        provider="revolut",
+        created_at=_dt.datetime(2025, 12, 28, 9, 0),
+    )
+    deposit_plan = RecurringPlan(
+        kind="deposit",
+        unit="months",
+        every=1,
+        anchor=5,
+        start_date=_dt.date(2026, 4, 5),
+        generated_through=_dt.date(2026, 6, 5),
+        account_id=account.id,
+        amount=D("3000"),
+        created_at=_dt.datetime(2026, 4, 1, 9, 0),
+    )
+    session.add_all([buy_plan, conv_plan, paused, ended, deposit_plan])
+    session.flush()
+    # One automatic investment buying two holdings at once (a leg each), per due date.
+    legs = [
+        RecurringPlanLeg(
+            plan_id=buy_plan.id, instrument_id=instrument.id, amount=D("200"), position=0
+        ),
+        RecurringPlanLeg(plan_id=buy_plan.id, instrument_id=second.id, amount=D("100"), position=1),
+        RecurringPlanLeg(
+            plan_id=paused.id, instrument_id=instrument.id, shares=D("1.5"), position=0
+        ),
+    ]
+    session.add_all(legs)
+    session.flush()
+    for due, est in (
+        (_dt.date(2026, 4, 25), False),
+        (_dt.date(2026, 5, 25), True),
+        (_dt.date(2026, 6, 25), True),
+    ):
+        day = recurrence.roll_to_session(due)
+        for leg, holding in ((legs[0], instrument), (legs[1], second)):
+            amount = leg.amount
+            price = px(holding.symbol, day)
+            qty = (amount / price).quantize(D("0.0001"))
+            tag = f"manual:plan-{due.isoformat()}-{holding.symbol}"
+            add(
+                account,
+                day,
+                "buy",
+                f"-{amount:.2f}",
+                instrument_id=holding.id,
+                quantity=qty,
+                price_native=price,
+                gross_native=amount,
+                fees_native=D("0"),
+                estimate_plan_id=buy_plan.id,
+                estimate_due_date=due,
+                estimate_leg_id=leg.id,
+                is_estimate=est,
+                external_id=tag,
+            )
+            # The core-fund draw, in the shape a broker import gives a real buy.
+            add(
+                account,
+                day,
+                "sell",
+                f"{amount:.2f}",
+                instrument_id=fund.id,
+                quantity=-amount,
+                price_native=D("1"),
+                is_estimate=est,
+                external_id=f"{tag}:vmfxx",
+            )
+    # A recent rhythm for "Set up your routine" to suggest from: a EUR 250 Revolut conversion on
+    # the 14th of each month, and weekly Monday buys of two funds (all real, settled rows).
+    for month in (3, 4, 5, 6):
+        day = _dt.date(2026, month, 14)
+        session.add(
+            FxConversion(
+                date=day,
+                eur_sent=D("250.00"),
+                usd_received=(D("250") * rate_on(day) * D("0.996")).quantize(D("0.01")),
+                provider="revolut",
+                created_at=_dt.datetime.combine(day, _dt.time(9, 0)),
+                updated_at=_dt.datetime.combine(day, _dt.time(9, 0)),
+            )
+        )
+    monday = _dt.date(2026, 4, 27)
+    while monday <= _dt.date(2026, 6, 22):
+        for holding, amount in ((instrument, D("200")), (second, D("100"))):
+            price = px(holding.symbol, monday)
+            add(
+                account,
+                monday,
+                "buy",
+                f"-{amount:.2f}",
+                instrument_id=holding.id,
+                quantity=(amount / price).quantize(D("0.0001")),
+                price_native=price,
+                gross_native=amount,
+                fees_native=D("0"),
+            )
+        monday += _dt.timedelta(days=7)
+    for due in (_dt.date(2026, 6, 28),):  # a Sunday: the Friday fixing applies
+        rate = rate_on(due) * D("0.996")
+        session.add(
+            FxConversion(
+                date=due,
+                eur_sent=D("1000.00"),
+                usd_received=(D("1000") * rate).quantize(D("0.01")),
+                fees_eur=D("2.50"),
+                provider="wise",
+                estimate_plan_id=conv_plan.id,
+                estimate_due_date=due,
+                is_estimate=True,
+                created_at=_dt.datetime.combine(due, _dt.time(22, 0)),
+                updated_at=_dt.datetime.combine(due, _dt.time(22, 0)),
+            )
+        )
 
 
 def _history_plan() -> tuple[
@@ -724,12 +941,19 @@ def _seed_conversions(
       pin can reach it (pinned).
     * June: two conversions, two slices.
     * 2026-06-26: converted, not yet deposited ($1,000 left in the pool).
+    * 2026-06-27: $800 converted, $200 kept in the USD account (7.3, not in the pool).
+    * The 180,000 opening deposit is marked "received in USD" (no conversion).
     * The 2023 deposits have no conversion at all (ECB only).
     """
-    from investment_dashboard.models import FxConversion, FxConversionPin
+    from investment_dashboard.models import FxConversion, FxConversionPin, UsdReceivedDeposit
 
     def conv(
-        day: _dt.date, usd: str, provider: str, fees: str | None, note: str | None = None
+        day: _dt.date,
+        usd: str,
+        provider: str,
+        fees: str | None,
+        note: str | None = None,
+        kept: str = "0",
     ) -> Any:
         # About 0.4 % fewer dollars than the reference rate, like a retail spread.
         eur = (D(usd) / (rate_on(day) * D("0.996"))).quantize(D("0.01"))
@@ -740,6 +964,7 @@ def _seed_conversions(
             fees_eur=None if fees is None else D(fees),
             note=note,
             provider=provider,
+            kept_usd=D(kept),
             created_at=_dt.datetime.combine(day, _dt.time(9, 0)),
             updated_at=_dt.datetime.combine(day, _dt.time(9, 0)),
         )
@@ -758,9 +983,23 @@ def _seed_conversions(
     conv(_dt.date(2026, 5, 29), "2000.00", "wise", "2.10")
     conv(_dt.date(2026, 5, 30), "2000.00", "revolut", None)
     conv(_dt.date(2026, 6, 26), "1000.00", "wise", "1.40")
+    # Converted more than was invested: $200 stays in the USD account (not in the pool).
+    conv(
+        _dt.date(2026, 6, 27),
+        "800.00",
+        "wise",
+        "1.10",
+        "Kept $200 for the card",
+        kept="200.00",
+    )
     for day, usd, provider, fees in _history_plan()[1]:
         conv(day, usd, provider, fees)
     session.flush()
+    # The retirement account's opening deposit was dollars received directly.
+    opening = next(r for r in rows if r.kind == "deposit" and r.net_native == D("180000.00"))
+    session.add(
+        UsdReceivedDeposit(deposit_txn_id=opening.id, created_at=_dt.datetime(2026, 6, 1, 9, 0))
+    )
     may_deposit = next(r for r in rows if r.kind == "deposit" and r.date == top_ups["may"])
     session.add(
         FxConversionPin(

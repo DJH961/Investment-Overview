@@ -890,6 +890,20 @@
         "title": "Body_upload_import_api_imports_post",
         "type": "object"
       },
+      "Body_upload_wise_statement_api_imports_wise_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_wise_statement_api_imports_wise_post",
+        "type": "object"
+      },
       "BriefAckIn": {
         "properties": {
           "seen_at": {
@@ -1653,6 +1667,65 @@
         "title": "BuilderStateIO",
         "type": "object"
       },
+      "BuySplitOut": {
+        "properties": {
+          "allocation_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allocation Name"
+          },
+          "deposit_total": {
+            "description": "The deposit it is paid from, per deposit run.",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Deposit Total",
+            "type": "string"
+          },
+          "has_allocation_plan": {
+            "title": "Has Allocation Plan",
+            "type": "boolean"
+          },
+          "legs": {
+            "items": {
+              "$ref": "#/components/schemas/SplitLegOut"
+            },
+            "title": "Legs",
+            "type": "array"
+          },
+          "method": {
+            "description": "What the split follows: the allocation plan, the recent buys, or equal parts.",
+            "enum": [
+              "allocation",
+              "history",
+              "equal",
+              "none"
+            ],
+            "title": "Method",
+            "type": "string"
+          },
+          "total": {
+            "description": "What each buy run invests (whole dollars).",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Total",
+            "type": "string"
+          }
+        },
+        "required": [
+          "total",
+          "deposit_total",
+          "method",
+          "allocation_name",
+          "has_allocation_plan",
+          "legs"
+        ],
+        "title": "BuySplitOut",
+        "type": "object"
+      },
       "ByCurrency_AllocationsResponse_": {
         "properties": {
           "EUR": {
@@ -1786,6 +1859,33 @@
           "USD"
         ],
         "title": "ByCurrency[CalculatorInputsOut]",
+        "type": "object"
+      },
+      "ByCurrency_CostsOut_": {
+        "properties": {
+          "EUR": {
+            "$ref": "#/components/schemas/CostsOut"
+          },
+          "USD": {
+            "$ref": "#/components/schemas/CostsOut"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "EUR",
+          "USD"
+        ],
+        "title": "ByCurrency[CostsOut]",
         "type": "object"
       },
       "ByCurrency_CurrencyEffectOut_": {
@@ -2723,12 +2823,85 @@
         "title": "ConversionBatchOut",
         "type": "object"
       },
+      "ConversionEstimateOut": {
+        "properties": {
+          "deposit_usd": {
+            "description": "What each deposit run takes from it (spread over the deposit cadence).",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Deposit Usd",
+            "type": "string"
+          },
+          "ecb_rate": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Ecb Rate",
+            "type": "string"
+          },
+          "eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Eur",
+            "type": "string"
+          },
+          "fee_eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Fee Eur",
+            "type": "string"
+          },
+          "off_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The provider's average distance from the ECB rate.",
+            "title": "Off Pct"
+          },
+          "rate": {
+            "description": "ecb_rate x (1 + off_pct): USD per EUR.",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Rate",
+            "type": "string"
+          },
+          "usd": {
+            "description": "Whole dollars the conversion yields: (eur - fee) x rate.",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd",
+            "type": "string"
+          }
+        },
+        "required": [
+          "eur",
+          "fee_eur",
+          "ecb_rate",
+          "off_pct",
+          "rate",
+          "usd",
+          "deposit_usd"
+        ],
+        "title": "ConversionEstimateOut",
+        "type": "object"
+      },
       "ConversionMarker": {
         "properties": {
           "amount_from": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Amount From",
             "type": "string"
+          },
+          "amount_to": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount To"
           },
           "conversion_id": {
             "title": "Conversion Id",
@@ -2757,6 +2930,18 @@
             ],
             "title": "Kind"
           },
+          "off_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Off Pct"
+          },
           "rate": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Rate",
@@ -2776,6 +2961,734 @@
           "conversion_id"
         ],
         "title": "ConversionMarker",
+        "type": "object"
+      },
+      "CostMonthOut": {
+        "properties": {
+          "all_in_rate": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "sum(usd received) / sum(eur sent + fees) of the group.",
+            "title": "All In Rate"
+          },
+          "avg_off_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "all-in distance from the ECB, weighted by EUR converted.",
+            "title": "Avg Off Pct"
+          },
+          "converted": {
+            "description": "EUR sent (EUR view) or USD received (USD view).",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Converted",
+            "type": "string"
+          },
+          "cost": {
+            "description": "fees + spread; negative is intraday noise, not a win.",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Cost",
+            "type": "string"
+          },
+          "cost_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "cost / converted; null when nothing converted.",
+            "title": "Cost Pct"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "fees": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Fees",
+            "type": "string"
+          },
+          "month": {
+            "description": "YYYY-MM",
+            "title": "Month",
+            "type": "string"
+          },
+          "spread": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Spread",
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "converted",
+          "fees",
+          "spread",
+          "cost",
+          "cost_pct",
+          "avg_off_pct",
+          "month"
+        ],
+        "title": "CostMonthOut",
+        "type": "object"
+      },
+      "CostPointOut": {
+        "properties": {
+          "cost": {
+            "description": "Cumulative cost up to and including this date.",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Cost",
+            "type": "string"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "cost"
+        ],
+        "title": "CostPointOut",
+        "type": "object"
+      },
+      "CostProviderOut": {
+        "properties": {
+          "all_in_rate": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "sum(usd received) / sum(eur sent + fees) of the group.",
+            "title": "All In Rate"
+          },
+          "avg_off_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "all-in distance from the ECB, weighted by EUR converted.",
+            "title": "Avg Off Pct"
+          },
+          "converted": {
+            "description": "EUR sent (EUR view) or USD received (USD view).",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Converted",
+            "type": "string"
+          },
+          "cost": {
+            "description": "fees + spread; negative is intraday noise, not a win.",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Cost",
+            "type": "string"
+          },
+          "cost_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "cost / converted; null when nothing converted.",
+            "title": "Cost Pct"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "fees": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Fees",
+            "type": "string"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "wise",
+                  "revolut",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "spread": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Spread",
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "converted",
+          "fees",
+          "spread",
+          "cost",
+          "cost_pct",
+          "avg_off_pct",
+          "provider"
+        ],
+        "title": "CostProviderOut",
+        "type": "object"
+      },
+      "CostRowOut": {
+        "properties": {
+          "cost": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "ecb_rate": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ecb Rate"
+          },
+          "ecb_rate_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ecb Rate Date"
+          },
+          "eur_sent": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Eur Sent",
+            "type": "string"
+          },
+          "fees": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fees"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "month_avg": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Mean of that calendar month's settled ECB fixings (so far, if running).",
+            "title": "Month Avg"
+          },
+          "month_so_far": {
+            "title": "Month So Far",
+            "type": "boolean"
+          },
+          "off_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Off Pct"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "wise",
+                  "revolut",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "spread": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spread"
+          },
+          "timing_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rate / month_avg - 1: positive = better than the month's average.",
+            "title": "Timing Pct"
+          },
+          "usd_received": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd Received",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "date",
+          "provider",
+          "eur_sent",
+          "usd_received",
+          "ecb_rate",
+          "ecb_rate_date",
+          "off_pct",
+          "fees",
+          "spread",
+          "cost",
+          "month_avg",
+          "month_so_far",
+          "timing_pct"
+        ],
+        "title": "CostRowOut",
+        "type": "object"
+      },
+      "CostSummaryOut": {
+        "description": "Totals in the view's currency (EUR amounts, or USD amounts not received).",
+        "properties": {
+          "all_in_rate": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "sum(usd received) / sum(eur sent + fees) of the group.",
+            "title": "All In Rate"
+          },
+          "avg_off_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "all-in distance from the ECB, weighted by EUR converted.",
+            "title": "Avg Off Pct"
+          },
+          "converted": {
+            "description": "EUR sent (EUR view) or USD received (USD view).",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Converted",
+            "type": "string"
+          },
+          "cost": {
+            "description": "fees + spread; negative is intraday noise, not a win.",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Cost",
+            "type": "string"
+          },
+          "cost_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "cost / converted; null when nothing converted.",
+            "title": "Cost Pct"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "fees": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Fees",
+            "type": "string"
+          },
+          "spread": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Spread",
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "converted",
+          "fees",
+          "spread",
+          "cost",
+          "cost_pct",
+          "avg_off_pct"
+        ],
+        "title": "CostSummaryOut",
+        "type": "object"
+      },
+      "CostTimingOut": {
+        "properties": {
+          "avg_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Weighted by EUR converted.",
+            "title": "Avg Pct"
+          },
+          "better": {
+            "title": "Better",
+            "type": "integer"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "so_far": {
+            "description": "Conversions whose month is still running.",
+            "title": "So Far",
+            "type": "integer"
+          },
+          "worse": {
+            "title": "Worse",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count",
+          "avg_pct",
+          "better",
+          "worse",
+          "so_far"
+        ],
+        "title": "CostTimingOut",
+        "type": "object"
+      },
+      "CostYearOut": {
+        "properties": {
+          "all_in_rate": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "sum(usd received) / sum(eur sent + fees) of the group.",
+            "title": "All In Rate"
+          },
+          "avg_off_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "all-in distance from the ECB, weighted by EUR converted.",
+            "title": "Avg Off Pct"
+          },
+          "converted": {
+            "description": "EUR sent (EUR view) or USD received (USD view).",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Converted",
+            "type": "string"
+          },
+          "cost": {
+            "description": "fees + spread; negative is intraday noise, not a win.",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Cost",
+            "type": "string"
+          },
+          "cost_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "cost / converted; null when nothing converted.",
+            "title": "Cost Pct"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "fees": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Fees",
+            "type": "string"
+          },
+          "spread": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Spread",
+            "type": "string"
+          },
+          "year": {
+            "title": "Year",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count",
+          "converted",
+          "fees",
+          "spread",
+          "cost",
+          "cost_pct",
+          "avg_off_pct",
+          "year"
+        ],
+        "title": "CostYearOut",
+        "type": "object"
+      },
+      "CostsOut": {
+        "properties": {
+          "best": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CostRowOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "by_month": {
+            "items": {
+              "$ref": "#/components/schemas/CostMonthOut"
+            },
+            "title": "By Month",
+            "type": "array"
+          },
+          "by_provider": {
+            "items": {
+              "$ref": "#/components/schemas/CostProviderOut"
+            },
+            "title": "By Provider",
+            "type": "array"
+          },
+          "by_year": {
+            "items": {
+              "$ref": "#/components/schemas/CostYearOut"
+            },
+            "title": "By Year",
+            "type": "array"
+          },
+          "cheaper_gap_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cheaper Gap Pct"
+          },
+          "cheaper_provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "wise",
+                  "revolut",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Lowest cost % among providers with conversions (needs two to compare).",
+            "title": "Cheaper Provider"
+          },
+          "cheaper_than": {
+            "anyOf": [
+              {
+                "enum": [
+                  "wise",
+                  "revolut",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The next-cheapest provider.",
+            "title": "Cheaper Than"
+          },
+          "cumulative": {
+            "items": {
+              "$ref": "#/components/schemas/CostPointOut"
+            },
+            "title": "Cumulative",
+            "type": "array"
+          },
+          "currency": {
+            "enum": [
+              "EUR",
+              "USD"
+            ],
+            "title": "Currency",
+            "type": "string"
+          },
+          "range": {
+            "title": "Range",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/CostRowOut"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/CostSummaryOut"
+          },
+          "timing": {
+            "$ref": "#/components/schemas/CostTimingOut"
+          },
+          "unpriced": {
+            "description": "Conversions with no fixing close enough; not counted.",
+            "title": "Unpriced",
+            "type": "integer"
+          },
+          "worst": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CostRowOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "currency",
+          "range",
+          "start",
+          "unpriced",
+          "summary",
+          "best",
+          "worst",
+          "cumulative",
+          "timing",
+          "by_year",
+          "by_month",
+          "by_provider",
+          "cheaper_provider",
+          "cheaper_than",
+          "cheaper_gap_pct",
+          "rows"
+        ],
+        "title": "CostsOut",
         "type": "object"
       },
       "CurrencyBlock": {
@@ -3993,6 +4906,12 @@
             "title": "Rate Missing",
             "type": "boolean"
           },
+          "received_in_usd": {
+            "default": false,
+            "description": "Marked as received in USD (no conversion).",
+            "title": "Received In Usd",
+            "type": "boolean"
+          },
           "slices": {
             "items": {
               "$ref": "#/components/schemas/DepositSliceOut"
@@ -4004,7 +4923,8 @@
             "enum": [
               "matched",
               "partial",
-              "ecb_only"
+              "ecb_only",
+              "received_usd"
             ],
             "title": "Status",
             "type": "string"
@@ -6177,6 +7097,248 @@
         "title": "EstimateFund",
         "type": "object"
       },
+      "EstimateOut": {
+        "properties": {
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "eur_rate": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "USD per EUR to value this buy's dollars in EUR: the all-in rate of the plan's own latest conversion on or before the due date, else the latest real conversion, else today's settled ECB fixing. Null for non-USD rows.",
+            "title": "Eur Rate"
+          },
+          "eur_rate_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Date of the conversion (or of the ECB fixing) the rate is from.",
+            "title": "Eur Rate Date"
+          },
+          "eur_rate_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "conversion",
+                  "ecb"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eur Rate Source"
+          },
+          "fees": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fees"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "label": {
+            "description": "Account for a buy, provider for a conversion.",
+            "title": "Label",
+            "type": "string"
+          },
+          "plan_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Id"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price"
+          },
+          "price_dp": {
+            "default": 4,
+            "description": "Decimals the ledger holds for this price (what a stepper moves).",
+            "title": "Price Dp",
+            "type": "integer"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "quantity_dp": {
+            "default": 4,
+            "description": "Same for the quantity.",
+            "title": "Quantity Dp",
+            "type": "integer"
+          },
+          "received": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received"
+          },
+          "row_type": {
+            "enum": [
+              "transaction",
+              "fx_conversion"
+            ],
+            "title": "Row Type",
+            "type": "string"
+          },
+          "sent": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sent"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "required": [
+          "row_type",
+          "id",
+          "plan_id",
+          "due_date",
+          "date",
+          "label",
+          "symbol",
+          "currency",
+          "price",
+          "quantity",
+          "total",
+          "fees",
+          "sent",
+          "received"
+        ],
+        "title": "EstimateOut",
+        "type": "object"
+      },
+      "EstimatesOut": {
+        "properties": {
+          "count": {
+            "description": "Estimated rows still to settle (the badge number). A buy and its core-fund leg are one; deposits need no input and are never counted.",
+            "title": "Count",
+            "type": "integer"
+          },
+          "groups": {
+            "description": "The reminder, one line per plan.",
+            "items": {
+              "$ref": "#/components/schemas/ReminderGroupOut"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/EstimateOut"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "count",
+          "rows",
+          "groups"
+        ],
+        "title": "EstimatesOut",
+        "type": "object"
+      },
       "Freshness": {
         "description": "How fresh the figures are (drives the Live / Updated / Updating... chip).",
         "properties": {
@@ -6440,6 +7602,21 @@
             "title": "From Ccy",
             "type": "string"
           },
+          "kept_usd": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "description": "Dollars kept in the USD account, never sent to the broker.",
+            "title": "Kept Usd"
+          },
           "note": {
             "anyOf": [
               {
@@ -6505,6 +7682,32 @@
             "title": "All In Rate",
             "type": "string"
           },
+          "cost_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "spread_eur + fees_eur; positive = paid more than the ECB.",
+            "title": "Cost Eur"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dollars not received: eur_sent * ecb_rate - usd_received + fees_usd.",
+            "title": "Cost Usd"
+          },
           "date": {
             "title": "Date",
             "type": "string"
@@ -6557,6 +7760,19 @@
             ],
             "title": "Fees Eur"
           },
+          "fees_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "fees_eur at that conversion's own fixing.",
+            "title": "Fees Usd"
+          },
           "from_ccy": {
             "title": "From Ccy",
             "type": "string"
@@ -6564,6 +7780,18 @@
           "id": {
             "title": "Id",
             "type": "integer"
+          },
+          "is_estimate": {
+            "default": false,
+            "description": "A recurring-plan estimate not yet settled (7.3, P14).",
+            "title": "Is Estimate",
+            "type": "boolean"
+          },
+          "kept_usd": {
+            "description": "Dollars kept outside investing (not in the pool).",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Kept Usd",
+            "type": "string"
           },
           "note": {
             "anyOf": [
@@ -6616,6 +7844,19 @@
             "title": "Remaining Usd",
             "type": "string"
           },
+          "spread_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "eur_sent - usd_received / ecb_rate; null when there is no fixing.",
+            "title": "Spread Eur"
+          },
           "to_ccy": {
             "title": "To Ccy",
             "type": "string"
@@ -6644,6 +7885,7 @@
           "from_ccy",
           "to_ccy",
           "provider",
+          "kept_usd",
           "rate",
           "all_in_rate",
           "ecb_rate",
@@ -9087,6 +10329,11 @@
               }
             ],
             "title": "Undone Rows"
+          },
+          "updated_count": {
+            "default": 0,
+            "title": "Updated Count",
+            "type": "integer"
           }
         },
         "required": [
@@ -9247,6 +10494,11 @@
             "title": "Unresolved Symbols",
             "type": "array"
           },
+          "updated": {
+            "default": 0,
+            "title": "Updated",
+            "type": "integer"
+          },
           "warnings": {
             "items": {
               "$ref": "#/components/schemas/ImportIssue"
@@ -9301,6 +10553,11 @@
             "title": "Unresolved",
             "type": "integer"
           },
+          "updates": {
+            "default": 0,
+            "title": "Updates",
+            "type": "integer"
+          },
           "warnings": {
             "title": "Warnings",
             "type": "integer"
@@ -9336,6 +10593,66 @@
           "errors"
         ],
         "title": "ImportErrorDto",
+        "type": "object"
+      },
+      "ImportExistingFigures": {
+        "description": "The existing transaction an ``update`` row would overwrite (its old figures).",
+        "properties": {
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "estimated": {
+            "default": false,
+            "title": "Estimated",
+            "type": "boolean"
+          },
+          "net_native": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Native"
+          },
+          "price_native": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Native"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "transaction_id": {
+            "title": "Transaction Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "transaction_id",
+          "date"
+        ],
+        "title": "ImportExistingFigures",
         "type": "object"
       },
       "ImportField": {
@@ -9706,6 +11023,16 @@
             ],
             "title": "Description"
           },
+          "existing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImportExistingFigures"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "fees_native": {
             "anyOf": [
               {
@@ -9723,7 +11050,8 @@
               "enum": [
                 "keep",
                 "fix_price",
-                "skip"
+                "skip",
+                "import_new"
               ],
               "type": "string"
             },
@@ -9796,7 +11124,8 @@
                 "enum": [
                   "keep",
                   "fix_price",
-                  "skip"
+                  "skip",
+                  "import_new"
                 ],
                 "type": "string"
               },
@@ -9821,6 +11150,17 @@
             "default": false,
             "title": "Skipped",
             "type": "boolean"
+          },
+          "status": {
+            "default": "new",
+            "enum": [
+              "new",
+              "duplicate",
+              "update",
+              "skipped"
+            ],
+            "title": "Status",
+            "type": "string"
           },
           "symbol": {
             "anyOf": [
@@ -9906,7 +11246,8 @@
                 "enum": [
                   "keep",
                   "fix_price",
-                  "skip"
+                  "skip",
+                  "import_new"
                 ],
                 "type": "string"
               },
@@ -9961,6 +11302,11 @@
               }
             ],
             "title": "Latest Date"
+          },
+          "restored": {
+            "default": 0,
+            "title": "Restored",
+            "type": "integer"
           },
           "rows": {
             "items": {
@@ -10032,6 +11378,11 @@
               }
             ],
             "title": "Invalidated From"
+          },
+          "restored": {
+            "default": 0,
+            "title": "Restored",
+            "type": "integer"
           }
         },
         "required": [
@@ -11172,6 +12523,102 @@
           "fx_now"
         ],
         "title": "LastSessionMove",
+        "type": "object"
+      },
+      "LegIn": {
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Native amount per run.",
+            "title": "Amount"
+          },
+          "instrument_id": {
+            "title": "Instrument Id",
+            "type": "integer"
+          },
+          "shares": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Or shares per run.",
+            "title": "Shares"
+          }
+        },
+        "required": [
+          "instrument_id"
+        ],
+        "title": "LegIn",
+        "type": "object"
+      },
+      "LegOut": {
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "instrument_id": {
+            "title": "Instrument Id",
+            "type": "integer"
+          },
+          "shares": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shares"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "instrument_id",
+          "symbol",
+          "amount",
+          "shares"
+        ],
+        "title": "LegOut",
         "type": "object"
       },
       "LiveResponse": {
@@ -13137,6 +14584,324 @@
           "after_pct"
         ],
         "title": "PlanCategoryOut",
+        "type": "object"
+      },
+      "PlanIn": {
+        "properties": {
+          "account_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Buy plans.",
+            "title": "Account Id"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Deposit: USD per run; conversion: EUR sent.",
+            "title": "Amount"
+          },
+          "anchor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Weekday 0-6 (Monday = 0) for weeks, day of month 1-31 for months.",
+            "title": "Anchor"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "every": {
+            "maximum": 366.0,
+            "minimum": 1.0,
+            "title": "Every",
+            "type": "integer"
+          },
+          "expected_fee": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Conversion plans: EUR fee per run. Defaults to the last real conversion's fee with that provider.",
+            "title": "Expected Fee"
+          },
+          "kind": {
+            "enum": [
+              "buy",
+              "deposit",
+              "conversion"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "legs": {
+            "description": "Buy plans: the holdings bought together on every due date (same account).",
+            "items": {
+              "$ref": "#/components/schemas/LegIn"
+            },
+            "title": "Legs",
+            "type": "array"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "wise",
+                  "revolut",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Conversion plans.",
+            "title": "Provider"
+          },
+          "start_date": {
+            "format": "date",
+            "title": "Start Date",
+            "type": "string"
+          },
+          "unit": {
+            "enum": [
+              "days",
+              "weeks",
+              "months"
+            ],
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "unit",
+          "every",
+          "start_date"
+        ],
+        "title": "PlanIn",
+        "type": "object"
+      },
+      "PlanOut": {
+        "properties": {
+          "account": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account"
+          },
+          "account_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Id"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "anchor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchor"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "every": {
+            "title": "Every",
+            "type": "integer"
+          },
+          "expected_fee": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Fee"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "buy",
+              "deposit",
+              "conversion"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "legs": {
+            "items": {
+              "$ref": "#/components/schemas/LegOut"
+            },
+            "title": "Legs",
+            "type": "array"
+          },
+          "next_due": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Next due date still to be handled; null if none.",
+            "title": "Next Due"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "One-line caution, e.g. a buy plan whose account has no settlement fund.",
+            "title": "Note"
+          },
+          "paused": {
+            "title": "Paused",
+            "type": "boolean"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "wise",
+                  "revolut",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "start_date": {
+            "title": "Start Date",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "paused",
+              "ended"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "unit": {
+            "enum": [
+              "days",
+              "weeks",
+              "months"
+            ],
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "unit",
+          "every",
+          "anchor",
+          "start_date",
+          "end_date",
+          "status",
+          "paused",
+          "account_id",
+          "account",
+          "legs",
+          "amount",
+          "provider",
+          "expected_fee",
+          "next_due"
+        ],
+        "title": "PlanOut",
         "type": "object"
       },
       "PlanRequest": {
@@ -15401,6 +17166,73 @@
         "title": "RemainingBatchOut",
         "type": "object"
       },
+      "ReminderGroupOut": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "input": {
+            "description": "'import' when a file import can settle them (buys, Wise); 'type' otherwise.",
+            "enum": [
+              "type",
+              "import"
+            ],
+            "title": "Input",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "buy",
+              "conversion"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "description": "One short line for this plan; never one per row.",
+            "title": "Message",
+            "type": "string"
+          },
+          "plan_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Id"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "wise",
+                  "revolut",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Conversion groups: the provider (Wise has a statement import).",
+            "title": "Provider"
+          }
+        },
+        "required": [
+          "plan_id",
+          "kind",
+          "count",
+          "input",
+          "message"
+        ],
+        "title": "ReminderGroupOut",
+        "type": "object"
+      },
       "ReturnSplit": {
         "description": "Investment return (USD wallet) vs currency effect; independent, never converted.",
         "properties": {
@@ -17445,6 +19277,196 @@
         "title": "SettingsValuesDto",
         "type": "object"
       },
+      "SettleIn": {
+        "properties": {
+          "due_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Also settle (as estimated) every est. row of this due date.",
+            "title": "Due Date"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/SettleRowIn"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "title": "SettleIn",
+        "type": "object"
+      },
+      "SettleOut": {
+        "properties": {
+          "remaining": {
+            "title": "Remaining",
+            "type": "integer"
+          },
+          "settled": {
+            "title": "Settled",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "settled",
+          "remaining"
+        ],
+        "title": "SettleOut",
+        "type": "object"
+      },
+      "SettleRowIn": {
+        "properties": {
+          "fees": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fees"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "received": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received"
+          },
+          "row_type": {
+            "enum": [
+              "transaction",
+              "fx_conversion"
+            ],
+            "title": "Row Type",
+            "type": "string"
+          },
+          "sent": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sent"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "required": [
+          "row_type",
+          "id"
+        ],
+        "title": "SettleRowIn",
+        "type": "object"
+      },
+      "SetupPlanOut": {
+        "properties": {
+          "conversion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConversionEstimateOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Step 1's dollars (null without an ECB rate)."
+          },
+          "split": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BuySplitOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Step 3's holdings split."
+          }
+        },
+        "title": "SetupPlanOut",
+        "type": "object"
+      },
       "ShareCountEntry": {
         "description": "One share count typed from the broker's screen.",
         "properties": {
@@ -17527,6 +19549,30 @@
           "eur"
         ],
         "title": "SliceOut",
+        "type": "object"
+      },
+      "SplitLegOut": {
+        "properties": {
+          "amount": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Amount",
+            "type": "string"
+          },
+          "instrument_id": {
+            "title": "Instrument Id",
+            "type": "integer"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instrument_id",
+          "symbol",
+          "amount"
+        ],
+        "title": "SplitLegOut",
         "type": "object"
       },
       "SplitPoint": {
@@ -17684,6 +19730,133 @@
           "change"
         ],
         "title": "StressRow",
+        "type": "object"
+      },
+      "SuggestedLegOut": {
+        "properties": {
+          "amount": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Amount",
+            "type": "string"
+          },
+          "instrument_id": {
+            "title": "Instrument Id",
+            "type": "integer"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instrument_id",
+          "symbol",
+          "amount"
+        ],
+        "title": "SuggestedLegOut",
+        "type": "object"
+      },
+      "SuggestionOut": {
+        "properties": {
+          "account": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account"
+          },
+          "account_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Id"
+          },
+          "amount": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Amount",
+            "type": "string"
+          },
+          "anchor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchor"
+          },
+          "every": {
+            "title": "Every",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "buy",
+              "deposit",
+              "conversion"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "legs": {
+            "description": "Buy plans.",
+            "items": {
+              "$ref": "#/components/schemas/SuggestedLegOut"
+            },
+            "title": "Legs",
+            "type": "array"
+          },
+          "occurrences": {
+            "description": "How many past rows the suggestion is based on.",
+            "title": "Occurrences",
+            "type": "integer"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "wise",
+                  "revolut",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "unit": {
+            "enum": [
+              "days",
+              "weeks",
+              "months"
+            ],
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "unit",
+          "every",
+          "anchor",
+          "amount",
+          "occurrences"
+        ],
+        "title": "SuggestionOut",
         "type": "object"
       },
       "SystemInfo": {
@@ -19182,6 +21355,12 @@
             ],
             "title": "Instrument Id"
           },
+          "is_estimate": {
+            "default": false,
+            "description": "A recurring-plan estimate not yet settled (import or typed figures).",
+            "title": "Is Estimate",
+            "type": "boolean"
+          },
           "is_settlement_leg": {
             "default": false,
             "title": "Is Settlement Leg",
@@ -20370,13 +22549,370 @@
         ],
         "title": "Week52",
         "type": "object"
+      },
+      "WiseColumnField": {
+        "properties": {
+          "column": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Column"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "required",
+          "column"
+        ],
+        "title": "WiseColumnField",
+        "type": "object"
+      },
+      "WiseConfirmIn": {
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/WiseRowChoiceIn"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "title": "WiseConfirmIn",
+        "type": "object"
+      },
+      "WiseConfirmResult": {
+        "properties": {
+          "duplicates": {
+            "title": "Duplicates",
+            "type": "integer"
+          },
+          "import_id": {
+            "title": "Import Id",
+            "type": "string"
+          },
+          "imported": {
+            "title": "Imported",
+            "type": "integer"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "import_id",
+          "imported",
+          "skipped",
+          "duplicates"
+        ],
+        "title": "WiseConfirmResult",
+        "type": "object"
+      },
+      "WiseCounts": {
+        "properties": {
+          "duplicates": {
+            "title": "Duplicates",
+            "type": "integer"
+          },
+          "new": {
+            "title": "New",
+            "type": "integer"
+          },
+          "rows": {
+            "title": "Rows",
+            "type": "integer"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rows",
+          "new",
+          "duplicates",
+          "skipped"
+        ],
+        "title": "WiseCounts",
+        "type": "object"
+      },
+      "WiseLayoutIn": {
+        "properties": {
+          "columns": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Columns",
+            "type": "object"
+          }
+        },
+        "required": [
+          "columns"
+        ],
+        "title": "WiseLayoutIn",
+        "type": "object"
+      },
+      "WisePreview": {
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/WiseCounts"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/WiseColumnField"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "headers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Headers",
+            "type": "array"
+          },
+          "ignore_non_usd": {
+            "title": "Ignore Non Usd",
+            "type": "boolean"
+          },
+          "import_id": {
+            "title": "Import Id",
+            "type": "string"
+          },
+          "missing": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing",
+            "type": "array"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/WisePreviewRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "import_id",
+          "filename",
+          "counts",
+          "rows",
+          "headers",
+          "fields",
+          "missing",
+          "ignore_non_usd",
+          "expires_at"
+        ],
+        "title": "WisePreview",
+        "type": "object"
+      },
+      "WisePreviewRow": {
+        "properties": {
+          "date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "eur_sent": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eur Sent"
+          },
+          "external_id": {
+            "title": "External Id",
+            "type": "string"
+          },
+          "fee_stated": {
+            "default": false,
+            "title": "Fee Stated",
+            "type": "boolean"
+          },
+          "fees_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fees Eur"
+          },
+          "is_duplicate": {
+            "default": false,
+            "title": "Is Duplicate",
+            "type": "boolean"
+          },
+          "line": {
+            "title": "Line",
+            "type": "integer"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "sent_on": {
+            "default": false,
+            "title": "Sent On",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "conversion",
+              "skipped",
+              "ignored",
+              "unsupported"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "usd_received": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usd Received"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "line",
+          "external_id",
+          "date",
+          "status"
+        ],
+        "title": "WisePreviewRow",
+        "type": "object"
+      },
+      "WiseRowChoiceIn": {
+        "properties": {
+          "kept_usd": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "title": "Kept Usd"
+          },
+          "line": {
+            "title": "Line",
+            "type": "integer"
+          },
+          "skip": {
+            "default": false,
+            "title": "Skip",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "line"
+        ],
+        "title": "WiseRowChoiceIn",
+        "type": "object"
       }
     }
   },
   "info": {
     "summary": "v6 API: the server owns data, prices and all maths.",
     "title": "Investment Overview",
-    "version": "7.2.1"
+    "version": "7.3.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -22051,6 +24587,62 @@
         ]
       }
     },
+    "/api/fx-conversions/costs": {
+      "get": {
+        "description": "What converting costs you, per reporting currency (a plain read, not logged).",
+        "operationId": "costs_api_fx_conversions_costs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "range",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "1d",
+                "1w",
+                "1m",
+                "3m",
+                "ytd",
+                "1y",
+                "all",
+                "5y",
+                "10y",
+                "max"
+              ],
+              "title": "Range",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ByCurrency_CostsOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Costs",
+        "tags": [
+          "fx-conversions"
+        ]
+      }
+    },
     "/api/fx-conversions/pins/{deposit_txn_id}": {
       "delete": {
         "operationId": "delete_pins_api_fx_conversions_pins__deposit_txn_id__delete",
@@ -22152,6 +24744,82 @@
           }
         },
         "summary": "Pool",
+        "tags": [
+          "fx-conversions"
+        ]
+      }
+    },
+    "/api/fx-conversions/received-in-usd/{deposit_txn_id}": {
+      "delete": {
+        "operationId": "unmark_received_in_usd_api_fx_conversions_received_in_usd__deposit_txn_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deposit_txn_id",
+            "required": true,
+            "schema": {
+              "title": "Deposit Txn Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Unmark Received In Usd",
+        "tags": [
+          "fx-conversions"
+        ]
+      },
+      "put": {
+        "description": "Mark a USD deposit as received in USD (no conversion); it keeps its ECB valuation.",
+        "operationId": "mark_received_in_usd_api_fx_conversions_received_in_usd__deposit_txn_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deposit_txn_id",
+            "required": true,
+            "schema": {
+              "title": "Deposit Txn Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DepositMatchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mark Received In Usd",
         "tags": [
           "fx-conversions"
         ]
@@ -23103,6 +25771,194 @@
           }
         },
         "summary": "Unknown Actions",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/api/imports/wise": {
+      "post": {
+        "operationId": "upload_wise_statement_api_imports_wise_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_wise_statement_api_imports_wise_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WisePreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Wise Statement",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/api/imports/wise/{import_id}": {
+      "delete": {
+        "operationId": "discard_wise_statement_api_imports_wise__import_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "import_id",
+            "required": true,
+            "schema": {
+              "title": "Import Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Discard Wise Statement",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/api/imports/wise/{import_id}/confirm": {
+      "post": {
+        "operationId": "confirm_wise_statement_api_imports_wise__import_id__confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "import_id",
+            "required": true,
+            "schema": {
+              "title": "Import Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WiseConfirmIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WiseConfirmResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Wise Statement",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/api/imports/wise/{import_id}/layout": {
+      "post": {
+        "description": "Re-parse the staged statement with columns chosen by hand (new ``import_id``).",
+        "operationId": "set_wise_layout_api_imports_wise__import_id__layout_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "import_id",
+            "required": true,
+            "schema": {
+              "title": "Import Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WiseLayoutIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WisePreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Wise Layout",
         "tags": [
           "imports"
         ]
@@ -24707,6 +27563,597 @@
         "summary": "Periods Both",
         "tags": [
           "periods"
+        ]
+      }
+    },
+    "/api/recurring/estimates": {
+      "get": {
+        "operationId": "estimates_api_recurring_estimates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstimatesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Estimates",
+        "tags": [
+          "recurring"
+        ]
+      }
+    },
+    "/api/recurring/plans": {
+      "get": {
+        "operationId": "list_plans_api_recurring_plans_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PlanOut"
+                  },
+                  "title": "Response List Plans Api Recurring Plans Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Plans",
+        "tags": [
+          "recurring"
+        ]
+      },
+      "post": {
+        "operationId": "create_plan_api_recurring_plans_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Plan",
+        "tags": [
+          "recurring"
+        ]
+      }
+    },
+    "/api/recurring/plans/{plan_id}": {
+      "delete": {
+        "operationId": "delete_plan_api_recurring_plans__plan_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Plan",
+        "tags": [
+          "recurring"
+        ]
+      },
+      "put": {
+        "operationId": "update_plan_api_recurring_plans__plan_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Plan",
+        "tags": [
+          "recurring"
+        ]
+      }
+    },
+    "/api/recurring/plans/{plan_id}/end": {
+      "post": {
+        "operationId": "end_plan_api_recurring_plans__plan_id__end_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "End Plan",
+        "tags": [
+          "recurring"
+        ]
+      }
+    },
+    "/api/recurring/plans/{plan_id}/pause": {
+      "post": {
+        "operationId": "pause_plan_api_recurring_plans__plan_id__pause_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pause Plan",
+        "tags": [
+          "recurring"
+        ]
+      }
+    },
+    "/api/recurring/plans/{plan_id}/resume": {
+      "post": {
+        "operationId": "resume_plan_api_recurring_plans__plan_id__resume_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resume Plan",
+        "tags": [
+          "recurring"
+        ]
+      }
+    },
+    "/api/recurring/settle": {
+      "post": {
+        "operationId": "settle_api_recurring_settle_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettleIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettleOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Settle",
+        "tags": [
+          "recurring"
+        ]
+      }
+    },
+    "/api/recurring/setup-plan": {
+      "get": {
+        "description": "Defaults that flow between the setup steps; every figure is computed here.\n\nEach step inherits only from the one before it: the deposit starts from the conversion's\ndollars, the buys from the deposit amount (split by the allocation plan, else by the\nrecent buys, else equally).",
+        "operationId": "setup_plan_api_recurring_setup_plan_get",
+        "parameters": [
+          {
+            "description": "Step 1: EUR converted.",
+            "in": "query",
+            "name": "eur_amount",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Step 1: EUR converted.",
+              "title": "Eur Amount"
+            }
+          },
+          {
+            "in": "query",
+            "name": "provider",
+            "required": false,
+            "schema": {
+              "default": "revolut",
+              "enum": [
+                "wise",
+                "revolut",
+                "other"
+              ],
+              "title": "Provider",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "expected_fee",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Expected Fee"
+            }
+          },
+          {
+            "description": "Step 3: the dollars to buy with (step 2's deposit).",
+            "in": "query",
+            "name": "buy_total_usd",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Step 3: the dollars to buy with (step 2's deposit).",
+              "title": "Buy Total Usd"
+            }
+          },
+          {
+            "in": "query",
+            "name": "account_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Account Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "conversion_unit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "days",
+                    "weeks",
+                    "months"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Conversion Unit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "conversion_every",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Conversion Every",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "deposit_unit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "days",
+                    "weeks",
+                    "months"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Deposit Unit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "deposit_every",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Deposit Every",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "buy_unit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "days",
+                    "weeks",
+                    "months"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Buy Unit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "buy_every",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Buy Every",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupPlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Setup Plan",
+        "tags": [
+          "recurring"
+        ]
+      }
+    },
+    "/api/recurring/suggestions": {
+      "get": {
+        "description": "Plans the last months of the ledger look like (deposits, buys, conversions).\n\nSuggestions only: the \"Set up your routine\" flow prefills its form from these and\nnothing is created until the owner confirms.",
+        "operationId": "suggestions_api_recurring_suggestions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SuggestionOut"
+                  },
+                  "title": "Response Suggestions Api Recurring Suggestions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Suggestions",
+        "tags": [
+          "recurring"
         ]
       }
     },

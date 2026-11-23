@@ -51,7 +51,7 @@ describe("clockView", () => {
     expect(far).toMatch(/^opens Wed 13:30$/);
   });
 
-  it("holiday is named, never shown by colour alone", () => {
+  it("holiday is named, never shown by color alone", () => {
     expect(clockView({ ...closed, market_state: "holiday" }, new Date("2026-07-01T11:00:00Z"), "UTC").state).toBe("Holiday");
   });
 

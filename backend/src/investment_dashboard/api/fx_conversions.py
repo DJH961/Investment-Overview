@@ -4,13 +4,16 @@ from __future__ import annotations
 
 from datetime import date as date_type
 from decimal import Decimal
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Annotated, Literal, cast
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
 from investment_dashboard.api.deps import SessionDep
+from investment_dashboard.api.schemas.common import ByCurrency
+from investment_dashboard.api.schemas.currency_rate import RateRange
 from investment_dashboard.api.schemas.fx_conversions import (
+    CostsOut,
     DepositMatchOut,
     DepositSliceOut,
     FxConversionIn,
@@ -23,7 +26,10 @@ from investment_dashboard.api.schemas.fx_conversions import (
     SliceOut,
     UsedByOut,
 )
+from investment_dashboard.domain import fx_spread
 from investment_dashboard.domain.fx_pool import DepositMatch, PoolResult
+from investment_dashboard.readmodels import fx_costs
+from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.services import fx_conversion_service as service
 
 if TYPE_CHECKING:
@@ -46,6 +52,18 @@ def _out(
     fees = row.fees_eur if row.fees_eur is not None else Decimal(0)
     fixing = service.ecb_fixing_for(session, row.date)
     ecb = None if fixing is None else fixing[0]
+    cost = fx_spread.conversion_cost(
+        fx_spread.Conversion(
+            id=row.id,
+            date=row.date,
+            eur_sent=row.eur_sent,
+            usd_received=row.usd_received,
+            fees_eur=fees,
+            provider=row.provider,
+            ecb_rate=ecb,
+            ecb_rate_date=None if fixing is None else fixing[1],
+        )
+    )
     used = sorted(
         use.slices, key=lambda sl: (dates.get(sl.deposit_id), sl.deposit_id), reverse=True
     )
@@ -60,11 +78,16 @@ def _out(
         from_ccy=row.from_ccy,
         to_ccy=row.to_ccy,
         provider=cast("Literal['wise', 'revolut', 'other'] | None", row.provider),
+        kept_usd=_s(row.kept_usd),
         rate=_s(row.usd_received / row.eur_sent),
         all_in_rate=_s(row.usd_received / (row.eur_sent + fees)),
         ecb_rate=None if ecb is None else _s(ecb),
         ecb_rate_date=None if fixing is None else fixing[1].isoformat(),
         off_pct=None if not ecb else _s(row.usd_received / (row.eur_sent + fees) / ecb - 1),
+        spread_eur=dec(cost.spread_eur),
+        cost_eur=dec(cost.cost_eur),
+        fees_usd=dec(cost.fees_usd),
+        cost_usd=dec(cost.cost_usd),
         used_by=[
             UsedByOut(
                 deposit_id=sl.deposit_id,
@@ -76,17 +99,22 @@ def _out(
             for sl in used
             if sl.deposit_id in dates
         ],
-        remaining_usd=_s(use.remaining_usd if use is not None else row.usd_received),
+        remaining_usd=_s(use.remaining_usd if use is not None else row.usd_received - row.kept_usd),
+        is_estimate=bool(row.is_estimate),
     )
 
 
-def _match_out(m: DepositMatch, convs: dict[int, FxConversion]) -> DepositMatchOut:
+def _match_out(
+    m: DepositMatch, convs: dict[int, FxConversion], received: frozenset[int] = frozenset()
+) -> DepositMatchOut:
     rate = m.blended_rate
-    status: Literal["matched", "partial", "ecb_only"]
+    status: Literal["matched", "partial", "ecb_only", "received_usd"]
     if not m.is_fallback:
         status = "matched"
     elif m.matched_usd > 0:
         status = "partial"
+    elif m.deposit_id in received:
+        status = "received_usd"
     else:
         status = "ecb_only"
     slices = []
@@ -122,6 +150,7 @@ def _match_out(m: DepositMatch, convs: dict[int, FxConversion]) -> DepositMatchO
         # the lookup date; the fixing itself is forward-filled from the last published day
         fallback_rate_date=m.date.isoformat() if m.is_fallback else None,
         pinned=any(s.pinned for s in m.matched),
+        received_in_usd=m.deposit_id in received,
     )
 
 
@@ -154,6 +183,7 @@ def create_conversion(body: FxConversionIn, session: SessionDep) -> FxConversion
             fees_eur=body.fees_eur,
             note=body.note,
             provider=body.provider,
+            kept_usd=body.kept_usd,
             from_ccy=body.from_ccy,
             to_ccy=body.to_ccy,
         )
@@ -167,7 +197,7 @@ def pool(session: SessionDep) -> PoolOut:
     report = service.pool_report(session)
     convs = {c.id: c for c in report.conversions}
     ordered = sorted(report.result.deposits, key=lambda m: (m.date, m.deposit_id), reverse=True)
-    deposits = [_match_out(m, convs) for m in ordered]
+    deposits = [_match_out(m, convs, report.received_in_usd) for m in ordered]
     return PoolOut(
         balance_usd=_s(report.result.remaining_usd),
         balance_eur=_s(report.result.remaining_eur),
@@ -183,6 +213,18 @@ def pool(session: SessionDep) -> PoolOut:
             )
             for p, why in report.result.rejected_pins
         ],
+    )
+
+
+@router.get("/fx-conversions/costs", response_model=ByCurrency[CostsOut])
+def costs(
+    session: SessionDep,
+    range_key: Annotated[RateRange, Query(alias="range")] = "all",
+) -> ByCurrency[CostsOut]:
+    """What converting costs you, per reporting currency (a plain read, not logged)."""
+    sides = fx_costs.build_costs_both(session, range_key, date_type.today())
+    return ByCurrency[CostsOut].model_validate(
+        {c: CostsOut.model_validate(p) for c, p in sides.items()}
     )
 
 
@@ -209,6 +251,28 @@ def put_pins(deposit_txn_id: int, body: PinsIn, session: SessionDep) -> DepositM
     return _match_out(match, convs)
 
 
+@router.put("/fx-conversions/received-in-usd/{deposit_txn_id}", response_model=DepositMatchOut)
+def mark_received_in_usd(deposit_txn_id: int, session: SessionDep) -> DepositMatchOut:
+    """Mark a USD deposit as received in USD (no conversion); it keeps its ECB valuation."""
+    try:
+        service.set_received_in_usd(session, deposit_txn_id, True)
+    except ValueError as exc:
+        raise _bad(exc) from exc
+    report = service.pool_report(session)
+    convs = {c.id: c for c in report.conversions}
+    match = next(m for m in report.result.deposits if m.deposit_id == deposit_txn_id)
+    return _match_out(match, convs, report.received_in_usd)
+
+
+@router.delete("/fx-conversions/received-in-usd/{deposit_txn_id}", status_code=204)
+def unmark_received_in_usd(deposit_txn_id: int, session: SessionDep) -> Response:
+    try:
+        service.set_received_in_usd(session, deposit_txn_id, False)
+    except ValueError as exc:
+        raise _bad(exc) from exc
+    return Response(status_code=204)
+
+
 @router.delete("/fx-conversions/pins/{deposit_txn_id}", status_code=204)
 def delete_pins(deposit_txn_id: int, session: SessionDep) -> Response:
     service.clear_pins(session, deposit_txn_id)
@@ -229,6 +293,7 @@ def update_conversion(
             fees_eur=body.fees_eur,
             note=body.note,
             provider=body.provider,
+            kept_usd=body.kept_usd,
             from_ccy=body.from_ccy,
             to_ccy=body.to_ccy,
         )

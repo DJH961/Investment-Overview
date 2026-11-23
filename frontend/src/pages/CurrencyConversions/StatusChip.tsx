@@ -1,4 +1,4 @@
-import { Check, Contrast, Landmark, Pin } from "lucide-react";
+import { Banknote, Check, Contrast, Landmark, Pin } from "lucide-react";
 import { Chip } from "../../components/Chip";
 import type { DepositStatus } from "../../lib/queries/manage";
 import { depositStatusLook } from "./matching";
@@ -8,9 +8,10 @@ const ICONS = {
   half: <Contrast aria-hidden />,
   ecb: <Landmark aria-hidden />,
   pin: <Pin aria-hidden />,
+  usd: <Banknote aria-hidden />,
 };
 
-/** Matching status: always an icon and a word, never colour alone. */
+/** Matching status: always an icon and a word, never color alone. */
 export function StatusChip({ status, pinned }: { status: DepositStatus; pinned: boolean }) {
   const look = depositStatusLook(status, pinned);
   return (

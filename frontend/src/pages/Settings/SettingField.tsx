@@ -7,7 +7,7 @@ import { IconButton } from "../../components/IconButton";
 import { Input } from "../../components/Input";
 import { SegmentedControl } from "../../components/SegmentedControl";
 import { Select } from "../../components/Select";
-import { formatPercent } from "../../lib/format";
+import { exampleDate, formatPercent, type DateFormat } from "../../lib/format";
 import type { SettingField as FieldDef, SettingJson, SettingValue } from "../../lib/queries/settings";
 
 /** A draft entry: the editor text for typed-in fields, or the chosen value for choices. */
@@ -234,9 +234,10 @@ export function SettingField({ field: f, value, draft, error, onDraft, onReset, 
       />
     );
   } else if (f.choices.length > 0) {
-    const options = f.choices.map((c) => ({ value: c, label: choiceLabel(c) }));
+    const isDate = f.key === "display.date_format";
+    const options = f.choices.map((c) => ({ value: c, label: isDate ? exampleDate(c as DateFormat) : choiceLabel(c) }));
     control =
-      options.length <= 4 ? (
+      options.length <= 4 && !isDate ? (
         <SegmentedControl ariaLabel={f.label} options={options} value={String(shown ?? "")} onChange={(v) => setChoice(v)} />
       ) : (
         <Select

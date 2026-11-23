@@ -37,7 +37,7 @@ export interface KindLook {
 
 const ICON = { size: 16, "aria-hidden": true } as const;
 
-/** Every transaction kind as an icon + a word (never colour alone). */
+/** Every transaction kind as an icon + a word (never color alone). */
 export function kindLook(kind: string): KindLook {
   switch (kind) {
     case "buy":

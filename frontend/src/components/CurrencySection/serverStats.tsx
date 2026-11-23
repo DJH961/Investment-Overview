@@ -45,7 +45,7 @@ export function statFigure(
   return <Money amount={n} currency={ccy ?? fallbackCcy} signed colored digits={0} />;
 }
 
-/** Tailwind / headwind as an arrow and a word, never colour alone. */
+/** Tailwind / headwind as an arrow and a word, never color alone. */
 export function KindTag({ kind }: { kind: "tailwind" | "headwind" | "neutral" }) {
   const Icon = KIND_ICON[kind];
   return (

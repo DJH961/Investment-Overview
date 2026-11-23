@@ -63,6 +63,7 @@ from investment_dashboard.repositories import (
 )
 from investment_dashboard.services import (
     holding_values_service,
+    import_update_service,
     instrument_enrichment_service,
     intraday_snapshots_service,
     snapshots_service,
@@ -114,6 +115,8 @@ class ImportResult:
     #: The batch the inserted rows belong to (``None`` when nothing was inserted
     #: or the caller did not record a batch).
     import_batch_id: int | None = None
+    #: Existing transactions overwritten with the import's figures (near-matches).
+    updated: int = 0
 
 
 def action_overrides(broker: Broker) -> dict[str, str]:
@@ -346,7 +349,7 @@ def mark_duplicates(
     return out
 
 
-def import_csv(
+def import_csv(  # noqa: PLR0912, PLR0915
     session: Session,
     *,
     broker: Broker,
@@ -409,12 +412,12 @@ def import_csv(
 
     # Same-content rows already in the ledger (exported in another format) are
     # skipped like exact re-imports; the preview showed them as duplicates.
-    existing_ids = {
-        t.external_id
-        for t in transactions_repo.list_transactions(session, account_id=account_id)
-        if t.external_id
-    }
-    is_dup = mark_duplicates(parsed_rows, existing_ids, existing_content_keys(session, account_id))
+    # Near-identical rows (smart matching) update the existing transaction instead,
+    # unless the user chose "import as new" for them in the preview.
+    matches = import_update_service.classify_rows(session, account_id, parsed_rows)
+    updates = import_update_service.apply_updates(
+        session, account_id, parsed_rows, matches, resolutions, import_batch_id
+    )
 
     inserted = 0
     duplicates = 0
@@ -424,9 +427,11 @@ def import_csv(
     inserted_trades: list[tuple[int | None, date]] = []
     # Symbols the data provider couldn't resolve during enrichment (audit D2).
     unresolved: set[str] = set()
-    for prow, dup in zip(parsed_rows, is_dup, strict=True):
-        if dup:
+    for i, (prow, match) in enumerate(zip(parsed_rows, matches, strict=True)):
+        if match.status == "duplicate":
             duplicates += 1
+            continue
+        if i in updates.handled:
             continue
         # Resolve symbol → instrument, enriching as needed (yfinance
         # call is best-effort and cached per-process).
@@ -512,4 +517,5 @@ def import_csv(
         errors=report.errors,
         warnings=warnings,
         unresolved_symbols=sorted(unresolved),
+        updated=updates.count,
     )

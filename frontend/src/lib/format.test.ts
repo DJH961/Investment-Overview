@@ -5,14 +5,14 @@ describe("format", () => {
   it("formats money in the given currency", () => {
     expect(formatMoney(1234.5, "EUR")).toContain("1,234.50");
     expect(formatMoney(1234.5, "EUR")).toContain("€");
-    expect(formatMoney(10, "USD")).toContain("US$");
+    expect(formatMoney(10, "USD")).toContain("$");
   });
   it("compact keeps cents under 1,000 and one fixed decimal when abbreviated", () => {
     expect(formatMoney(12.3, "USD", { compact: true })).toContain("12.30");
     expect(formatMoney(5, "USD", { compact: true, signed: true })).toContain("5.00");
-    expect(formatMoney(12300, "USD", { compact: true })).toContain("12.3k");
-    expect(formatMoney(12000, "USD", { compact: true })).toContain("12.0k");
-    expect(formatMoney(-2_500_000, "USD", { compact: true })).toContain("2.5m");
+    expect(formatMoney(12300, "USD", { compact: true })).toContain("$12.3K");
+    expect(formatMoney(12000, "USD", { compact: true })).toContain("12.0K");
+    expect(formatMoney(-2_500_000, "USD", { compact: true })).toContain("2.5M");
   });
   it("signs money when asked", () => {
     expect(formatMoney(5, "EUR", { signed: true })).toContain("+");
@@ -72,12 +72,12 @@ describe("formatMonth", () => {
 
 describe("chartMoneyFormat axis with a tick step", () => {
   const axis = chartMoneyFormat("EUR", "axis");
-  it("shows enough digits for neighbouring ticks to differ", () => {
-    expect([1_260_000, 1_265_000, 1_270_000].map((v) => axis(v, 5_000))).toEqual(["€1.260m", "€1.265m", "€1.270m"]);
+  it("shows enough digits for neighboring ticks to differ", () => {
+    expect([1_260_000, 1_265_000, 1_270_000].map((v) => axis(v, 5_000))).toEqual(["€1.260M", "€1.265M", "€1.270M"]);
   });
   it("keeps long ranges short", () => {
-    expect(axis(1_200_000, 100_000)).toBe("€1.2m");
-    expect(axis(125_000, 5_000)).toBe("€125k");
+    expect(axis(1_200_000, 100_000)).toBe("€1.2M");
+    expect(axis(125_000, 5_000)).toBe("€125K");
   });
 });
 

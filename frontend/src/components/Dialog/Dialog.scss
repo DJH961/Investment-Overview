@@ -29,6 +29,14 @@
     animation: dialog-pop var(--duration-base) var(--ease-standard);
   }
 
+  // A tall form: a small gap from the top, the rest of the viewport for the body.
+  &__content--top {
+    top: var(--space-6);
+    max-height: calc(100dvh - 2 * var(--space-6));
+    transform: translateX(-50%);
+    animation: dialog-fade var(--duration-base) var(--ease-standard);
+  }
+
   &__header {
     display: flex;
     align-items: flex-start;

@@ -647,6 +647,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/fx-conversions/costs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Costs
+         * @description What converting costs you, per reporting currency (a plain read, not logged).
+         */
+        get: operations["costs_api_fx_conversions_costs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/fx-conversions/pins/{deposit_txn_id}": {
         parameters: {
             query?: never;
@@ -677,6 +697,27 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/fx-conversions/received-in-usd/{deposit_txn_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Mark Received In Usd
+         * @description Mark a USD deposit as received in USD (no conversion); it keeps its ECB valuation.
+         */
+        put: operations["mark_received_in_usd_api_fx_conversions_received_in_usd__deposit_txn_id__put"];
+        post?: never;
+        /** Unmark Received In Usd */
+        delete: operations["unmark_received_in_usd_api_fx_conversions_received_in_usd__deposit_txn_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1016,6 +1057,77 @@ export interface paths {
         get: operations["unknown_actions_api_imports_unknown_actions_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/wise": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Wise Statement */
+        post: operations["upload_wise_statement_api_imports_wise_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/wise/{import_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Discard Wise Statement */
+        delete: operations["discard_wise_statement_api_imports_wise__import_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/wise/{import_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm Wise Statement */
+        post: operations["confirm_wise_statement_api_imports_wise__import_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/wise/{import_id}/layout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Wise Layout
+         * @description Re-parse the staged statement with columns chosen by hand (new ``import_id``).
+         */
+        post: operations["set_wise_layout_api_imports_wise__import_id__layout_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1588,6 +1700,174 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/recurring/estimates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Estimates */
+        get: operations["estimates_api_recurring_estimates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/recurring/plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Plans */
+        get: operations["list_plans_api_recurring_plans_get"];
+        put?: never;
+        /** Create Plan */
+        post: operations["create_plan_api_recurring_plans_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/recurring/plans/{plan_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Plan */
+        put: operations["update_plan_api_recurring_plans__plan_id__put"];
+        post?: never;
+        /** Delete Plan */
+        delete: operations["delete_plan_api_recurring_plans__plan_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/recurring/plans/{plan_id}/end": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** End Plan */
+        post: operations["end_plan_api_recurring_plans__plan_id__end_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/recurring/plans/{plan_id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pause Plan */
+        post: operations["pause_plan_api_recurring_plans__plan_id__pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/recurring/plans/{plan_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resume Plan */
+        post: operations["resume_plan_api_recurring_plans__plan_id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/recurring/settle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Settle */
+        post: operations["settle_api_recurring_settle_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/recurring/setup-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Setup Plan
+         * @description Defaults that flow between the setup steps; every figure is computed here.
+         *
+         *     Each step inherits only from the one before it: the deposit starts from the conversion's
+         *     dollars, the buys from the deposit amount (split by the allocation plan, else by the
+         *     recent buys, else equally).
+         */
+        get: operations["setup_plan_api_recurring_setup_plan_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/recurring/suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Suggestions
+         * @description Plans the last months of the ledger look like (deposits, buys, conversions).
+         *
+         *     Suggestions only: the "Set up your routine" flow prefills its form from these and
+         *     nothing is created until the owner confirms.
+         */
+        get: operations["suggestions_api_recurring_suggestions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/refresh": {
         parameters: {
             query?: never;
@@ -2133,6 +2413,11 @@ export interface components {
             /** File */
             file: string;
         };
+        /** Body_upload_wise_statement_api_imports_wise_post */
+        Body_upload_wise_statement_api_imports_wise_post: {
+            /** File */
+            file: string;
+        };
         /** BriefAckIn */
         BriefAckIn: {
             /** Seen At */
@@ -2451,6 +2736,31 @@ export interface components {
              */
             mode: "fund" | "category";
         };
+        /** BuySplitOut */
+        BuySplitOut: {
+            /** Allocation Name */
+            allocation_name: string | null;
+            /**
+             * Deposit Total
+             * @description The deposit it is paid from, per deposit run.
+             */
+            deposit_total: string;
+            /** Has Allocation Plan */
+            has_allocation_plan: boolean;
+            /** Legs */
+            legs: components["schemas"]["SplitLegOut"][];
+            /**
+             * Method
+             * @description What the split follows: the allocation plan, the recent buys, or equal parts.
+             * @enum {string}
+             */
+            method: "allocation" | "history" | "equal" | "none";
+            /**
+             * Total
+             * @description What each buy run invests (whole dollars).
+             */
+            total: string;
+        };
         /** ByCurrency[AllocationsResponse] */
         ByCurrency_AllocationsResponse_: {
             EUR: components["schemas"]["AllocationsResponse"];
@@ -2483,6 +2793,13 @@ export interface components {
         ByCurrency_CalculatorInputsOut_: {
             EUR: components["schemas"]["CalculatorInputsOut"];
             USD: components["schemas"]["CalculatorInputsOut"];
+            /** Detail */
+            detail?: string | null;
+        };
+        /** ByCurrency[CostsOut] */
+        ByCurrency_CostsOut_: {
+            EUR: components["schemas"]["CostsOut"];
+            USD: components["schemas"]["CostsOut"];
             /** Detail */
             detail?: string | null;
         };
@@ -2810,10 +3127,41 @@ export interface components {
             /** Usd */
             usd: string;
         };
+        /** ConversionEstimateOut */
+        ConversionEstimateOut: {
+            /**
+             * Deposit Usd
+             * @description What each deposit run takes from it (spread over the deposit cadence).
+             */
+            deposit_usd: string;
+            /** Ecb Rate */
+            ecb_rate: string;
+            /** Eur */
+            eur: string;
+            /** Fee Eur */
+            fee_eur: string;
+            /**
+             * Off Pct
+             * @description The provider's average distance from the ECB rate.
+             */
+            off_pct: string | null;
+            /**
+             * Rate
+             * @description ecb_rate x (1 + off_pct): USD per EUR.
+             */
+            rate: string;
+            /**
+             * Usd
+             * @description Whole dollars the conversion yields: (eur - fee) x rate.
+             */
+            usd: string;
+        };
         /** ConversionMarker */
         ConversionMarker: {
             /** Amount From */
             amount_from: string;
+            /** Amount To */
+            amount_to?: string | null;
             /** Conversion Id */
             conversion_id: number;
             /** Date */
@@ -2822,10 +3170,269 @@ export interface components {
             from_ccy: string;
             /** Kind */
             kind?: ("above_reference" | "below_reference") | null;
+            /** Off Pct */
+            off_pct?: string | null;
             /** Rate */
             rate: string;
             /** To Ccy */
             to_ccy: string;
+        };
+        /** CostMonthOut */
+        CostMonthOut: {
+            /**
+             * All In Rate
+             * @description sum(usd received) / sum(eur sent + fees) of the group.
+             */
+            all_in_rate?: string | null;
+            /**
+             * Avg Off Pct
+             * @description all-in distance from the ECB, weighted by EUR converted.
+             */
+            avg_off_pct: string | null;
+            /**
+             * Converted
+             * @description EUR sent (EUR view) or USD received (USD view).
+             */
+            converted: string;
+            /**
+             * Cost
+             * @description fees + spread; negative is intraday noise, not a win.
+             */
+            cost: string;
+            /**
+             * Cost Pct
+             * @description cost / converted; null when nothing converted.
+             */
+            cost_pct: string | null;
+            /** Count */
+            count: number;
+            /** Fees */
+            fees: string;
+            /**
+             * Month
+             * @description YYYY-MM
+             */
+            month: string;
+            /** Spread */
+            spread: string;
+        };
+        /** CostPointOut */
+        CostPointOut: {
+            /**
+             * Cost
+             * @description Cumulative cost up to and including this date.
+             */
+            cost: string;
+            /** Date */
+            date: string;
+        };
+        /** CostProviderOut */
+        CostProviderOut: {
+            /**
+             * All In Rate
+             * @description sum(usd received) / sum(eur sent + fees) of the group.
+             */
+            all_in_rate?: string | null;
+            /**
+             * Avg Off Pct
+             * @description all-in distance from the ECB, weighted by EUR converted.
+             */
+            avg_off_pct: string | null;
+            /**
+             * Converted
+             * @description EUR sent (EUR view) or USD received (USD view).
+             */
+            converted: string;
+            /**
+             * Cost
+             * @description fees + spread; negative is intraday noise, not a win.
+             */
+            cost: string;
+            /**
+             * Cost Pct
+             * @description cost / converted; null when nothing converted.
+             */
+            cost_pct: string | null;
+            /** Count */
+            count: number;
+            /** Fees */
+            fees: string;
+            /** Provider */
+            provider: ("wise" | "revolut" | "other") | null;
+            /** Spread */
+            spread: string;
+        };
+        /** CostRowOut */
+        CostRowOut: {
+            /** Cost */
+            cost: string | null;
+            /** Date */
+            date: string;
+            /** Ecb Rate */
+            ecb_rate: string | null;
+            /** Ecb Rate Date */
+            ecb_rate_date: string | null;
+            /** Eur Sent */
+            eur_sent: string;
+            /** Fees */
+            fees: string | null;
+            /** Id */
+            id: number;
+            /**
+             * Month Avg
+             * @description Mean of that calendar month's settled ECB fixings (so far, if running).
+             */
+            month_avg: string | null;
+            /** Month So Far */
+            month_so_far: boolean;
+            /** Off Pct */
+            off_pct: string | null;
+            /** Provider */
+            provider: ("wise" | "revolut" | "other") | null;
+            /** Spread */
+            spread: string | null;
+            /**
+             * Timing Pct
+             * @description rate / month_avg - 1: positive = better than the month's average.
+             */
+            timing_pct: string | null;
+            /** Usd Received */
+            usd_received: string;
+        };
+        /**
+         * CostSummaryOut
+         * @description Totals in the view's currency (EUR amounts, or USD amounts not received).
+         */
+        CostSummaryOut: {
+            /**
+             * All In Rate
+             * @description sum(usd received) / sum(eur sent + fees) of the group.
+             */
+            all_in_rate?: string | null;
+            /**
+             * Avg Off Pct
+             * @description all-in distance from the ECB, weighted by EUR converted.
+             */
+            avg_off_pct: string | null;
+            /**
+             * Converted
+             * @description EUR sent (EUR view) or USD received (USD view).
+             */
+            converted: string;
+            /**
+             * Cost
+             * @description fees + spread; negative is intraday noise, not a win.
+             */
+            cost: string;
+            /**
+             * Cost Pct
+             * @description cost / converted; null when nothing converted.
+             */
+            cost_pct: string | null;
+            /** Count */
+            count: number;
+            /** Fees */
+            fees: string;
+            /** Spread */
+            spread: string;
+        };
+        /** CostTimingOut */
+        CostTimingOut: {
+            /**
+             * Avg Pct
+             * @description Weighted by EUR converted.
+             */
+            avg_pct: string | null;
+            /** Better */
+            better: number;
+            /** Count */
+            count: number;
+            /**
+             * So Far
+             * @description Conversions whose month is still running.
+             */
+            so_far: number;
+            /** Worse */
+            worse: number;
+        };
+        /** CostYearOut */
+        CostYearOut: {
+            /**
+             * All In Rate
+             * @description sum(usd received) / sum(eur sent + fees) of the group.
+             */
+            all_in_rate?: string | null;
+            /**
+             * Avg Off Pct
+             * @description all-in distance from the ECB, weighted by EUR converted.
+             */
+            avg_off_pct: string | null;
+            /**
+             * Converted
+             * @description EUR sent (EUR view) or USD received (USD view).
+             */
+            converted: string;
+            /**
+             * Cost
+             * @description fees + spread; negative is intraday noise, not a win.
+             */
+            cost: string;
+            /**
+             * Cost Pct
+             * @description cost / converted; null when nothing converted.
+             */
+            cost_pct: string | null;
+            /** Count */
+            count: number;
+            /** Fees */
+            fees: string;
+            /** Spread */
+            spread: string;
+            /** Year */
+            year: number;
+        };
+        /** CostsOut */
+        CostsOut: {
+            best: components["schemas"]["CostRowOut"] | null;
+            /** By Month */
+            by_month: components["schemas"]["CostMonthOut"][];
+            /** By Provider */
+            by_provider: components["schemas"]["CostProviderOut"][];
+            /** By Year */
+            by_year: components["schemas"]["CostYearOut"][];
+            /** Cheaper Gap Pct */
+            cheaper_gap_pct: string | null;
+            /**
+             * Cheaper Provider
+             * @description Lowest cost % among providers with conversions (needs two to compare).
+             */
+            cheaper_provider: ("wise" | "revolut" | "other") | null;
+            /**
+             * Cheaper Than
+             * @description The next-cheapest provider.
+             */
+            cheaper_than: ("wise" | "revolut" | "other") | null;
+            /** Cumulative */
+            cumulative: components["schemas"]["CostPointOut"][];
+            /**
+             * Currency
+             * @enum {string}
+             */
+            currency: "EUR" | "USD";
+            /** Range */
+            range: string;
+            /** Rows */
+            rows: components["schemas"]["CostRowOut"][];
+            /** Start */
+            start: string | null;
+            summary: components["schemas"]["CostSummaryOut"];
+            timing: components["schemas"]["CostTimingOut"];
+            /**
+             * Unpriced
+             * @description Conversions with no fixing close enough; not counted.
+             */
+            unpriced: number;
+            worst: components["schemas"]["CostRowOut"] | null;
         };
         /** CurrencyBlock */
         CurrencyBlock: {
@@ -3191,13 +3798,19 @@ export interface components {
             pinned: boolean;
             /** Rate Missing */
             rate_missing: boolean;
+            /**
+             * Received In Usd
+             * @description Marked as received in USD (no conversion).
+             * @default false
+             */
+            received_in_usd: boolean;
             /** Slices */
             slices: components["schemas"]["DepositSliceOut"][];
             /**
              * Status
              * @enum {string}
              */
-            status: "matched" | "partial" | "ecb_only";
+            status: "matched" | "partial" | "ecb_only" | "received_usd";
             /** Transaction Id */
             transaction_id: number;
             /** Usd */
@@ -3945,6 +4558,82 @@ export interface components {
              */
             twin: string;
         };
+        /** EstimateOut */
+        EstimateOut: {
+            /** Currency */
+            currency: string | null;
+            /** Date */
+            date: string;
+            /** Due Date */
+            due_date: string | null;
+            /**
+             * Eur Rate
+             * @description USD per EUR to value this buy's dollars in EUR: the all-in rate of the plan's own latest conversion on or before the due date, else the latest real conversion, else today's settled ECB fixing. Null for non-USD rows.
+             */
+            eur_rate?: string | null;
+            /**
+             * Eur Rate Date
+             * @description Date of the conversion (or of the ECB fixing) the rate is from.
+             */
+            eur_rate_date?: string | null;
+            /** Eur Rate Source */
+            eur_rate_source?: ("conversion" | "ecb") | null;
+            /** Fees */
+            fees: string | null;
+            /** Id */
+            id: number;
+            /**
+             * Label
+             * @description Account for a buy, provider for a conversion.
+             */
+            label: string;
+            /** Plan Id */
+            plan_id: number | null;
+            /** Price */
+            price: string | null;
+            /**
+             * Price Dp
+             * @description Decimals the ledger holds for this price (what a stepper moves).
+             * @default 4
+             */
+            price_dp: number;
+            /** Quantity */
+            quantity: string | null;
+            /**
+             * Quantity Dp
+             * @description Same for the quantity.
+             * @default 4
+             */
+            quantity_dp: number;
+            /** Received */
+            received: string | null;
+            /**
+             * Row Type
+             * @enum {string}
+             */
+            row_type: "transaction" | "fx_conversion";
+            /** Sent */
+            sent: string | null;
+            /** Symbol */
+            symbol: string | null;
+            /** Total */
+            total: string | null;
+        };
+        /** EstimatesOut */
+        EstimatesOut: {
+            /**
+             * Count
+             * @description Estimated rows still to settle (the badge number). A buy and its core-fund leg are one; deposits need no input and are never counted.
+             */
+            count: number;
+            /**
+             * Groups
+             * @description The reminder, one line per plan.
+             */
+            groups: components["schemas"]["ReminderGroupOut"][];
+            /** Rows */
+            rows: components["schemas"]["EstimateOut"][];
+        };
         /**
          * Freshness
          * @description How fresh the figures are (drives the Live / Updated / Updating... chip).
@@ -4038,6 +4727,12 @@ export interface components {
              * @default EUR
              */
             from_ccy: string;
+            /**
+             * Kept Usd
+             * @description Dollars kept in the USD account, never sent to the broker.
+             * @default 0
+             */
+            kept_usd: number | string;
             /** Note */
             note?: string | null;
             /** Provider */
@@ -4057,6 +4752,16 @@ export interface components {
              * @description usd_received / (eur_sent + fees).
              */
             all_in_rate: string;
+            /**
+             * Cost Eur
+             * @description spread_eur + fees_eur; positive = paid more than the ECB.
+             */
+            cost_eur?: string | null;
+            /**
+             * Cost Usd
+             * @description Dollars not received: eur_sent * ecb_rate - usd_received + fees_usd.
+             */
+            cost_usd?: string | null;
             /** Date */
             date: string;
             /**
@@ -4078,10 +4783,26 @@ export interface components {
             eur_sent: string;
             /** Fees Eur */
             fees_eur: string | null;
+            /**
+             * Fees Usd
+             * @description fees_eur at that conversion's own fixing.
+             */
+            fees_usd?: string | null;
             /** From Ccy */
             from_ccy: string;
             /** Id */
             id: number;
+            /**
+             * Is Estimate
+             * @description A recurring-plan estimate not yet settled (7.3, P14).
+             * @default false
+             */
+            is_estimate: boolean;
+            /**
+             * Kept Usd
+             * @description Dollars kept outside investing (not in the pool).
+             */
+            kept_usd: string;
             /** Note */
             note: string | null;
             /**
@@ -4098,6 +4819,11 @@ export interface components {
             rate: string;
             /** Remaining Usd */
             remaining_usd: string;
+            /**
+             * Spread Eur
+             * @description eur_sent - usd_received / ecb_rate; null when there is no fixing.
+             */
+            spread_eur?: string | null;
             /** To Ccy */
             to_ccy: string;
             /** Usd Received */
@@ -5034,6 +5760,11 @@ export interface components {
             undone_by: string | null;
             /** Undone Rows */
             undone_rows: number | null;
+            /**
+             * Updated Count
+             * @default 0
+             */
+            updated_count: number;
         };
         /**
          * ImportBroker
@@ -5088,6 +5819,11 @@ export interface components {
             unknown_actions: string[];
             /** Unresolved Symbols */
             unresolved_symbols: string[];
+            /**
+             * Updated
+             * @default 0
+             */
+            updated: number;
             /** Warnings */
             warnings: components["schemas"]["ImportIssue"][];
         };
@@ -5113,6 +5849,11 @@ export interface components {
              * @default 0
              */
             unresolved: number;
+            /**
+             * Updates
+             * @default 0
+             */
+            updates: number;
             /** Warnings */
             warnings: number;
         };
@@ -5124,6 +5865,27 @@ export interface components {
             errors: {
                 [key: string]: string;
             };
+        };
+        /**
+         * ImportExistingFigures
+         * @description The existing transaction an ``update`` row would overwrite (its old figures).
+         */
+        ImportExistingFigures: {
+            /** Date */
+            date: string;
+            /**
+             * Estimated
+             * @default false
+             */
+            estimated: boolean;
+            /** Net Native */
+            net_native?: string | null;
+            /** Price Native */
+            price_native?: string | null;
+            /** Quantity */
+            quantity?: string | null;
+            /** Transaction Id */
+            transaction_id: number;
         };
         /**
          * ImportField
@@ -5266,10 +6028,11 @@ export interface components {
             date: string;
             /** Description */
             description?: string | null;
+            existing?: components["schemas"]["ImportExistingFigures"] | null;
             /** Fees Native */
             fees_native?: string | null;
             /** Fixes */
-            fixes?: ("keep" | "fix_price" | "skip")[];
+            fixes?: ("keep" | "fix_price" | "skip" | "import_new")[];
             /** Gross Native */
             gross_native?: string | null;
             /** Index */
@@ -5285,7 +6048,7 @@ export interface components {
             /** Quantity */
             quantity?: string | null;
             /** Resolution */
-            resolution?: ("keep" | "fix_price" | "skip") | null;
+            resolution?: ("keep" | "fix_price" | "skip" | "import_new") | null;
             /** Settlement Date */
             settlement_date?: string | null;
             /**
@@ -5293,6 +6056,12 @@ export interface components {
              * @default false
              */
             skipped: boolean;
+            /**
+             * Status
+             * @default new
+             * @enum {string}
+             */
+            status: "new" | "duplicate" | "update" | "skipped";
             /** Symbol */
             symbol?: string | null;
             /** Warnings */
@@ -5329,7 +6098,7 @@ export interface components {
         /** ImportResolveRow */
         ImportResolveRow: {
             /** Action */
-            action?: ("keep" | "fix_price" | "skip") | null;
+            action?: ("keep" | "fix_price" | "skip" | "import_new") | null;
             /** Index */
             index: number;
         };
@@ -5344,6 +6113,11 @@ export interface components {
             earliest_date: string | null;
             /** Latest Date */
             latest_date: string | null;
+            /**
+             * Restored
+             * @default 0
+             */
+            restored: number;
             /** Rows */
             rows: components["schemas"]["ImportUndoRow"][];
             /** Rows Truncated */
@@ -5368,6 +6142,11 @@ export interface components {
             deleted: number;
             /** Invalidated From */
             invalidated_from: string | null;
+            /**
+             * Restored
+             * @default 0
+             */
+            restored: number;
         };
         /** ImportUndoRow */
         ImportUndoRow: {
@@ -5744,6 +6523,34 @@ export interface components {
             value_now: string;
             /** Value Now Est */
             value_now_est?: string | null;
+        };
+        /** LegIn */
+        LegIn: {
+            /**
+             * Amount
+             * @description Native amount per run.
+             */
+            amount?: number | string | null;
+            /** Instrument Id */
+            instrument_id: number;
+            /**
+             * Shares
+             * @description Or shares per run.
+             */
+            shares?: number | string | null;
+        };
+        /** LegOut */
+        LegOut: {
+            /** Amount */
+            amount: string | null;
+            /** Id */
+            id: number;
+            /** Instrument Id */
+            instrument_id: number;
+            /** Shares */
+            shares: string | null;
+            /** Symbol */
+            symbol: string;
         };
         /** LiveResponse */
         LiveResponse: {
@@ -6382,6 +7189,110 @@ export interface components {
             name: string;
             /** Target Pct */
             target_pct: string;
+        };
+        /** PlanIn */
+        PlanIn: {
+            /**
+             * Account Id
+             * @description Buy plans.
+             */
+            account_id?: number | null;
+            /**
+             * Amount
+             * @description Deposit: USD per run; conversion: EUR sent.
+             */
+            amount?: number | string | null;
+            /**
+             * Anchor
+             * @description Weekday 0-6 (Monday = 0) for weeks, day of month 1-31 for months.
+             */
+            anchor?: number | null;
+            /** End Date */
+            end_date?: string | null;
+            /** Every */
+            every: number;
+            /**
+             * Expected Fee
+             * @description Conversion plans: EUR fee per run. Defaults to the last real conversion's fee with that provider.
+             */
+            expected_fee?: number | string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "buy" | "deposit" | "conversion";
+            /**
+             * Legs
+             * @description Buy plans: the holdings bought together on every due date (same account).
+             */
+            legs?: components["schemas"]["LegIn"][];
+            /**
+             * Provider
+             * @description Conversion plans.
+             */
+            provider?: ("wise" | "revolut" | "other") | null;
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            /**
+             * Unit
+             * @enum {string}
+             */
+            unit: "days" | "weeks" | "months";
+        };
+        /** PlanOut */
+        PlanOut: {
+            /** Account */
+            account: string | null;
+            /** Account Id */
+            account_id: number | null;
+            /** Amount */
+            amount: string | null;
+            /** Anchor */
+            anchor: number | null;
+            /** End Date */
+            end_date: string | null;
+            /** Every */
+            every: number;
+            /** Expected Fee */
+            expected_fee: string | null;
+            /** Id */
+            id: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "buy" | "deposit" | "conversion";
+            /** Legs */
+            legs: components["schemas"]["LegOut"][];
+            /**
+             * Next Due
+             * @description Next due date still to be handled; null if none.
+             */
+            next_due: string | null;
+            /**
+             * Note
+             * @description One-line caution, e.g. a buy plan whose account has no settlement fund.
+             */
+            note?: string | null;
+            /** Paused */
+            paused: boolean;
+            /** Provider */
+            provider: ("wise" | "revolut" | "other") | null;
+            /** Start Date */
+            start_date: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "paused" | "ended";
+            /**
+             * Unit
+             * @enum {string}
+             */
+            unit: "days" | "weeks" | "months";
         };
         /** PlanRequest */
         PlanRequest: {
@@ -7074,6 +7985,34 @@ export interface components {
             /** Usd */
             usd: string;
         };
+        /** ReminderGroupOut */
+        ReminderGroupOut: {
+            /** Count */
+            count: number;
+            /**
+             * Input
+             * @description 'import' when a file import can settle them (buys, Wise); 'type' otherwise.
+             * @enum {string}
+             */
+            input: "type" | "import";
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "buy" | "conversion";
+            /**
+             * Message
+             * @description One short line for this plan; never one per row.
+             */
+            message: string;
+            /** Plan Id */
+            plan_id: number | null;
+            /**
+             * Provider
+             * @description Conversion groups: the provider (Wise has a statement import).
+             */
+            provider?: ("wise" | "revolut" | "other") | null;
+        };
         /**
          * ReturnSplit
          * @description Investment return (USD wallet) vs currency effect; independent, never converted.
@@ -7694,6 +8633,52 @@ export interface components {
                 [key: string]: components["schemas"]["SettingValueDto"];
             };
         };
+        /** SettleIn */
+        SettleIn: {
+            /**
+             * Due Date
+             * @description Also settle (as estimated) every est. row of this due date.
+             */
+            due_date?: string | null;
+            /** Rows */
+            rows?: components["schemas"]["SettleRowIn"][];
+        };
+        /** SettleOut */
+        SettleOut: {
+            /** Remaining */
+            remaining: number;
+            /** Settled */
+            settled: number;
+        };
+        /** SettleRowIn */
+        SettleRowIn: {
+            /** Fees */
+            fees?: number | string | null;
+            /** Id */
+            id: number;
+            /** Price */
+            price?: number | string | null;
+            /** Quantity */
+            quantity?: number | string | null;
+            /** Received */
+            received?: number | string | null;
+            /**
+             * Row Type
+             * @enum {string}
+             */
+            row_type: "transaction" | "fx_conversion";
+            /** Sent */
+            sent?: number | string | null;
+            /** Total */
+            total?: number | string | null;
+        };
+        /** SetupPlanOut */
+        SetupPlanOut: {
+            /** @description Step 1's dollars (null without an ECB rate). */
+            conversion?: components["schemas"]["ConversionEstimateOut"] | null;
+            /** @description Step 3's holdings split. */
+            split?: components["schemas"]["BuySplitOut"] | null;
+        };
         /**
          * ShareCountEntry
          * @description One share count typed from the broker's screen.
@@ -7730,6 +8715,15 @@ export interface components {
             eur: string;
             /** Usd */
             usd: string;
+        };
+        /** SplitLegOut */
+        SplitLegOut: {
+            /** Amount */
+            amount: string;
+            /** Instrument Id */
+            instrument_id: number;
+            /** Symbol */
+            symbol: string;
         };
         /** SplitPoint */
         SplitPoint: {
@@ -7777,6 +8771,50 @@ export interface components {
             unit_change?: string | null;
             /** Value */
             value: string;
+        };
+        /** SuggestedLegOut */
+        SuggestedLegOut: {
+            /** Amount */
+            amount: string;
+            /** Instrument Id */
+            instrument_id: number;
+            /** Symbol */
+            symbol: string;
+        };
+        /** SuggestionOut */
+        SuggestionOut: {
+            /** Account */
+            account?: string | null;
+            /** Account Id */
+            account_id?: number | null;
+            /** Amount */
+            amount: string;
+            /** Anchor */
+            anchor: number | null;
+            /** Every */
+            every: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "buy" | "deposit" | "conversion";
+            /**
+             * Legs
+             * @description Buy plans.
+             */
+            legs?: components["schemas"]["SuggestedLegOut"][];
+            /**
+             * Occurrences
+             * @description How many past rows the suggestion is based on.
+             */
+            occurrences: number;
+            /** Provider */
+            provider?: ("wise" | "revolut" | "other") | null;
+            /**
+             * Unit
+             * @enum {string}
+             */
+            unit: "days" | "weeks" | "months";
         };
         /** SystemInfo */
         SystemInfo: {
@@ -8305,6 +9343,12 @@ export interface components {
             /** Instrument Id */
             instrument_id?: number | null;
             /**
+             * Is Estimate
+             * @description A recurring-plan estimate not yet settled (import or typed figures).
+             * @default false
+             */
+            is_estimate: boolean;
+            /**
              * Is Settlement Leg
              * @default false
              */
@@ -8800,6 +9844,132 @@ export interface components {
             from_low_rate_pct: string;
             high: components["schemas"]["RateHistoryPoint"];
             low: components["schemas"]["RateHistoryPoint"];
+        };
+        /** WiseColumnField */
+        WiseColumnField: {
+            /** Column */
+            column: number | null;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Required */
+            required: boolean;
+        };
+        /** WiseConfirmIn */
+        WiseConfirmIn: {
+            /** Rows */
+            rows?: components["schemas"]["WiseRowChoiceIn"][];
+        };
+        /** WiseConfirmResult */
+        WiseConfirmResult: {
+            /** Duplicates */
+            duplicates: number;
+            /** Import Id */
+            import_id: string;
+            /** Imported */
+            imported: number;
+            /** Skipped */
+            skipped: number;
+        };
+        /** WiseCounts */
+        WiseCounts: {
+            /** Duplicates */
+            duplicates: number;
+            /** New */
+            new: number;
+            /** Rows */
+            rows: number;
+            /** Skipped */
+            skipped: number;
+        };
+        /** WiseLayoutIn */
+        WiseLayoutIn: {
+            /** Columns */
+            columns: {
+                [key: string]: number | null;
+            };
+        };
+        /** WisePreview */
+        WisePreview: {
+            counts: components["schemas"]["WiseCounts"];
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Fields */
+            fields: components["schemas"]["WiseColumnField"][];
+            /** Filename */
+            filename: string;
+            /** Headers */
+            headers: string[];
+            /** Ignore Non Usd */
+            ignore_non_usd: boolean;
+            /** Import Id */
+            import_id: string;
+            /** Missing */
+            missing: string[];
+            /** Rows */
+            rows: components["schemas"]["WisePreviewRow"][];
+        };
+        /** WisePreviewRow */
+        WisePreviewRow: {
+            /** Date */
+            date: string | null;
+            /** Description */
+            description?: string | null;
+            /** Eur Sent */
+            eur_sent?: string | null;
+            /** External Id */
+            external_id: string;
+            /**
+             * Fee Stated
+             * @default false
+             */
+            fee_stated: boolean;
+            /** Fees Eur */
+            fees_eur?: string | null;
+            /**
+             * Is Duplicate
+             * @default false
+             */
+            is_duplicate: boolean;
+            /** Line */
+            line: number;
+            /** Rate */
+            rate?: string | null;
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Sent On
+             * @default false
+             */
+            sent_on: boolean;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "conversion" | "skipped" | "ignored" | "unsupported";
+            /** Usd Received */
+            usd_received?: string | null;
+            /** Warnings */
+            warnings?: string[];
+        };
+        /** WiseRowChoiceIn */
+        WiseRowChoiceIn: {
+            /**
+             * Kept Usd
+             * @default 0
+             */
+            kept_usd: number | string;
+            /** Line */
+            line: number;
+            /**
+             * Skip
+             * @default false
+             */
+            skip: boolean;
         };
     };
     responses: never;
@@ -10008,6 +11178,37 @@ export interface operations {
             };
         };
     };
+    costs_api_fx_conversions_costs_get: {
+        parameters: {
+            query?: {
+                range?: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "all" | "5y" | "10y" | "max";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ByCurrency_CostsOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     put_pins_api_fx_conversions_pins__deposit_txn_id__put: {
         parameters: {
             query?: never;
@@ -10088,6 +11289,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PoolOut"];
+                };
+            };
+        };
+    };
+    mark_received_in_usd_api_fx_conversions_received_in_usd__deposit_txn_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deposit_txn_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepositMatchOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unmark_received_in_usd_api_fx_conversions_received_in_usd__deposit_txn_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deposit_txn_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -10726,6 +11987,140 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UnknownActionsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_wise_statement_api_imports_wise_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_wise_statement_api_imports_wise_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WisePreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discard_wise_statement_api_imports_wise__import_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                import_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_wise_statement_api_imports_wise__import_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                import_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WiseConfirmIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WiseConfirmResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_wise_layout_api_imports_wise__import_id__layout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                import_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WiseLayoutIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WisePreview"];
                 };
             };
             /** @description Validation Error */
@@ -11804,6 +13199,332 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    estimates_api_recurring_estimates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EstimatesOut"];
+                };
+            };
+        };
+    };
+    list_plans_api_recurring_plans_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanOut"][];
+                };
+            };
+        };
+    };
+    create_plan_api_recurring_plans_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_plan_api_recurring_plans__plan_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plan_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_plan_api_recurring_plans__plan_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plan_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    end_plan_api_recurring_plans__plan_id__end_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plan_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pause_plan_api_recurring_plans__plan_id__pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plan_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_plan_api_recurring_plans__plan_id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plan_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    settle_api_recurring_settle_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SettleIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettleOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    setup_plan_api_recurring_setup_plan_get: {
+        parameters: {
+            query?: {
+                /** @description Step 1: EUR converted. */
+                eur_amount?: number | string | null;
+                provider?: "wise" | "revolut" | "other";
+                expected_fee?: number | string | null;
+                /** @description Step 3: the dollars to buy with (step 2's deposit). */
+                buy_total_usd?: number | string | null;
+                account_id?: number | null;
+                conversion_unit?: ("days" | "weeks" | "months") | null;
+                conversion_every?: number;
+                deposit_unit?: ("days" | "weeks" | "months") | null;
+                deposit_every?: number;
+                buy_unit?: ("days" | "weeks" | "months") | null;
+                buy_every?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupPlanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    suggestions_api_recurring_suggestions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SuggestionOut"][];
                 };
             };
         };

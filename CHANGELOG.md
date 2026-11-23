@@ -17,6 +17,82 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [7.3.0] — 2026-11-23
+
+### Changed
+- American English throughout: en-US is the default format, the UK format is gone
+  (a stored "en-GB" reads as en-US), dollars show as $, and user-visible spelling is
+  American (unrealized, color, canceled). Dates are their own setting and default to
+  the month name ("14 Nov 2026"); the other choices are "Nov 14, 2026", "14.11.2026"
+  and "2026-11-14", each shown with today's date. Old stored date formats read as the
+  new default.
+
+### Added
+- **Smart import matching:** an import row that is almost identical to an existing
+  transaction (same account, instrument and type; date within one NYSE trading day; amount
+  and shares within 0.5 % or 0.05 / 0.0001 shares) is shown as an **update** ("Update $20.00
+  → $19.99", with the old and new date, shares, price and amount) instead of a new row.
+  Confirming overwrites the existing transaction with the import's figures and keeps its id,
+  so links such as conversion pins survive. Each row can still be skipped or imported as new.
+  Exact duplicates are skipped as before. Estimated rows (recurring plans) use a looser
+  profile (3 trading days, 2 % or 0.50). Every tolerance is under Settings > Import rules.
+  The confirm result and the activity log count the updated rows. Undoing the import puts
+  every updated transaction back exactly as it was (figures, source and est. flag, also a
+  buy's core-fund leg) and then removes the rows it inserted; the undo preview, result and
+  activity line count the restored rows.
+- **What converting costs you (7.3, second half):** a new **Conversions** section on the
+  Currency page. It shows fees, spread, total cost, the average distance from the ECB daily
+  reference (weighted by the euros converted), the best and worst conversion, the cumulative
+  cost over time, a per-year table and a per-provider comparison that says which was cheaper.
+  Each conversion is measured against its own day's ECB fixing (a weekend conversion against
+  the last fixing before it); the USD view is the dollars you did not get, worked out per
+  conversion at its own fixing. New `GET /api/fx-conversions/costs?range=`, pure maths in
+  `domain/fx_spread.py`, no new columns. The Conversions page stays light: total cost and
+  average vs ECB in its stat strip, each conversion's cost in its detail line, and a link to
+  the section for the deep dive.
+- **Timing:** your rate against the mean ECB fixing of the month you converted in, per
+  conversion and weighted overall ("You converted 0.6 % better than the month average");
+  a running month is averaged so far.
+- **Your conversions on the EUR/USD chart:** one mark per conversion at its date and its own
+  rate, sized by the euros converted; ▲ blue is better than the ECB daily reference, ▼ orange
+  is worse. A "Conversions" chip on the chart turns them on and off (remembered per device).
+- **Recurring plans (7.3, P14):** set up your conversion (Revolut by default), monthly deposit
+  and regular buys once (Manage > Recurring, with a guided "Set up your routine" that suggests
+  amounts and cadence from your last months). The end-of-day job adds each due date as an
+  **est.** row once its price has settled, catching up every missed date: a buy at that day's
+  close (a due date that is not a session rolls to the next one) with its core-fund draw, a
+  deposit in the broker import's shape (needs no input, never prompts), a conversion at that
+  day's ECB fixing pushed by the provider's average spread plus the plan's expected fee.
+  Values, graphs and FIFO matching include them at once. One quiet reminder per plan
+  (Transactions, Recurring, Data Health) says what to do; settle by typing in the quick-settle
+  sheet (steppers on the last stored decimal, linked fields, one Save, next draft) or, later,
+  by importing the file. One buy plan can buy several holdings at once (a leg each, with its own
+  core-fund draw per buy); the quick-settle sheet puts Total and Shares first and derives the
+  price. Migration 0027 (also adds `import_batches.update_images` and
+  `updated_count` for the import-update undo).
+- **Wise statement import (conversions):** a "Wise statement" card on the Import page reads
+  a Wise CSV/TSV and previews EUR to USD conversions, not transactions. Both statement shapes
+  work: a conversion whose fee is hidden (the fee is worked out from the total, the dollars and
+  the quoted rate) and a send-with-conversion with the fee stated. Deposits, card payments and
+  plain transfers are skipped with a reason; the same conversion in the EUR and the USD
+  statement is read once. Every row can be unticked, columns can be mapped by hand, and an
+  exact re-import is all duplicates (the Wise ID is stored). New setting "Import: ignore
+  conversions not into USD" (on by default).
+- **Dollars kept outside investing:** a conversion can say how many dollars stayed in your USD
+  account. Matching, pins and "In the pool" use only the rest; the Conversions page shows
+  "Kept in your USD account" as its own segment.
+- **Received in USD:** mark a deposit as received in dollars (no conversion). It keeps the ECB
+  valuation, shows as "Received in USD", and the Data Health note "deposits valued at the ECB
+  rate with no conversion" (info only) leaves it out. Migration 0028.
+
+### Fixed
+- **Test builds start without the welcome tour:** the fixture build used for screenshots and
+  layout checks no longer opens the tour by itself (`?tour=1` forces it). A long note on a
+  conversion row no longer spills past its column on wide screens.
+- **Conversions page folds:** every year, the running one included, folds and unfolds;
+  the month level is gone (year, then conversions, newest first); rows get more
+  vertical room so entries no longer touch.
+
 ## [7.2.1] — 2026-11-22
 
 ### Added

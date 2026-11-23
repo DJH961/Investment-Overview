@@ -39,7 +39,7 @@ export function weekdayDate(iso: string): string {
   return `${day} ${formatDate(iso)}`;
 }
 
-/** The "vs ECB" figure: "−0.56 %" (a plain number, neutral text, no pos/neg colour). */
+/** The "vs ECB" figure: "−0.56 %" (a plain number, neutral text, no pos/neg color). */
 export function offPctText(offPct: string | null | undefined): string {
   if (offPct === null || offPct === undefined) return "–";
   const pct = Number(offPct) * 100;
@@ -107,7 +107,7 @@ export type StatusTone = "pos" | "warn" | "neutral";
 export interface StatusLook {
   label: string;
   tone: StatusTone;
-  icon: "check" | "half" | "ecb" | "pin";
+  icon: "check" | "half" | "ecb" | "pin" | "usd";
 }
 
 /** Status of a deposit for display; a pin wins the label only when the deposit is fully matched. */
@@ -116,6 +116,8 @@ export function depositStatusLook(status: DepositStatus, pinned: boolean): Statu
   switch (status) {
     case "matched":
       return { label: "Matched", tone: "pos", icon: "check" };
+    case "received_usd":
+      return { label: "Received in USD", tone: "neutral", icon: "usd" };
     case "partial":
       return { label: "Partly matched", tone: "warn", icon: "half" };
     default:
@@ -124,7 +126,8 @@ export function depositStatusLook(status: DepositStatus, pinned: boolean): Statu
 }
 
 /** The short chip on a Transactions row: "Your rate" (matched or partial) or "ECB". */
-export function rateChipLabel(status: DepositStatus): "Your rate" | "ECB" {
+export function rateChipLabel(status: DepositStatus): "Your rate" | "ECB" | "USD" {
+  if (status === "received_usd") return "USD";
   return status === "ecb_only" ? "ECB" : "Your rate";
 }
 
@@ -168,7 +171,7 @@ export function validatePins(
     if (!c) return "That conversion no longer exists.";
     if (!Number.isFinite(usd) || usd <= 0) return "Enter a USD amount above zero for each pinned conversion.";
     if (c.date > limit) return `A conversion can be at most ${PIN_WINDOW_DAYS} days after the deposit.`;
-    if (usd > Number(c.usd_received)) return "A pin cannot take more dollars than the conversion brought in.";
+    if (usd > Number(c.usd_received) - Number(c.kept_usd)) return "A pin cannot take more dollars than the conversion brought in.";
     total += usd;
   }
   if (total > Number(deposit.usd) + 1e-9) return "The pins add up to more than the deposit.";

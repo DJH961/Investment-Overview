@@ -23,7 +23,7 @@ describe("MoversCard", () => {
     expect(screen.getByText("biggest move")).toBeInTheDocument();
     expect(screen.getByText("top %")).toBeInTheDocument();
     const leads = [...container.querySelectorAll(".movers-card__lead")].map((n) => n.textContent);
-    expect(leads[0]).toBe("+€1.2k");
+    expect(leads[0]).toBe("+€1.2K");
     expect(leads[1]).toBe("-5.00%");
     expect(screen.getByRole("button", { name: "Top movers" })).toHaveAttribute("aria-expanded", "true");
   });

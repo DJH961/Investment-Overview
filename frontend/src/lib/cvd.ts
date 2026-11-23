@@ -1,7 +1,7 @@
 /**
- * Colour-vision-deficiency helpers: Machado 2009 simulation (severity 1.0, applied in
+ * Color-vision-deficiency helpers: Machado 2009 simulation (severity 1.0, applied in
  * linear RGB), CIEDE2000 and WCAG contrast. Used by styles/tokens.cvd.test.ts to keep the
- * palette distinguishable for red-green colour-blind users (the owner is protan).
+ * palette distinguishable for red-green color-blind users (the owner is protan).
  */
 export type Vision = "normal" | "deutan" | "protan";
 export const VISIONS: Vision[] = ["normal", "deutan", "protan"];
@@ -34,11 +34,11 @@ const toSrgb = (c: number): number => {
 
 export function parseHex(hex: string): Rgb {
   const h = hex.replace("#", "");
-  if (!/^[0-9a-fA-F]{6}$/.test(h)) throw new Error(`not a #rrggbb colour: ${hex}`);
+  if (!/^[0-9a-fA-F]{6}$/.test(h)) throw new Error(`not a #rrggbb color: ${hex}`);
   return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255) as Rgb;
 }
 
-/** The colour as the given vision sees it (sRGB, 0..1). */
+/** The color as the given vision sees it (sRGB, 0..1). */
 export function simulate(hex: string, vision: Vision): Rgb {
   const lin = parseHex(hex).map(toLinear);
   const m = MATRIX[vision];
@@ -97,7 +97,7 @@ export function deltaE2000(p: Lab, q: Lab): number {
   return Math.sqrt((dL / SL) ** 2 + (dC / SC) ** 2 + (dH / SH) ** 2 + RT * (dC / SC) * (dH / SH));
 }
 
-/** CIEDE2000 between two #rrggbb colours as seen by `vision`. */
+/** CIEDE2000 between two #rrggbb colors as seen by `vision`. */
 export function deltaE(a: string, b: string, vision: Vision): number {
   return deltaE2000(toLab(simulate(a, vision)), toLab(simulate(b, vision)));
 }
@@ -107,7 +107,7 @@ function luminance(rgb: Rgb): number {
   return 0.2126 * l[0] + 0.7152 * l[1] + 0.0722 * l[2];
 }
 
-/** WCAG contrast ratio of two colours as seen by `vision`. */
+/** WCAG contrast ratio of two colors as seen by `vision`. */
 export function contrast(a: string, b: string, vision: Vision = "normal"): number {
   const x = luminance(simulate(a, vision));
   const y = luminance(simulate(b, vision));

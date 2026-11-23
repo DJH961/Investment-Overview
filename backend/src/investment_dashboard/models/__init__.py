@@ -21,7 +21,11 @@ from investment_dashboard.models.base import (
     ConfigBase,
     LedgerBase,
 )
-from investment_dashboard.models.fx_conversion import FxConversion, FxConversionPin
+from investment_dashboard.models.fx_conversion import (
+    FxConversion,
+    FxConversionPin,
+    UsdReceivedDeposit,
+)
 from investment_dashboard.models.fx_history import FxHistory
 from investment_dashboard.models.fx_session_rate import FxSessionRate
 from investment_dashboard.models.holding_daily_value import HoldingDailyValue
@@ -34,6 +38,7 @@ from investment_dashboard.models.position_snapshot import PositionSnapshot
 from investment_dashboard.models.price_cache_metadata import PriceCacheMetadata
 from investment_dashboard.models.price_history import PriceHistory
 from investment_dashboard.models.price_split import PriceSplit
+from investment_dashboard.models.recurring_plan import RecurringPlan, RecurringPlanLeg
 from investment_dashboard.models.target_allocation import (
     TargetAllocation,
     TargetAllocationItem,
@@ -63,8 +68,11 @@ __all__ = [
     "PriceCacheMetadata",
     "PriceHistory",
     "PriceSplit",
+    "RecurringPlan",
+    "RecurringPlanLeg",
     "TargetAllocation",
     "TargetAllocationItem",
     "Transaction",
     "TransactionKind",
+    "UsdReceivedDeposit",
 ]

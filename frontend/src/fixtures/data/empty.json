@@ -50250,6 +50250,15 @@
    {
     "actions": [],
     "count": 0,
+    "detail": "No estimated rows waiting to be settled.",
+    "examples": [],
+    "id": "estimated_rows",
+    "severity": "ok",
+    "title": "Estimated rows to settle"
+   },
+   {
+    "actions": [],
+    "count": 0,
     "detail": "The 1 Day and 1 Week graphs are filled to their coverage target.",
     "examples": [],
     "id": "intraday_graph",
@@ -50290,7 +50299,7 @@
     "examples": [],
     "id": "ecb_fallback_deposits",
     "severity": "ok",
-    "title": "Deposits paid at the ECB rate"
+    "title": "Deposits valued at the ECB rate"
    }
   ],
   "count": 1,
@@ -50362,6 +50371,696 @@
   "severity": "ok"
  },
  "GET /api/fx-conversions": [],
+ "GET /api/fx-conversions/costs?range=10y": {
+  "EUR": {
+   "best": null,
+   "by_month": [],
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cheaper_than": null,
+   "cumulative": [],
+   "currency": "EUR",
+   "range": "10y",
+   "rows": [],
+   "start": "2016-06-30",
+   "summary": {
+    "all_in_rate": null,
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "USD": {
+   "best": null,
+   "by_month": [],
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cheaper_than": null,
+   "cumulative": [],
+   "currency": "USD",
+   "range": "10y",
+   "rows": [],
+   "start": "2016-06-30",
+   "summary": {
+    "all_in_rate": null,
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "detail": null
+ },
+ "GET /api/fx-conversions/costs?range=1d": {
+  "EUR": {
+   "best": null,
+   "by_month": [],
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cheaper_than": null,
+   "cumulative": [],
+   "currency": "EUR",
+   "range": "1d",
+   "rows": [],
+   "start": "2026-06-30",
+   "summary": {
+    "all_in_rate": null,
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "USD": {
+   "best": null,
+   "by_month": [],
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cheaper_than": null,
+   "cumulative": [],
+   "currency": "USD",
+   "range": "1d",
+   "rows": [],
+   "start": "2026-06-30",
+   "summary": {
+    "all_in_rate": null,
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "detail": null
+ },
+ "GET /api/fx-conversions/costs?range=1m": {
+  "EUR": {
+   "best": null,
+   "by_month": [],
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cheaper_than": null,
+   "cumulative": [],
+   "currency": "EUR",
+   "range": "1m",
+   "rows": [],
+   "start": "2026-05-30",
+   "summary": {
+    "all_in_rate": null,
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "USD": {
+   "best": null,
+   "by_month": [],
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cheaper_than": null,
+   "cumulative": [],
+   "currency": "USD",
+   "range": "1m",
+   "rows": [],
+   "start": "2026-05-30",
+   "summary": {
+    "all_in_rate": null,
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "detail": null
+ },
+ "GET /api/fx-conversions/costs?range=1w": {
+  "EUR": {
+   "best": null,
+   "by_month": [],
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cheaper_than": null,
+   "cumulative": [],
+   "currency": "EUR",
+   "range": "1w",
+   "rows": [],
+   "start": "2026-06-23",
+   "summary": {
+    "all_in_rate": null,
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "USD": {
+   "best": null,
+   "by_month": [],
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cheaper_than": null,
+   "cumulative": [],
+   "currency": "USD",
+   "range": "1w",
+   "rows": [],
+   "start": "2026-06-23",
+   "summary": {
+    "all_in_rate": null,
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "detail": null
+ },
+ "GET /api/fx-conversions/costs?range=1y": {
+  "EUR": {
+   "best": null,
+   "by_month": [],
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cheaper_than": null,
+   "cumulative": [],
+   "currency": "EUR",
+   "range": "1y",
+   "rows": [],
+   "start": "2025-06-30",
+   "summary": {
+    "all_in_rate": null,
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "USD": {
+   "best": null,
+   "by_month": [],
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cheaper_than": null,
+   "cumulative": [],
+   "currency": "USD",
+   "range": "1y",
+   "rows": [],
+   "start": "2025-06-30",
+   "summary": {
+    "all_in_rate": null,
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "detail": null
+ },
+ "GET /api/fx-conversions/costs?range=3m": {
+  "EUR": {
+   "best": null,
+   "by_month": [],
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cheaper_than": null,
+   "cumulative": [],
+   "currency": "EUR",
+   "range": "3m",
+   "rows": [],
+   "start": "2026-03-30",
+   "summary": {
+    "all_in_rate": null,
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "USD": {
+   "best": null,
+   "by_month": [],
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cheaper_than": null,
+   "cumulative": [],
+   "currency": "USD",
+   "range": "3m",
+   "rows": [],
+   "start": "2026-03-30",
+   "summary": {
+    "all_in_rate": null,
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "detail": null
+ },
+ "GET /api/fx-conversions/costs?range=5y": {
+  "EUR": {
+   "best": null,
+   "by_month": [],
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cheaper_than": null,
+   "cumulative": [],
+   "currency": "EUR",
+   "range": "5y",
+   "rows": [],
+   "start": "2021-06-30",
+   "summary": {
+    "all_in_rate": null,
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "USD": {
+   "best": null,
+   "by_month": [],
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cheaper_than": null,
+   "cumulative": [],
+   "currency": "USD",
+   "range": "5y",
+   "rows": [],
+   "start": "2021-06-30",
+   "summary": {
+    "all_in_rate": null,
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "detail": null
+ },
+ "GET /api/fx-conversions/costs?range=all": {
+  "EUR": {
+   "best": null,
+   "by_month": [],
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cheaper_than": null,
+   "cumulative": [],
+   "currency": "EUR",
+   "range": "all",
+   "rows": [],
+   "start": "1999-01-04",
+   "summary": {
+    "all_in_rate": null,
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "USD": {
+   "best": null,
+   "by_month": [],
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cheaper_than": null,
+   "cumulative": [],
+   "currency": "USD",
+   "range": "all",
+   "rows": [],
+   "start": "1999-01-04",
+   "summary": {
+    "all_in_rate": null,
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "detail": null
+ },
+ "GET /api/fx-conversions/costs?range=max": {
+  "EUR": {
+   "best": null,
+   "by_month": [],
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cheaper_than": null,
+   "cumulative": [],
+   "currency": "EUR",
+   "range": "max",
+   "rows": [],
+   "start": "1999-01-04",
+   "summary": {
+    "all_in_rate": null,
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "USD": {
+   "best": null,
+   "by_month": [],
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cheaper_than": null,
+   "cumulative": [],
+   "currency": "USD",
+   "range": "max",
+   "rows": [],
+   "start": "1999-01-04",
+   "summary": {
+    "all_in_rate": null,
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "detail": null
+ },
+ "GET /api/fx-conversions/costs?range=ytd": {
+  "EUR": {
+   "best": null,
+   "by_month": [],
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cheaper_than": null,
+   "cumulative": [],
+   "currency": "EUR",
+   "range": "ytd",
+   "rows": [],
+   "start": "2026-01-01",
+   "summary": {
+    "all_in_rate": null,
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "USD": {
+   "best": null,
+   "by_month": [],
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cheaper_than": null,
+   "cumulative": [],
+   "currency": "USD",
+   "range": "ytd",
+   "rows": [],
+   "start": "2026-01-01",
+   "summary": {
+    "all_in_rate": null,
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "detail": null
+ },
  "GET /api/fx-conversions/pool": {
   "balance_eur": "0",
   "balance_usd": "0",
@@ -59565,6 +60264,43 @@
   },
   "detail": null
  },
+ "GET /api/recurring/estimates": {
+  "count": 0,
+  "groups": [],
+  "rows": []
+ },
+ "GET /api/recurring/plans": [],
+ "GET /api/recurring/setup-plan?buy_total_usd=134&account_id=1&deposit_unit=weeks&deposit_every=2&buy_unit=weeks&buy_every=1": {
+  "conversion": null,
+  "split": {
+   "allocation_name": null,
+   "deposit_total": "134",
+   "has_allocation_plan": false,
+   "legs": [],
+   "method": "none",
+   "total": "67"
+  }
+ },
+ "GET /api/recurring/setup-plan?buy_total_usd=2750&account_id=1&deposit_unit=months&deposit_every=1&buy_unit=weeks&buy_every=1": {
+  "conversion": null,
+  "split": {
+   "allocation_name": null,
+   "deposit_total": "2750",
+   "has_allocation_plan": false,
+   "legs": [],
+   "method": "none",
+   "total": "635"
+  }
+ },
+ "GET /api/recurring/setup-plan?eur_amount=250&provider=revolut&conversion_unit=months&conversion_every=1&deposit_unit=months&deposit_every=1": {
+  "conversion": null,
+  "split": null
+ },
+ "GET /api/recurring/setup-plan?eur_amount=250&provider=revolut&conversion_unit=months&conversion_every=1&deposit_unit=weeks&deposit_every=2": {
+  "conversion": null,
+  "split": null
+ },
+ "GET /api/recurring/suggestions": [],
  "GET /api/refresh/status": {
   "historical": false,
   "last_update_at": null,
@@ -60290,15 +61026,14 @@
    },
    {
     "choices": [
-     "en-GB",
-     "de-DE",
-     "en-US"
+     "en-US",
+     "de-DE"
     ],
     "danger": null,
-    "default": "en-GB",
+    "default": "en-US",
     "env_bound": null,
     "env_var": null,
-    "help": "What the date, number and time formats below follow while they are on 'auto'. en-GB: 31/12/2026, 24h, 1,234.56 · de-DE: 31.12.2026, 24h, 1.234,56 · en-US: 12/31/2026, 12h, 1,234.56. Also picks the currency symbol placement.",
+    "help": "What the number and time formats below follow while they are on 'auto'. en-US: 1,234.56, 12h · de-DE: 1.234,56, 24h. Dates have their own setting. Also picks the currency symbol placement.",
     "key": "display.locale",
     "label": "Regional preset",
     "level": "user",
@@ -60314,17 +61049,16 @@
    },
    {
     "choices": [
-     "auto",
-     "DD/MM/YYYY",
-     "MM/DD/YYYY",
-     "YYYY-MM-DD",
-     "DD.MM.YYYY"
+     "DD MMM YYYY",
+     "MMM DD, YYYY",
+     "DD.MM.YYYY",
+     "YYYY-MM-DD"
     ],
     "danger": null,
-    "default": "auto",
+    "default": "DD MMM YYYY",
     "env_bound": null,
     "env_var": null,
-    "help": "Example for 31 December 2026: 31/12/2026, 12/31/2026, 2026-12-31 or 31.12.2026. 'auto' follows the regional preset.",
+    "help": "How dates are written, independent of the regional preset. Each option shows today's date.",
     "key": "display.date_format",
     "label": "Date format",
     "level": "user",
@@ -60900,6 +61634,186 @@
     "section": "imports",
     "since": "6.0",
     "type": "int",
+    "unit": null
+   },
+   {
+    "choices": [],
+    "danger": null,
+    "default": true,
+    "env_bound": null,
+    "env_var": null,
+    "help": "An imported row that is almost identical to a transaction you already have (same account, instrument and type, a nearby date, almost the same amount and shares) is shown as an update instead of a new row; confirming overwrites the existing transaction with the import's figures. Exact duplicates are always skipped. Switch off to import such rows as new.",
+    "key": "import.match_updates_enabled",
+    "label": "Match near-identical rows as updates",
+    "level": "user",
+    "max": null,
+    "min": null,
+    "nullable": false,
+    "restart_required": false,
+    "secret": false,
+    "section": "imports",
+    "since": "6.0",
+    "type": "bool",
+    "unit": null
+   },
+   {
+    "choices": [],
+    "danger": null,
+    "default": "0.005",
+    "env_bound": null,
+    "env_var": null,
+    "help": "Amount and shares may differ by this fraction (0.005 = 0.5 %) and still count as the same transaction. The larger of this and the absolute tolerances applies.",
+    "key": "import.match_relative_tolerance",
+    "label": "Update match: relative tolerance",
+    "level": "user",
+    "max": "0.05",
+    "min": "0",
+    "nullable": false,
+    "restart_required": false,
+    "secret": false,
+    "section": "imports",
+    "since": "6.0",
+    "type": "percent",
+    "unit": null
+   },
+   {
+    "choices": [],
+    "danger": null,
+    "default": "0.05",
+    "env_bound": null,
+    "env_var": null,
+    "help": "Amounts may differ by this much in the account's currency (a few cents).",
+    "key": "import.match_absolute_amount",
+    "label": "Update match: amount tolerance",
+    "level": "user",
+    "max": "10",
+    "min": "0",
+    "nullable": false,
+    "restart_required": false,
+    "secret": false,
+    "section": "imports",
+    "since": "6.0",
+    "type": "decimal",
+    "unit": null
+   },
+   {
+    "choices": [],
+    "danger": null,
+    "default": "0.0001",
+    "env_bound": null,
+    "env_var": null,
+    "help": "Share quantities may differ by this many shares.",
+    "key": "import.match_absolute_quantity",
+    "label": "Update match: shares tolerance",
+    "level": "user",
+    "max": "1",
+    "min": "0",
+    "nullable": false,
+    "restart_required": false,
+    "secret": false,
+    "section": "imports",
+    "since": "6.0",
+    "type": "decimal",
+    "unit": "shares"
+   },
+   {
+    "choices": [],
+    "danger": null,
+    "default": 1,
+    "env_bound": null,
+    "env_var": null,
+    "help": "Dates may differ by this many NYSE trading days (weekends and holidays do not count).",
+    "key": "import.match_business_days",
+    "label": "Update match: date distance",
+    "level": "user",
+    "max": "5",
+    "min": "0",
+    "nullable": false,
+    "restart_required": false,
+    "secret": false,
+    "section": "imports",
+    "since": "6.0",
+    "type": "int",
+    "unit": "days"
+   },
+   {
+    "choices": [],
+    "danger": null,
+    "default": "0.02",
+    "env_bound": null,
+    "env_var": null,
+    "help": "Estimated transactions (from your recurring plans) are matched more loosely: the amount may differ by this fraction. Shares are ignored for buys and sells.",
+    "key": "import.match_estimated_relative_tolerance",
+    "label": "Estimate match: relative tolerance",
+    "level": "user",
+    "max": "0.2",
+    "min": "0",
+    "nullable": false,
+    "restart_required": false,
+    "secret": false,
+    "section": "imports",
+    "since": "6.0",
+    "type": "percent",
+    "unit": null
+   },
+   {
+    "choices": [],
+    "danger": null,
+    "default": "0.50",
+    "env_bound": null,
+    "env_var": null,
+    "help": "Estimated transactions: the amount may differ by this much in the account's currency.",
+    "key": "import.match_estimated_absolute_amount",
+    "label": "Estimate match: amount tolerance",
+    "level": "user",
+    "max": "50",
+    "min": "0",
+    "nullable": false,
+    "restart_required": false,
+    "secret": false,
+    "section": "imports",
+    "since": "6.0",
+    "type": "decimal",
+    "unit": null
+   },
+   {
+    "choices": [],
+    "danger": null,
+    "default": 3,
+    "env_bound": null,
+    "env_var": null,
+    "help": "Estimated transactions: the broker may book them this many trading days off.",
+    "key": "import.match_estimated_business_days",
+    "label": "Estimate match: date distance",
+    "level": "user",
+    "max": "10",
+    "min": "0",
+    "nullable": false,
+    "restart_required": false,
+    "secret": false,
+    "section": "imports",
+    "since": "6.0",
+    "type": "int",
+    "unit": "days"
+   },
+   {
+    "choices": [],
+    "danger": null,
+    "default": true,
+    "env_bound": null,
+    "env_var": null,
+    "help": "A Wise statement can hold conversions into other currencies (for example EUR to GBP). 7.3 only supports EUR to USD, so with this on those rows are left out of the preview without a fuss; with it off they are listed but cannot be imported.",
+    "key": "import.ignore_non_usd_conversions",
+    "label": "Import: ignore conversions not into USD",
+    "level": "user",
+    "max": null,
+    "min": null,
+    "nullable": false,
+    "restart_required": false,
+    "secret": false,
+    "section": "imports",
+    "since": "6.0",
+    "type": "bool",
     "unit": null
    },
    {
@@ -61892,13 +62806,13 @@
     "value": 2
    },
    "display.date_format": {
-    "default": "auto",
+    "default": "DD MMM YYYY",
     "env_value_present": false,
     "is_set": true,
     "modified_at": null,
     "source": "default",
     "stored_invalid": false,
-    "value": "auto"
+    "value": "DD MMM YYYY"
    },
    "display.holding_chart_cost_scale": {
     "default": "auto",
@@ -61919,13 +62833,13 @@
     "value": "1y"
    },
    "display.locale": {
-    "default": "en-GB",
+    "default": "en-US",
     "env_value_present": false,
     "is_set": true,
     "modified_at": null,
     "source": "default",
     "stored_invalid": false,
-    "value": "en-GB"
+    "value": "en-US"
    },
    "display.mover_badges": {
     "default": false,
@@ -62056,6 +62970,87 @@
     "source": "default",
     "stored_invalid": false,
     "value": {}
+   },
+   "import.ignore_non_usd_conversions": {
+    "default": true,
+    "env_value_present": false,
+    "is_set": true,
+    "modified_at": null,
+    "source": "default",
+    "stored_invalid": false,
+    "value": true
+   },
+   "import.match_absolute_amount": {
+    "default": "0.05",
+    "env_value_present": false,
+    "is_set": true,
+    "modified_at": null,
+    "source": "default",
+    "stored_invalid": false,
+    "value": "0.05"
+   },
+   "import.match_absolute_quantity": {
+    "default": "0.0001",
+    "env_value_present": false,
+    "is_set": true,
+    "modified_at": null,
+    "source": "default",
+    "stored_invalid": false,
+    "value": "0.0001"
+   },
+   "import.match_business_days": {
+    "default": 1,
+    "env_value_present": false,
+    "is_set": true,
+    "modified_at": null,
+    "source": "default",
+    "stored_invalid": false,
+    "value": 1
+   },
+   "import.match_estimated_absolute_amount": {
+    "default": "0.50",
+    "env_value_present": false,
+    "is_set": true,
+    "modified_at": null,
+    "source": "default",
+    "stored_invalid": false,
+    "value": "0.50"
+   },
+   "import.match_estimated_business_days": {
+    "default": 3,
+    "env_value_present": false,
+    "is_set": true,
+    "modified_at": null,
+    "source": "default",
+    "stored_invalid": false,
+    "value": 3
+   },
+   "import.match_estimated_relative_tolerance": {
+    "default": "0.02",
+    "env_value_present": false,
+    "is_set": true,
+    "modified_at": null,
+    "source": "default",
+    "stored_invalid": false,
+    "value": "0.02"
+   },
+   "import.match_relative_tolerance": {
+    "default": "0.005",
+    "env_value_present": false,
+    "is_set": true,
+    "modified_at": null,
+    "source": "default",
+    "stored_invalid": false,
+    "value": "0.005"
+   },
+   "import.match_updates_enabled": {
+    "default": true,
+    "env_value_present": false,
+    "is_set": true,
+    "modified_at": null,
+    "source": "default",
+    "stored_invalid": false,
+    "value": true
    },
    "import.max_upload_mb": {
     "default": 10,

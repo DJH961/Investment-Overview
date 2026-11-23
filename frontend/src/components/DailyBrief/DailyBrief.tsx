@@ -287,7 +287,7 @@ function MoverChip({ m, up }: { m: BriefMoverDto; up: boolean }) {
   );
 }
 
-/** The session's biggest movers each way, as chips (arrow + sign, never colour alone). */
+/** The session's biggest movers each way, as chips (arrow + sign, never color alone). */
 function MoversFact({ movers }: { movers: BriefMoveDto["movers"] }) {
   const up = movers?.winners.slice(0, MOVERS_EACH_WAY) ?? [];
   const down = movers?.losers.slice(0, MOVERS_EACH_WAY) ?? [];

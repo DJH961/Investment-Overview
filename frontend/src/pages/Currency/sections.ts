@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import type { ReportingCurrency } from "../../lib/prefs";
 import type { CurrencyRange } from "./range";
+import { Conversions } from "./sections/Conversions";
 import { Dollar } from "./sections/Dollar";
 import { Impact, ImpactHoldings } from "./sections/Impact";
 import { WhatIf } from "./sections/WhatIf";
@@ -71,7 +72,8 @@ export const CURRENCY_SECTIONS: CurrencySectionDef[] = [
   { id: "exposure", label: "Exposure", Component: Dollar },
   // Today's holdings valued at other rates: slider, stress table, cushion.
   { id: "scenarios", label: "Scenarios", Component: WhatIf },
-  // 7.3 adds { id: "conversions", label: "Conversions", ... } here.
+  // What converting cost you: fees and spread against the ECB daily reference (7.3).
+  { id: "conversions", label: "Conversions", Component: Conversions },
 ];
 
 /** The sub-page for `/currency/<sub>`, if any section declares it. */

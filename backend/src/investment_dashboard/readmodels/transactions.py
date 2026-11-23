@@ -74,6 +74,7 @@ def _detail_dict(r: LedgerRecord) -> dict[str, Any]:
         "fx_incomplete": r.fx_incomplete,
         "cash_eur": dec(r.cash_eur),
         "cash_usd": dec(r.cash_usd),
+        "is_estimate": r.is_estimate,
     }
 
 

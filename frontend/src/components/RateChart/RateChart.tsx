@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { ArrowDownRight, ArrowUpRight, Minus, MoveRight, TrendingDown, TrendingUp } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Eye, EyeOff, Minus, MoveRight, TrendingDown, TrendingUp } from "lucide-react";
 import { useMemo, type ReactNode } from "react";
 import { Card } from "../Card";
 import { Chart, type ChartMarker, type ChartSeries } from "../Chart";
@@ -160,13 +160,22 @@ function Figures({ data, lens }: { data: RateHistoryDto; lens: RateLens }) {
   );
 }
 
-const MARK_WORD = { above_reference: "better than the reference rate", below_reference: "worse than the reference rate" } as const;
+/** "0.2 % under ECB" / "0.3 % over ECB" (the server's all-in distance from the ECB fixing). */
+function underOver(offPct: string | null | undefined): string | null {
+  const v = toNum(offPct ?? null);
+  if (v === null) return null;
+  const pct = Math.abs(v) * 100;
+  if (pct < 0.005) return "at the ECB rate";
+  return `${formatNumber(pct, 1)} % ${v < 0 ? "under" : "over"} ECB`;
+}
 
 /**
- * Your conversions on the chart (server `markers`, 7.2 contract with 7.3): quiet ticks on
- * the date axis, taller for larger amounts (within each source currency). They mark when
- * you converted, not a point on the reference line: your own rate usually differs from
- * the fixing, so a mark on the line would mislead. Only those inside the plotted span.
+ * Your real conversions on the chart (server `markers`): one mark per conversion at its
+ * date and its own rate, sized by the EUR amount. ▲ blue = more dollars per euro than the
+ * ECB daily reference (a saving), ▼ orange = fewer (a cost); a plain ring when that day has
+ * no fixing. Shape carries the meaning, color only repeats it. Only those inside the
+ * plotted span. Hover or tap: "12 Mar 2025 · €2,770 → $3,000 · 1.0830 · 0.2 % under ECB".
+ * Estimated conversions never reach `markers` (the server leaves them out).
  */
 export function conversionMarks(data: RateHistoryDto, lens: RateLens): ChartMarker[] {
   const pts = data.points ?? [];
@@ -183,12 +192,23 @@ export function conversionMarks(data: RateHistoryDto, lens: RateLens): ChartMark
     if (!Number.isFinite(t) || t < t0 - 43_200_000 || t > t1 || rate === null || !(rate > 0)) return [];
     const amount = Math.abs(toNum(m.amount_from) ?? 0);
     const top = max.get(m.from_ccy) ?? 0;
-    // Tick height follows the amount (square root, so the area reads like the amount).
-    const h = 4 + 8 * (top > 0 ? Math.sqrt(amount / top) : 0);
+    // Size follows the amount (square root, so the area reads like the amount).
+    const r = 4 + 4 * (top > 0 ? Math.sqrt(amount / top) : 0);
     const kind = m.kind ?? null;
     const v = lens === "rate" ? rate : 1 / rate;
-    const what = `${formatMoney(amount, m.from_ccy, { digits: 0 })} to ${m.to_ccy} on ${formatDate(m.date.slice(0, 10))} at ${formatNumber(rate, 4)}`;
-    return [{ t, v, r: h, shape: "rug" as const, label: kind ? `Converted ${what}: ${MARK_WORD[kind]}` : `Converted ${what}` }];
+    const received = toNum(m.amount_to ?? null);
+    const label = [
+      formatDate(m.date.slice(0, 10)),
+      received !== null
+        ? `${formatMoney(amount, m.from_ccy, { digits: 0 })} → ${formatMoney(received, m.to_ccy, { digits: 0 })}`
+        : formatMoney(amount, m.from_ccy, { digits: 0 }),
+      formatNumber(rate, 4),
+      underOver(m.off_pct),
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    const shape = kind === "above_reference" ? ("above" as const) : kind === "below_reference" ? ("below" as const) : ("conversion" as const);
+    return [{ t, v, r, shape, label }];
   });
 }
 
@@ -196,7 +216,7 @@ export function conversionMarks(data: RateHistoryDto, lens: RateLens): ChartMark
  * The Currency page's first visual: the exchange rate over a chosen range, quoted like
  * the Today card, with your average rate and the 200-day average. Direction means
  * different things for dollars held and euros still to convert, so the line is never
- * coloured good or bad; the figures below give both readings.
+ * colored good or bad; the figures below give both readings.
  */
 export function RateChart({
   currency,
@@ -231,7 +251,10 @@ export function RateChart({
     return out;
   }, [data, lens, pair]);
 
-  const marks = useMemo(() => (data ? conversionMarks(data, lens) : []), [data, lens]);
+  // Remembered per device, default on.
+  const [showConversions, setShowConversions] = usePersistentState<boolean>("currency.rate.conversions", true);
+  const allMarks = useMemo(() => (data ? conversionMarks(data, lens) : []), [data, lens]);
+  const marks = showConversions ? allMarks : [];
   const avg = data?.avg_rate ? toNum(lens === "rate" ? data.avg_rate.rate : data.avg_rate.inverse) : null;
   const pts = data?.points ?? [];
   const last = pts.length ? pick(pts[pts.length - 1], lens) : null;
@@ -287,7 +310,7 @@ export function RateChart({
         referenceLine={avg !== null ? { value: avg, softBounds: true } : undefined}
         markers={marks.length ? marks : undefined}
         legendExtra={
-          avg !== null || marks.length || shade.length ? (
+          avg !== null || allMarks.length || shade.length ? (
             <span className="rate-chart__keys">
               {shade.length ? (
                 <span className="rate-chart__avg">
@@ -301,11 +324,18 @@ export function RateChart({
                   Your average {fmt(avg, lens)}
                 </span>
               ) : null}
-              {marks.length ? (
-                <span className="rate-chart__avg">
-                  <span className="rate-chart__mark-swatch" aria-hidden />
-                  {marks.length === 1 ? "1 conversion" : `${marks.length} conversions`}
-                </span>
+              {allMarks.length ? (
+                <button
+                  type="button"
+                  className={clsx("rate-chart__toggle", showConversions && "rate-chart__toggle--on")}
+                  aria-pressed={showConversions}
+                  onClick={() => setShowConversions(!showConversions)}
+                  title="Your conversions: ▲ better than the ECB daily reference, ▼ worse. Sized by the amount."
+                >
+                  {showConversions ? <Eye aria-hidden className="rate-chart__toggle-icon" /> : <EyeOff aria-hidden className="rate-chart__toggle-icon" />}
+                  Conversions
+                  <span className="rate-chart__toggle-count">{allMarks.length}</span>
+                </button>
               ) : null}
             </span>
           ) : undefined
