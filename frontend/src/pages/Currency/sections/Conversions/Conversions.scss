@@ -9,9 +9,72 @@
     gap: var(--page-gap);
 
     @include m.desktop {
+      // Stretch: the two cards are the same height, the shorter one's content sits on top.
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      align-items: start;
+      align-items: stretch;
     }
+  }
+
+  // Providers side by side: one column each; a card too narrow for two stacks them.
+  &__compare {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+    gap: var(--space-3);
+  }
+
+  &__prov {
+    min-width: 0;
+    padding: var(--space-3);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-md);
+  }
+
+  &__prov-name {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    margin: 0 0 var(--space-2);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
+  }
+
+  &__prov-flag {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--color-fg);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+  }
+
+  &__prov-flag-icon {
+    width: var(--font-size-sm);
+    height: var(--font-size-sm);
+  }
+
+  &__prov-list {
+    display: grid;
+    gap: var(--space-2);
+    margin: 0;
+
+  }
+
+  &__prov-row {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-2);
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__prov-label {
+    color: var(--color-muted);
+  }
+
+  &__prov-value {
+    margin: 0;
   }
 
   // The strip's odd tile out (five tiles on two phone columns) spans the full row, so no

@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowRight, ArrowUp, Coins, Minus } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUp, Check, Coins, Minus } from "lucide-react";
 import { useMemo, type ReactNode } from "react";
 import { Link } from "react-router";
 import { Card } from "../../../../components/Card";
@@ -193,66 +193,78 @@ function YearsCard({ d }: { d: FxCostsDto }) {
   );
 }
 
+/**
+ * Providers side by side (the owner will mostly use two): a column each with what it
+ * converted, what that cost and the distance from the ECB. The cheaper one carries a word
+ * and an icon, never colour alone. One provider is a single summary line.
+ */
 function ProvidersCard({ d }: { d: FxCostsDto }) {
   const ccy = d.currency;
+  const named = d.by_provider.filter((p): p is FxCostProviderDto & { provider: NonNullable<FxCostProviderDto["provider"]> } => p.provider !== null);
+  const unnamed = d.by_provider.find((p) => p.provider === null);
   const gap = toNum(d.cheaper_gap_pct);
-  const sentence: ReactNode =
-    d.cheaper_provider && gap !== null ? (
+  const compare = named.length >= 2;
+  const lead: ReactNode =
+    compare && d.cheaper_provider && d.cheaper_than && gap !== null ? (
       <>
-        <strong>{providerName(d.cheaper_provider)}</strong> has been cheaper for you:{" "}
-        {formatNumber(gap * 100, 2)} percentage points less of what you converted went on fees and spread.
+        {providerName(d.cheaper_provider)} is cheaper than {providerName(d.cheaper_than)} by{" "}
+        {formatNumber(gap * 100, 2)} points of what you converted.
       </>
+    ) : named.length === 1 ? (
+      "Compare once you use a second provider."
     ) : (
-      "Add a provider to your conversions to compare them. Two are needed to say which is cheaper."
+      "Add a provider to your conversions to compare them."
     );
-  const columns: Column<FxCostProviderDto>[] = [
-    {
-      key: "provider",
-      header: "Provider",
-      primary: true,
-      cell: (r) => providerName(r.provider),
-      sortValue: (r) => providerName(r.provider),
-    },
-    {
-      key: "count",
-      header: "Conv.",
-      align: "right",
-      phone: "sub",
-      cell: (r) => r.count,
-      sortValue: (r) => r.count,
-    },
-    {
-      key: "cost",
-      header: "Cost",
-      align: "right",
-      phone: "headline",
-      emphasis: true,
-      cell: (r) => <Cost value={r.cost} ccy={ccy} />,
-      sortValue: (r) => toNum(r.cost),
-    },
-    {
-      key: "pct",
-      header: "Cost %",
-      align: "right",
-      cell: (r) => pctText(r.cost_pct),
-      sortValue: (r) => toNum(r.cost_pct),
-    },
-    {
-      key: "avg",
-      header: "vs ECB",
-      align: "right",
-      cell: (r) => offText(r.avg_off_pct),
-      sortValue: (r) => toNum(r.avg_off_pct),
-    },
-  ];
   return (
-    <Card title="Cost per provider" subtitle={sentence} flush>
-      <DataTable
-        caption="What converting cost, per provider"
-        columns={columns}
-        rows={d.by_provider}
-        rowKey={(r) => r.provider ?? "none"}
-      />
+    <Card title="Cost per provider" subtitle={lead} className="conv-section__providers">
+      {named.length === 0 ? null : (
+        <div className="conv-section__compare">
+          {named.map((p) => {
+            const cheaper = compare && p.provider === d.cheaper_provider;
+            return (
+              <section key={p.provider} className="conv-section__prov" aria-label={providerName(p.provider)}>
+                <h4 className="conv-section__prov-name">
+                  {providerName(p.provider)}
+                  {cheaper ? (
+                    <span className="conv-section__prov-flag">
+                      <Check aria-hidden className="conv-section__prov-flag-icon" />
+                      Cheaper
+                    </span>
+                  ) : null}
+                </h4>
+                <dl className="conv-section__prov-list">
+                  <div className="conv-section__prov-row">
+                    <dt className="conv-section__prov-label">Converted</dt>
+                    <dd className="conv-section__prov-value">
+                      <Money amount={toNum(p.converted)} currency={ccy} digits={0} />
+                    </dd>
+                  </div>
+                  <div className="conv-section__prov-row">
+                    <dt className="conv-section__prov-label">Cost</dt>
+                    <dd className="conv-section__prov-value">
+                      <Cost value={p.cost} ccy={ccy} />
+                    </dd>
+                  </div>
+                  <div className="conv-section__prov-row">
+                    <dt className="conv-section__prov-label">Cost %</dt>
+                    <dd className="conv-section__prov-value">{pctText(p.cost_pct)}</dd>
+                  </div>
+                  <div className="conv-section__prov-row">
+                    <dt className="conv-section__prov-label">vs ECB</dt>
+                    <dd className="conv-section__prov-value">{offText(p.avg_off_pct)}</dd>
+                  </div>
+                </dl>
+              </section>
+            );
+          })}
+        </div>
+      )}
+      {unnamed ? (
+        <p className="conv-section__muted">
+          {unnamed.count} {unnamed.count === 1 ? "conversion has" : "conversions have"} no provider and{" "}
+          {unnamed.count === 1 ? "is" : "are"} not compared.
+        </p>
+      ) : null}
     </Card>
   );
 }
