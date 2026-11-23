@@ -95,6 +95,7 @@ export function SetupFlow({ open, onClose }: { open: boolean; onClose: () => voi
 
   let initial: Initial | undefined;
   let notes: ReactNode = null;
+  let hint: ReactNode = null;
   let depositTotal: number | undefined;
   if (index === 0 && history.conversion) {
     initial = initialOf(history.conversion);
@@ -137,30 +138,29 @@ export function SetupFlow({ open, onClose }: { open: boolean; onClose: () => voi
     if (useSplit && split) {
       initial = { ...base, account_id: buyAccount, legs: split.legs.map((l) => ({ instrument_id: l.instrument_id, amount: l.amount })) };
       if (depositAmount) depositTotal = Number(depositAmount);
-      notes = (
-        <>
-          {split.method === "allocation" ? (
-            <>
-              Split by your allocation plan{split.allocation_name ? ` (${split.allocation_name})` : ""}.{" "}
-              <Link to="/allocations" className="recurring-page__linklike">
-                Allocations
-              </Link>{" "}
-            </>
-          ) : split.method === "history" ? (
-            <>Split like your recent buys. </>
-          ) : (
-            <>Split equally across the holdings of this account. </>
-          )}
-          {!split.has_allocation_plan && (
-            <span className="recurring-page__setup-hint">
-              Set an allocation plan to split this automatically.{" "}
-              <Link to="/allocations" className="recurring-page__linklike">
-                Allocations
-              </Link>{" "}
-            </span>
-          )}
-        </>
-      );
+      notes =
+        split.method === "allocation" ? (
+          <>
+            Split by your allocation plan{split.allocation_name ? ` (${split.allocation_name})` : ""}.{" "}
+            <Link to="/allocations" className="recurring-page__linklike">
+              Allocations
+            </Link>{" "}
+          </>
+        ) : split.method === "history" ? (
+          <>Split like your recent buys. </>
+        ) : (
+          <>Split equally across the holdings of this account. </>
+        );
+      if (!split.has_allocation_plan) {
+        hint = (
+          <>
+            Set an allocation plan to split this automatically.{" "}
+            <Link to="/allocations" className="recurring-page__linklike">
+              Allocations
+            </Link>
+          </>
+        );
+      }
     } else if (history.buy) {
       initial = { ...base, account_id: buyAccount };
       notes = <>Suggested from your last 3 months. </>;
@@ -216,6 +216,7 @@ export function SetupFlow({ open, onClose }: { open: boolean; onClose: () => voi
             )}
           </p>
         )}
+        {hint && !isCleared && <p className="recurring-page__setup-hint">{hint}</p>}
         <PlanForm
           key={remountKey}
           kind={kind}

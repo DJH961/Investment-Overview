@@ -306828,28 +306828,7 @@
    "unit": "months"
   }
  ],
- "GET /api/recurring/setup-plan?buy_total_usd=300&account_id=1": {
-  "conversion": null,
-  "split": {
-   "allocation_name": null,
-   "has_allocation_plan": false,
-   "legs": [
-    {
-     "amount": "100",
-     "instrument_id": 2,
-     "symbol": "FAKEB"
-    },
-    {
-     "amount": "200",
-     "instrument_id": 1,
-     "symbol": "FAKEL"
-    }
-   ],
-   "method": "history",
-   "total": "300"
-  }
- },
- "GET /api/recurring/setup-plan?eur_amount=250&provider=revolut": {
+ "GET /api/recurring/setup-plan?eur_amount=250&provider=revolut&buy_total_usd=2750&account_id=1": {
   "conversion": {
    "ecb_rate": "1.16500000",
    "eur": "250",
@@ -306858,7 +306837,24 @@
    "rate": "1.1603393233",
    "usd": "290"
   },
-  "split": null
+  "split": {
+   "allocation_name": null,
+   "has_allocation_plan": false,
+   "legs": [
+    {
+     "amount": "917",
+     "instrument_id": 2,
+     "symbol": "FAKEB"
+    },
+    {
+     "amount": "1833",
+     "instrument_id": 1,
+     "symbol": "FAKEL"
+    }
+   ],
+   "method": "history",
+   "total": "2750"
+  }
  },
  "GET /api/recurring/suggestions": [
   {
@@ -306895,6 +306891,18 @@
    "occurrences": 10,
    "provider": null,
    "unit": "weeks"
+  },
+  {
+   "account": null,
+   "account_id": null,
+   "amount": "250.000000",
+   "anchor": 14,
+   "every": 1,
+   "kind": "conversion",
+   "legs": [],
+   "occurrences": 4,
+   "provider": "revolut",
+   "unit": "months"
   }
  ],
  "GET /api/refresh/status": {

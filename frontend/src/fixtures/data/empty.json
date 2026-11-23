@@ -60270,19 +60270,15 @@
   "rows": []
  },
  "GET /api/recurring/plans": [],
- "GET /api/recurring/setup-plan?buy_total_usd=300&account_id=1": {
+ "GET /api/recurring/setup-plan?eur_amount=250&provider=revolut&buy_total_usd=2750&account_id=1": {
   "conversion": null,
   "split": {
    "allocation_name": null,
    "has_allocation_plan": false,
    "legs": [],
    "method": "none",
-   "total": "300"
+   "total": "2750"
   }
- },
- "GET /api/recurring/setup-plan?eur_amount=250&provider=revolut": {
-  "conversion": null,
-  "split": null
  },
  "GET /api/recurring/suggestions": [],
  "GET /api/refresh/status": {

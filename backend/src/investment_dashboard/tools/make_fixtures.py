@@ -126,8 +126,8 @@ GET_ENDPOINTS: tuple[str, ...] = (
     "/api/recurring/plans",
     "/api/recurring/estimates",
     "/api/recurring/suggestions",
-    "/api/recurring/setup-plan?eur_amount=250&provider=revolut",
-    "/api/recurring/setup-plan?buy_total_usd=300&account_id=1",
+    # Fixture mode prefix-matches the query: one answer carries both the conversion and the split.
+    "/api/recurring/setup-plan?eur_amount=250&provider=revolut&buy_total_usd=2750&account_id=1",
     "/api/onboarding",
     "/api/refresh/status",
     "/api/settings",
