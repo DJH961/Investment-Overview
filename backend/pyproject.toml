@@ -150,13 +150,21 @@ warn_return_any = true
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]
+# Parallel by default: one worker per core, whole test files stay on one worker
+# (module fixtures and state behave as in a serial run). Debug one test with
+# ``-n0`` (no workers, so ``pdb``/``-s`` work); CI passes the same flags again.
 addopts = [
     "-ra",
     "--strict-markers",
     "--strict-config",
+    "-n",
+    "auto",
+    "--dist",
+    "loadfile",
 ]
 markers = [
     "network: tests that hit real external APIs; skipped unless --run-network is passed",
+    "durable_sqlite: keep the production SQLite pragmas (fsync, journal mode) for durability, WAL and backup tests",
 ]
 filterwarnings = [
     # Treat any unexpected warning as an error so new deprecations from our own
