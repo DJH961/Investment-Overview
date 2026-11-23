@@ -83,9 +83,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   "Kept in your USD account" as its own segment.
 - **Received in USD:** mark a deposit as received in dollars (no conversion). It keeps the ECB
   valuation, shows as "Received in USD", and the Data Health note "deposits valued at the ECB
-  rate with no conversion" (info only) leaves it out. Migration 0027a.
+  rate with no conversion" (info only) leaves it out. Migration 0028.
 
 ### Fixed
+- **Test builds start without the welcome tour:** the fixture build used for screenshots and
+  layout checks no longer opens the tour by itself (`?tour=1` forces it). A long note on a
+  conversion row no longer spills past its column on wide screens.
 - **Conversions page folds:** every year, the running one included, folds and unfolds;
   the month level is gone (year, then conversions, newest first); rows get more
   vertical room so entries no longer touch.
