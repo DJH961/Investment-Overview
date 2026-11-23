@@ -39,7 +39,7 @@ export function weekdayDate(iso: string): string {
   return `${day} ${formatDate(iso)}`;
 }
 
-/** The "vs ECB" figure: "−0.56 %" (a plain number, neutral text, no pos/neg colour). */
+/** The "vs ECB" figure: "−0.56 %" (a plain number, neutral text, no pos/neg color). */
 export function offPctText(offPct: string | null | undefined): string {
   if (offPct === null || offPct === undefined) return "–";
   const pct = Number(offPct) * 100;

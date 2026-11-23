@@ -21,7 +21,7 @@ const STEM_PAD = 2;
  * Collision-safe label rows for ticks on a track. Each label hangs from its tick on a
  * stem; near the right edge the text is pulled left so it stays on the track. A label
  * that holds another tick inside its span goes deeper than that one, so a stem never
- * crosses a neighbour's text. Pure presentation geometry.
+ * crosses a neighbor's text. Pure presentation geometry.
  */
 export function layoutMarks(boxes: MarkBox[], width: number): MarkPlacement[] {
   const spans = boxes.map((b) => {

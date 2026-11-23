@@ -12,8 +12,8 @@ const tagStyle = (v: number): CSSProperties =>
 /**
  * The holdings story as one picture: the lowest and highest rate since your first
  * transaction at the ends, your average rate (open marker) and today (filled marker),
- * and the stretch between them coloured by what it did to your dollars (with the
- * tailwind/headwind word beside the figures, never colour alone). The extremes come from
+ * and the stretch between them colored by what it did to your dollars (with the
+ * tailwind/headwind word beside the figures, never color alone). The extremes come from
  * the server in the view's quote; the markers are plain placement of the server's rates.
  */
 export function SinceStarted({ data, lean }: { data: DollarDto; lean: Lean }) {

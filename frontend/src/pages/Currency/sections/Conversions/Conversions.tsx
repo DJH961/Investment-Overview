@@ -26,7 +26,7 @@ const providerName = (p: string | null | undefined) => (p ? (PROVIDER_LABEL[p] ?
 const FIXING_TIP =
   "Measured against the ECB daily reference, which is struck at about 14:15 CET. A conversion done at another hour is compared with a rate it never saw, so a small negative cost is normal intraday noise, not a win.";
 
-/** "−0.56 %": a distance from the ECB reference as a plain signed number (no good/bad colour). */
+/** "−0.56 %": a distance from the ECB reference as a plain signed number (no good/bad color). */
 const offText = (v: string | null | undefined) => {
   const n = toNum(v ?? null);
   if (n === null) return "–";
@@ -38,7 +38,7 @@ const offText = (v: string | null | undefined) => {
 const pctText = (v: string | null | undefined) => formatPercent(toNum(v ?? null), { digits: 2 });
 
 function Cost({ value, ccy }: { value: string | null | undefined; ccy: FxCostsDto["currency"] }) {
-  // Signed plain text on purpose: for a cost, "up" is bad, so no gain/loss colour.
+  // Signed plain text on purpose: for a cost, "up" is bad, so no gain/loss color.
   return <Money amount={toNum(value ?? null)} currency={ccy} signed digits={2} />;
 }
 
@@ -232,7 +232,7 @@ function YearsCard({ d }: { d: FxCostsDto }) {
 /**
  * Providers side by side (the owner will mostly use two): a column each with what it
  * converted, what that cost and the distance from the ECB. The cheaper one carries a word
- * and an icon, never colour alone. One provider is a single summary line.
+ * and an icon, never color alone. One provider is a single summary line.
  */
 function ProvidersCard({ d }: { d: FxCostsDto }) {
   const ccy = d.currency;

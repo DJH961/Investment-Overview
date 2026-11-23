@@ -45,8 +45,8 @@ SECTIONS: dict[str, str] = {
 }
 
 GRAPH_RANGE_KEYS: tuple[str, ...] = ("1d", "1w", "1m", "3m", "6m", "ytd", "1y", "all")
-LOCALES: tuple[str, ...] = ("en-GB", "de-DE", "en-US")
-DATE_FORMATS: tuple[str, ...] = ("auto", "DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD", "DD.MM.YYYY")
+LOCALES: tuple[str, ...] = ("en-US", "de-DE")
+DATE_FORMATS: tuple[str, ...] = ("DD MMM YYYY", "MMM DD, YYYY", "DD.MM.YYYY", "YYYY-MM-DD")
 NUMBER_FORMATS: tuple[str, ...] = ("auto", "1,234.56", "1.234,56", "1 234,56", "1'234.56")
 #: Sentinels accepted besides IANA zone names. "Browser" = the viewer's device zone.
 TIMEZONE_SENTINELS: tuple[str, ...] = ("Browser", "Local", "UTC")
@@ -147,24 +147,23 @@ DEFS: tuple[SettingDef, ...] = (
     SettingDef(
         "display.locale",
         SettingType.ENUM,
-        "en-GB",
+        "en-US",
         "display",
         "Regional preset",
         help=(
-            "What the date, number and time formats below follow while they are on "
-            "'auto'. en-GB: 31/12/2026, 24h, 1,234.56 · de-DE: 31.12.2026, 24h, "
-            "1.234,56 · en-US: 12/31/2026, 12h, 1,234.56. Also picks the currency "
-            "symbol placement."
+            "What the number and time formats below follow while they are on "
+            "'auto'. en-US: 1,234.56, 12h · de-DE: 1.234,56, 24h. Dates have their own "
+            "setting. Also picks the currency symbol placement."
         ),
         choices=LOCALES,
     ),
     SettingDef(
         "display.date_format",
         SettingType.ENUM,
-        "auto",
+        "DD MMM YYYY",
         "display",
         "Date format",
-        help="Example for 31 December 2026: 31/12/2026, 12/31/2026, 2026-12-31 or 31.12.2026. 'auto' follows the regional preset.",
+        help="How dates are written, independent of the regional preset. Each option shows today's date.",
         choices=DATE_FORMATS,
     ),
     SettingDef(

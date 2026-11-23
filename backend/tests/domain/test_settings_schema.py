@@ -71,6 +71,31 @@ def test_symbol_list_round_trip(symbols: list[str]) -> None:
     assert parse(SYMS, dump(SYMS, typed)) == typed
 
 
+def test_retired_en_gb_locale_reads_and_writes_as_en_us() -> None:
+    locale = SettingDef(
+        "display.locale", SettingType.ENUM, "en-US", "s", "Locale", choices=("en-US", "de-DE")
+    )
+    assert coerce(locale, "en-GB") == "en-US"
+    assert parse(locale, "en-GB") == "en-US"
+    assert coerce(locale, "de-DE") == "de-DE"
+    with pytest.raises(SettingError):
+        coerce(locale, "fr-FR")
+
+
+def test_retired_date_formats_read_as_the_month_name_default() -> None:
+    fmt = SettingDef(
+        "display.date_format",
+        SettingType.ENUM,
+        "DD MMM YYYY",
+        "s",
+        "Date",
+        choices=("DD MMM YYYY", "MMM DD, YYYY", "DD.MM.YYYY", "YYYY-MM-DD"),
+    )
+    for old in ("auto", "MM/DD/YYYY", "DD/MM/YYYY"):
+        assert coerce(fmt, old) == "DD MMM YYYY"
+    assert coerce(fmt, "YYYY-MM-DD") == "YYYY-MM-DD"
+
+
 def test_bool_formats_match_legacy_rows() -> None:
     assert dump(BOOL, True) == "1"
     assert parse(BOOL, "0") is False

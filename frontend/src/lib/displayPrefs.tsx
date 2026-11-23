@@ -11,7 +11,7 @@
  * (usePersistentState, never sent to the server) passed on to `lib/format.ts`.
  */
 import { createContext, Fragment, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { setFormatPrefs, type DateFormat, type Locale, type NumberFormat } from "./format";
+import { DEFAULT_DATE_FORMAT, setFormatPrefs, type DateFormat, type Locale, type NumberFormat } from "./format";
 import type { SettingsValues } from "./queries/settings";
 import { readPersisted, writePersisted } from "./usePersistentState";
 
@@ -46,8 +46,8 @@ export interface DisplayPrefs {
 }
 
 export const DEFAULT_DISPLAY_PREFS: DisplayPrefs = {
-  locale: "en-GB",
-  dateFormat: "auto",
+  locale: "en-US",
+  dateFormat: DEFAULT_DATE_FORMAT,
   numberFormat: "auto",
   timezone: "Local",
   timeZone: undefined,
@@ -64,8 +64,8 @@ export const DEFAULT_DISPLAY_PREFS: DisplayPrefs = {
 };
 
 const CACHE_KEY = "displayPrefs";
-const LOCALES: readonly Locale[] = ["en-GB", "de-DE", "en-US"];
-const DATE_FORMATS: readonly DateFormat[] = ["auto", "DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD", "DD.MM.YYYY"];
+const LOCALES: readonly Locale[] = ["en-US", "de-DE"];
+const DATE_FORMATS: readonly DateFormat[] = ["DD MMM YYYY", "MMM DD, YYYY", "DD.MM.YYYY", "YYYY-MM-DD"];
 const NUMBER_FORMATS: readonly NumberFormat[] = ["auto", "1,234.56", "1.234,56", "1 234,56", "1'234.56"];
 const RANGES: readonly RangeKey[] = ["1d", "1w", "1m", "3m", "6m", "ytd", "1y", "all"];
 
@@ -76,7 +76,7 @@ const RANGES: readonly RangeKey[] = ["1d", "1w", "1m", "3m", "6m", "ytd", "1y", 
 export function resolveTimeZone(setting: string | null | undefined): string | undefined {
   if (!setting || setting === "Browser" || setting === "Local") return undefined;
   try {
-    new Intl.DateTimeFormat("en-GB", { timeZone: setting });
+    new Intl.DateTimeFormat("en-US", { timeZone: setting });
     return setting;
   } catch {
     return undefined;
@@ -95,7 +95,7 @@ export function prefsFromValues(values: SettingsValues | undefined, base: Displa
   const autoclose = v("brief_autoclose_minutes");
   return {
     locale: pick(LOCALES, v("display.locale"), base.locale),
-    dateFormat: pick(DATE_FORMATS, v("display.date_format"), "auto"),
+    dateFormat: pick(DATE_FORMATS, v("display.date_format"), DEFAULT_DATE_FORMAT),
     numberFormat: pick(NUMBER_FORMATS, v("display.number_format"), "auto"),
     timezone,
     timeZone: resolveTimeZone(timezone),

@@ -84,7 +84,7 @@ export function PriceStamps({
 
 /**
  * The small ✓ after a holding's price: it already holds the latest settled
- * close (or NAV) while the market is shut. Labelled, never colour alone.
+ * close (or NAV) while the market is shut. Labelled, never color alone.
  */
 export function PriceTick({ title, className }: { title: string | null; className?: string }) {
   if (!title) return null;

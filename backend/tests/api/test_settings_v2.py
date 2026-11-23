@@ -146,7 +146,7 @@ def test_reset_revert_export_import(api_client: TestClient, as_session: None) ->
     dry = api_client.post("/api/settings/import", json=payload).json()
     assert dry == {
         "dry_run": True,
-        "diff": [{"key": "display.locale", "current": "en-GB", "new": "de-DE"}],
+        "diff": [{"key": "display.locale", "current": "en-US", "new": "de-DE"}],
     }
     api_client.post("/api/settings/import", params={"dry_run": "false"}, json=payload)
     values = api_client.get("/api/settings/values").json()["values"]

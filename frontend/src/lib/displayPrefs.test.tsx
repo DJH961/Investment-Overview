@@ -21,7 +21,7 @@ const VALUES: SettingsValues = {
 
 afterEach(() => {
   localStorage.clear();
-  setFormatPrefs({ locale: "en-GB", dateFormat: "auto", numberFormat: "auto", timeZone: undefined, hour12: undefined });
+  setFormatPrefs({ locale: "en-US", dateFormat: "DD MMM YYYY", numberFormat: "auto", timeZone: undefined, hour12: undefined });
 });
 
 describe("displayPrefs", () => {
@@ -60,7 +60,7 @@ describe("displayPrefs", () => {
       </DisplayPrefsProvider>,
     );
     expect(screen.getByText(/^3m /).textContent).toContain("1.234,50");
-    expect(getFormatPrefs()).toEqual({ locale: "de-DE", dateFormat: "auto", numberFormat: "auto", timeZone: "America/New_York", hour12: false });
+    expect(getFormatPrefs()).toEqual({ locale: "de-DE", dateFormat: "DD MMM YYYY", numberFormat: "auto", timeZone: "America/New_York", hour12: false });
     expect(JSON.parse(localStorage.getItem("iv.displayPrefs") ?? "{}").locale).toBe("de-DE");
   });
 });
@@ -79,7 +79,7 @@ describe("format with prefs", () => {
     // An explicit zone argument still wins.
     expect(formatTime("2026-03-05T15:30:00Z", "UTC")).toBe("15:30");
     expect(formatDate("2026-03-05")).toContain("5");
-    expect(formatDate("2026-03-06T02:00:00Z")).toContain("05/03/2026");
+    expect(formatDate("2026-03-06T02:00:00Z")).toContain("5 Mar 2026");
     setFormatPrefs({ hour12: true });
     expect(formatTime("2026-03-05T15:30:00Z")).toMatch(/10:30\s?am/i);
   });

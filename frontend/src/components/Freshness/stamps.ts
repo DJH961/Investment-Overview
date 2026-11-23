@@ -11,7 +11,7 @@
  * "today 15:42", "yesterday 09:10", "Mon 15:42" (this week), else "Mon 2 Nov"
  * (plus the year when it is not this year).
  */
-import { formatTime, getFormatPrefs, parseInstant, todayIn } from "../../lib/format";
+import { formatDate, formatDayLabel, formatTime, getFormatPrefs, parseInstant, todayIn } from "../../lib/format";
 
 export interface StampOptions {
   /** IANA zone (default: the Settings zone). */
@@ -44,15 +44,9 @@ function dateWords(iso: string, today: string, weekdayOnly: boolean): string {
   const d = new Date(`${iso}T12:00:00Z`);
   if (weekdayOnly) return new Intl.DateTimeFormat(locale, { weekday: "short", timeZone: "UTC" }).format(d);
   const sameYear = iso.slice(0, 4) === today.slice(0, 4);
-  return new Intl.DateTimeFormat(locale, {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    ...(sameYear ? {} : { year: "numeric" }),
-    timeZone: "UTC",
-  })
-    .format(d)
-    .replace(/,(?=\s\d{4}$)/, "");
+  if (sameYear) return formatDayLabel(iso);
+  const weekday = new Intl.DateTimeFormat(locale, { weekday: "short", timeZone: "UTC" }).format(d);
+  return `${weekday} ${formatDate(iso)}`;
 }
 
 /**
@@ -135,7 +129,7 @@ export function zonedInstant(iso: string, hour: number, zone: string): string {
   let guess = wanted;
   // Two passes settle the zone's offset on that day (DST included).
   for (let i = 0; i < 2; i += 1) {
-    const parts = new Intl.DateTimeFormat("en-GB", {
+    const parts = new Intl.DateTimeFormat("en-US", {
       timeZone: zone,
       year: "numeric",
       month: "2-digit",

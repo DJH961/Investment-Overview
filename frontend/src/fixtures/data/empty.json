@@ -61006,15 +61006,14 @@
    },
    {
     "choices": [
-     "en-GB",
-     "de-DE",
-     "en-US"
+     "en-US",
+     "de-DE"
     ],
     "danger": null,
-    "default": "en-GB",
+    "default": "en-US",
     "env_bound": null,
     "env_var": null,
-    "help": "What the date, number and time formats below follow while they are on 'auto'. en-GB: 31/12/2026, 24h, 1,234.56 · de-DE: 31.12.2026, 24h, 1.234,56 · en-US: 12/31/2026, 12h, 1,234.56. Also picks the currency symbol placement.",
+    "help": "What the number and time formats below follow while they are on 'auto'. en-US: 1,234.56, 12h · de-DE: 1.234,56, 24h. Dates have their own setting. Also picks the currency symbol placement.",
     "key": "display.locale",
     "label": "Regional preset",
     "level": "user",
@@ -61030,17 +61029,16 @@
    },
    {
     "choices": [
-     "auto",
-     "DD/MM/YYYY",
-     "MM/DD/YYYY",
-     "YYYY-MM-DD",
-     "DD.MM.YYYY"
+     "DD MMM YYYY",
+     "MMM DD, YYYY",
+     "DD.MM.YYYY",
+     "YYYY-MM-DD"
     ],
     "danger": null,
-    "default": "auto",
+    "default": "DD MMM YYYY",
     "env_bound": null,
     "env_var": null,
-    "help": "Example for 31 December 2026: 31/12/2026, 12/31/2026, 2026-12-31 or 31.12.2026. 'auto' follows the regional preset.",
+    "help": "How dates are written, independent of the regional preset. Each option shows today's date.",
     "key": "display.date_format",
     "label": "Date format",
     "level": "user",
@@ -62788,13 +62786,13 @@
     "value": 2
    },
    "display.date_format": {
-    "default": "auto",
+    "default": "DD MMM YYYY",
     "env_value_present": false,
     "is_set": true,
     "modified_at": null,
     "source": "default",
     "stored_invalid": false,
-    "value": "auto"
+    "value": "DD MMM YYYY"
    },
    "display.holding_chart_cost_scale": {
     "default": "auto",
@@ -62815,13 +62813,13 @@
     "value": "1y"
    },
    "display.locale": {
-    "default": "en-GB",
+    "default": "en-US",
     "env_value_present": false,
     "is_set": true,
     "modified_at": null,
     "source": "default",
     "stored_invalid": false,
-    "value": "en-GB"
+    "value": "en-US"
    },
    "display.mover_badges": {
     "default": false,

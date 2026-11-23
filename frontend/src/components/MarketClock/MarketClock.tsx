@@ -30,7 +30,7 @@ const HOUR = 60 * MINUTE;
 
 /** The first instant at or after `ms` that is a full hour on the wall clock of `timeZone`. */
 export function firstFullHour(ms: number, timeZone?: string): number {
-  const parts = new Intl.DateTimeFormat("en-GB", { timeZone, minute: "numeric", second: "numeric" }).formatToParts(new Date(ms));
+  const parts = new Intl.DateTimeFormat("de-DE", { timeZone, minute: "numeric", second: "numeric" }).formatToParts(new Date(ms));
   const min = Number(parts.find((p) => p.type === "minute")?.value ?? 0);
   const sec = Number(parts.find((p) => p.type === "second")?.value ?? 0);
   const past = min * MINUTE + sec * 1000 + (ms % 1000);
@@ -42,7 +42,7 @@ const JUST_PASSED = 5 * MINUTE;
 /** A regular NYSE session (09:30-16:00) and the wait overnight (16:00-09:30). */
 const SESSION = 6.5 * HOUR;
 const OVERNIGHT = 17.5 * HOUR;
-/** Under this long to a bell the digits take the accent colour. */
+/** Under this long to a bell the digits take the accent color. */
 const SOON = HOUR;
 const NY = "America/New_York";
 
@@ -194,7 +194,7 @@ function usePrefersStill(): boolean {
  * HH:MM:SS to the next bell (NYSE calendar, half-days and holidays from the server),
  * a session track (elapsed part of the trading day, or the wait overnight / over the
  * weekend) and the bell's time in the owner's zone. Under an hour the digits take the
- * accent colour; in the last minute the seconds breathe (not with reduced motion).
+ * accent color; in the last minute the seconds breathe (not with reduced motion).
  * The ticking part is hidden from screen readers, which get one still sentence. When
  * the countdown reaches zero it asks once for fresh instants; a target already in the
  * past at mount (stale data) never triggers a refetch loop and never shows a negative.

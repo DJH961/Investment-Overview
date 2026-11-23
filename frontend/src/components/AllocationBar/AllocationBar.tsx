@@ -9,7 +9,7 @@ export interface AllocationSlice {
   actual: number;
   /** Optional target weight as a fraction. */
   target?: number;
-  /** Fixed series colour 1-6 (`--chart-n`); default: by position. */
+  /** Fixed series color 1-6 (`--chart-n`); default: by position. */
   color?: number;
   /** Hatch this slice; default: every second one. */
   hatched?: boolean;
@@ -36,7 +36,7 @@ export function sliceWidths(slices: AllocationSlice[]): number[] {
 }
 
 /**
- * Stacked bar of the actual weights. Colour is never the only cue: every second
+ * Stacked bar of the actual weights. Color is never the only cue: every second
  * segment is hatched, wide segments print their share, and hovering a segment (or its
  * legend row) highlights the other one.
  */

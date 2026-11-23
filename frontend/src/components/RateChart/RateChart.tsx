@@ -173,7 +173,7 @@ function underOver(offPct: string | null | undefined): string | null {
  * Your real conversions on the chart (server `markers`): one mark per conversion at its
  * date and its own rate, sized by the EUR amount. ▲ blue = more dollars per euro than the
  * ECB daily reference (a saving), ▼ orange = fewer (a cost); a plain ring when that day has
- * no fixing. Shape carries the meaning, colour only repeats it. Only those inside the
+ * no fixing. Shape carries the meaning, color only repeats it. Only those inside the
  * plotted span. Hover or tap: "12 Mar 2025 · €2,770 → $3,000 · 1.0830 · 0.2 % under ECB".
  * Estimated conversions never reach `markers` (the server leaves them out).
  */
@@ -216,7 +216,7 @@ export function conversionMarks(data: RateHistoryDto, lens: RateLens): ChartMark
  * The Currency page's first visual: the exchange rate over a chosen range, quoted like
  * the Today card, with your average rate and the 200-day average. Direction means
  * different things for dollars held and euros still to convert, so the line is never
- * coloured good or bad; the figures below give both readings.
+ * colored good or bad; the figures below give both readings.
  */
 export function RateChart({
   currency,

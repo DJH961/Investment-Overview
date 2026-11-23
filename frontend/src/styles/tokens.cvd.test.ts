@@ -7,10 +7,10 @@ import { describe, expect, it } from "vitest";
 import { VISIONS, contrast, deltaE, type Vision } from "../lib/cvd";
 
 /**
- * Colour-blind guard. The owner is protan (red-green) colour-blind, so protan is the
+ * Color-blind guard. The owner is protan (red-green) color-blind, so protan is the
  * binding case; deutan and normal vision are checked as well. Add every new or changed
- * colour token to CVD_PAIRS (pairs that can be on screen together with different
- * meanings) or to the contrast lists below. See AGENTS.md > Colour accessibility.
+ * color token to CVD_PAIRS (pairs that can be on screen together with different
+ * meanings) or to the contrast lists below. See AGENTS.md > Color accessibility.
  */
 const MIN_PROTAN = 20; // pairs that really share a screen
 const MIN_OTHER = 15; // normal and deutan, and the "rare" pairs below
@@ -43,9 +43,9 @@ export const CVD_PAIRS: { a: string; b: string; why: string }[] = [
   { a: "--chart-3", b: "--chart-5", why: "asset-class bar: mutual funds vs cash" },
   { a: "--chart-1", b: "--chart-6", why: "asset-class bar: ETFs vs stocks" },
   { a: "--chart-3", b: "--chart-6", why: "asset-class bar: mutual funds vs stocks" },
-  { a: "--chart-3", b: "--color-pos", why: "benchmark next to a trend-coloured primary" },
-  { a: "--chart-3", b: "--color-neg", why: "benchmark next to a trend-coloured primary" },
-  // Overview hero 1D mini chart: the trend-coloured line next to the dashed
+  { a: "--chart-3", b: "--color-pos", why: "benchmark next to a trend-colored primary" },
+  { a: "--chart-3", b: "--color-neg", why: "benchmark next to a trend-colored primary" },
+  // Overview hero 1D mini chart: the trend-colored line next to the dashed
   // previous-close guide (fg; muted is too close to pos for deutan / normal).
   { a: "--color-pos", b: "--color-fg", why: "up-day 1D line vs dashed previous close" },
   { a: "--color-neg", b: "--color-fg", why: "down-day 1D line vs dashed previous close" },
@@ -63,7 +63,7 @@ export const CVD_PAIRS: { a: string; b: string; why: string }[] = [
   { a: "--color-lot-soon", b: "--color-neg", why: "Long-term in N d badge next to a loss" },
   // Conversions › deposit status chips (7.3): Matched (pos tick) and Partly matched (warn) are
   // listed above; ECB only, Pinned and "Received in USD" are neutral chips (no hue), told apart
-  // by icon and word, so they add no colour pair. The kept-dollars segment is accent / border /
+  // by icon and word, so they add no color pair. The kept-dollars segment is accent / border /
   // dotted ink with the amount written out beside it.
   // Holding page › Twin (7.1): twin line (chart-1), dashed fund estimate, NAV dots (chart-3).
   { a: "--chart-estimate", b: "--chart-1", why: "twin chart: fund estimate vs twin line" },
@@ -101,7 +101,7 @@ export const RARE_PAIRS: { a: string; b: string }[] = [
   ...["--chart-4", "--chart-5"].flatMap((a) => ["--color-pos", "--color-neg"].map((b) => ({ a, b }))),
 ];
 
-/** Text colours: >= 4.5:1 on surface and bg for normal vision, >= 3:1 as a protan sees it. */
+/** Text colors: >= 4.5:1 on surface and bg for normal vision, >= 3:1 as a protan sees it. */
 const TEXT_TOKENS = ["--color-pos", "--color-neg", "--color-warn", "--color-faint"];
 /** Lines / marks: >= 3:1 on surface and bg, in normal vision and as a protan sees it. */
 const MARK_TOKENS = [
@@ -146,7 +146,7 @@ const themes: Record<string, Record<string, string>> = {
 };
 const min = (v: Vision) => (v === "protan" ? MIN_PROTAN : MIN_OTHER);
 
-describe.each(Object.entries(themes))("colour-blind safe palette (%s)", (_name, t) => {
+describe.each(Object.entries(themes))("color-blind safe palette (%s)", (_name, t) => {
   it("defines every token the lists name", () => {
     const names = new Set([...CVD_PAIRS.flatMap((p) => [p.a, p.b]), ...TEXT_TOKENS, ...MARK_TOKENS, "--color-surface", "--color-bg"]);
     for (const n of names) expect(t[n], n).toBeDefined();

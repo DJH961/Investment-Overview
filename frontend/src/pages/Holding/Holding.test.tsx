@@ -250,7 +250,7 @@ describe("Holding page", () => {
     expect(h1).toHaveTextContent("World ETF");
     expect(h1).toHaveAttribute("title", "VWCE · World ETF");
     expect(screen.getByRole("tab", { name: "Performance" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByText("Unrealised gain")).toBeInTheDocument();
+    expect(screen.getByText("Unrealized gain")).toBeInTheDocument();
     expect(screen.getByText("XIRR")).toBeInTheDocument();
     expect(screen.getByLabelText("VWCE value against money invested")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Key facts" })).toBeInTheDocument();

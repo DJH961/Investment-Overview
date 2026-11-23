@@ -108,8 +108,8 @@ describe("Transactions", () => {
     expect(await screen.findByRole("button", { name: /January 2026/ })).toBeInTheDocument();
     expect(screen.getAllByText("1 transaction", { exact: false }).length).toBeGreaterThan(0);
     expect(screen.getAllByText("-€182.73").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("-US$201.00").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("US$100.50").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("-$201.00").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("$100.50").length).toBeGreaterThan(0);
     expect(screen.queryByText("-201.00 USD")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Edit instrument VT" })).toHaveAttribute("href", "/instruments?id=3");
   });

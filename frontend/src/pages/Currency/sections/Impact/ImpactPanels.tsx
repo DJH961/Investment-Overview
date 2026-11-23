@@ -39,7 +39,7 @@ export const foreignOf = (ccy: string) => (ccy === "EUR" ? "dollar" : "euro");
 /**
  * Your return in each currency as two bars from one zero; the gap between their ends is
  * the currency, hatched like the gap on the chart below. Your currency's bar is solid,
- * the other's outlined and dashed, so they differ by more than colour.
+ * the other's outlined and dashed, so they differ by more than color.
  */
 function ReturnBars({ eur, usd, pp, ccy }: { eur: number | null; usd: number | null; pp: number | null; ccy: string }) {
   if (eur === null || usd === null) return null;
@@ -303,7 +303,7 @@ export function ImpactHero({ data, range, figures = [] }: { data: CurrencyEffect
 /**
  * Start + deposits + market + currency = end (exact on the server), as a horizontal
  * waterfall on one scale. The start and end bars are levels; the three steps float
- * from where the previous one ended. Colour names the part (currency is the gold hatch
+ * from where the previous one ended. Color names the part (currency is the gold hatch
  * of the chart above); the direction, the arrow and the sign carry gain or loss.
  */
 export function BridgeCard({ data }: { data: CurrencyEffectDto }) {
@@ -419,7 +419,7 @@ export function BridgeCard({ data }: { data: CurrencyEffectDto }) {
 
 // ---- months / years -----------------------------------------------------------------------
 
-/** Diverging bars, blue up / orange down, each with an arrow, so the sign never rests on colour. */
+/** Diverging bars, blue up / orange down, each with an arrow, so the sign never rests on color. */
 function Bars({ bars, ccy, kind }: { bars: EffectBarDto[]; ccy: string; kind: "month" | "year" }) {
   const vals = bars.map((b) => toNum(b.currency) ?? 0);
   const maxUp = Math.max(0, ...vals);

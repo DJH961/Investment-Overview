@@ -8,7 +8,7 @@ import "./MarketChip.scss";
 
 export interface MarketChipProps {
   freshness: ClockFreshness | null | undefined;
-  /** Live prices are streaming: the dot keeps its "live" colour. */
+  /** Live prices are streaming: the dot keeps its "live" color. */
   live?: boolean;
   currency: ReportingCurrency;
   /** Fixed clock (tests). */

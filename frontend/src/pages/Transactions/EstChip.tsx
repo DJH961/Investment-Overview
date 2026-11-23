@@ -4,7 +4,7 @@ import { Chip } from "../../components/Chip";
 import "./EstChip.scss";
 import { useEstimates, type EstimateRow } from "../../lib/queries/recurring";
 
-/** "est." tag on an estimated row (icon plus text, never colour alone); one tap opens quick-settle. */
+/** "est." tag on an estimated row (icon plus text, never color alone); one tap opens quick-settle. */
 export function EstChip({ onOpen }: { onOpen: () => void }) {
   return (
     <button type="button" className="est-chip" aria-label="Estimated row: settle it" onClick={onOpen}>

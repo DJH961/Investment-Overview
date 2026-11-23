@@ -74,7 +74,7 @@ describe("Currency page", () => {
     expect(screen.getByRole("button", { name: "About Effect today" })).toBeInTheDocument();
   });
 
-  it("shows the tailwind or headwind word, not only colour", () => {
+  it("shows the tailwind or headwind word, not only color", () => {
     // The fixture: EUR today and lifetime are headwinds (a weaker dollar); in the USD
     // view (investing) the euro's strength since the start is a tailwind.
     const eur = mount();

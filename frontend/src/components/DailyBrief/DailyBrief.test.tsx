@@ -153,7 +153,7 @@ describe("DailyBrief", () => {
   it("several sessions, USD view: the value then → now, no Market line", async () => {
     stub(() => withWindow(null));
     mount("USD");
-    expect(await screen.findByTestId("brief-value-path")).toHaveTextContent("US$1,469,107 → US$1,481,087");
+    expect(await screen.findByTestId("brief-value-path")).toHaveTextContent("$1,469,107 → $1,481,087");
     expect(screen.getByTestId("brief-window-move")).not.toHaveTextContent("Market");
     expect(screen.getByTestId("brief-currency-effect")).toHaveTextContent("Investing power");
     expect(screen.queryByTestId("brief-flows")).toBeNull();
@@ -179,7 +179,7 @@ describe("DailyBrief", () => {
     stub(() => session);
     mount("USD");
     const path = await screen.findByTestId("brief-value-path");
-    expect(path).toHaveTextContent("US$1,479,687 → US$1,481,087");
+    expect(path).toHaveTextContent("$1,479,687 → $1,481,087");
     const split = screen.queryByTestId("brief-split");
     expect(split).toBeNull();
     expect(screen.getByTestId("brief-session")).not.toHaveTextContent("Market");
@@ -303,8 +303,8 @@ describe("DailyBrief", () => {
     mount("USD");
     const slot = await screen.findByTestId("brief-currency-effect");
     expect(slot).toHaveTextContent("Investing power");
-    expect(slot).toHaveTextContent("+US$5.30");
-    expect(slot).toHaveTextContent("€1,000 → US$1,076.50 (was US$1,071.20)");
+    expect(slot).toHaveTextContent("+$5.30");
+    expect(slot).toHaveTextContent("€1,000 → $1,076.50 (was $1,071.20)");
     expect(slot).toHaveTextContent("EUR/USD 1.0712 → 1.0765");
     expect(slot).not.toHaveTextContent("1,187.42");
   });
@@ -366,7 +366,7 @@ describe("DailyBrief", () => {
     expect(formatRemaining(161_001)).toBe("2:42");
     expect(formatRemaining(-5)).toBe("0:00");
     expect(sinceLabel("2026-06-29T11:00:00Z", "2026-06-30T18:15:00Z", "UTC")).toMatch(/^Mon 11:00$/);
-    expect(sinceLabel("2026-06-01T11:00:00Z", "2026-06-30T18:15:00Z", "UTC")).toMatch(/^Mon \S+ 11:00$/);
+    expect(sinceLabel("2026-06-01T11:00:00Z", "2026-06-30T18:15:00Z", "UTC")).toMatch(/^Mon \d+ Jun 11:00$/);
   });
 });
 

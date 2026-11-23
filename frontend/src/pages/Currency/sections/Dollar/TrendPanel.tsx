@@ -37,7 +37,7 @@ const DIRECTION_WORD = {
  * "Is this move normal?": the dollar's move over the window against every move of the
  * same length since 1999. The shaded band is the normal range (80 % of all moves); the
  * dot is now. Outside the band the dot turns to the warning tint and the word says so
- * (never colour alone).
+ * (never color alone).
  */
 export function NormalGauge({ range }: { range: NormalRangeDto }) {
   const move = toNum(range.move_pct) ?? 0;
@@ -197,7 +197,7 @@ export function TrendPanel({ data }: { data: DollarDto }) {
         {(run.months ?? []).map((m) => {
           const Icon = m.move === "rose" ? TrendingUp : m.move === "fell" ? TrendingDown : Minus;
           const [y, mo] = m.month.split("-").map(Number);
-          const monthName = new Date(Date.UTC(y, mo - 1, 1)).toLocaleString("en-GB", { month: "short", timeZone: "UTC" });
+          const monthName = new Date(Date.UTC(y, mo - 1, 1)).toLocaleString("en-US", { month: "short", timeZone: "UTC" });
           return (
             <li key={m.month} className={clsx("dollar-run__item", m.move === run.direction && "dollar-run__item--on")}>
               <span className="dollar-run__cell" title={`${monthName} ${y}: the ${name} ${m.move}`}>
@@ -324,7 +324,7 @@ export function TrendPanel({ data }: { data: DollarDto }) {
             {longRun && longDistance !== null ? (
               <Row
                 label="Long run"
-                tip={`The ${name} against its average since 1999. Exchange rates tend to drift back towards it over years, not months.`}
+                tip={`The ${name} against its average since 1999. Exchange rates tend to drift back toward it over years, not months.`}
               >
                 <div className="dollar-range">
                   <Bar

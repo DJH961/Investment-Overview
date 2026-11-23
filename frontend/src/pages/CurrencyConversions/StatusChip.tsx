@@ -11,7 +11,7 @@ const ICONS = {
   usd: <Banknote aria-hidden />,
 };
 
-/** Matching status: always an icon and a word, never colour alone. */
+/** Matching status: always an icon and a word, never color alone. */
 export function StatusChip({ status, pinned }: { status: DepositStatus; pinned: boolean }) {
   const look = depositStatusLook(status, pinned);
   return (
