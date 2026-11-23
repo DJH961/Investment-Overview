@@ -232,7 +232,7 @@
      "pct_of_total_return": "-0.0000597387",
      "share_of_pnl": "-0.0003465073",
      "start_value": "4370.2740948507",
-     "symbol": "VMFXX"
+     "symbol": "FAKEMM"
     },
     {
      "absolute_pnl": "-0.0000026408",
@@ -2558,7 +2558,7 @@
      "pct_of_total_return": "0",
      "share_of_pnl": "0",
      "start_value": "5000.00000000",
-     "symbol": "VMFXX"
+     "symbol": "FAKEMM"
     }
    ],
    "attribution_currency": "USD",
@@ -4865,7 +4865,7 @@
      "pct_of_total_return": "0.0000396639",
      "share_of_pnl": "0.0007461753",
      "start_value": "4223.2904331491",
-     "symbol": "VMFXX"
+     "symbol": "FAKEMM"
     },
     {
      "absolute_pnl": "-0.0000013557",
@@ -5541,7 +5541,7 @@
      "pct_of_total_return": "0",
      "share_of_pnl": "0",
      "start_value": "5000.00000000",
-     "symbol": "VMFXX"
+     "symbol": "FAKEMM"
     }
    ],
    "attribution_currency": "USD",
@@ -6247,10 +6247,10 @@
       },
       {
        "move": "-15.4981659762",
-       "name": "Fake Settlement Fund",
+       "name": "Fake Money Market Settlement Fund",
        "pct": "-0.0043810669",
        "reason": "window",
-       "symbol": "VMFXX",
+       "symbol": "FAKEMM",
        "twin": null
       }
      ],
@@ -6430,6 +6430,16 @@
     },
     {
      "asset_class": "mutual_fund",
+     "category": "Cash",
+     "current_pct": "0.0028157448",
+     "current_value": "3522.0341895026",
+     "instrument_id": 6,
+     "is_cash": true,
+     "name": "Fake Money Market Settlement Fund",
+     "symbol": "FAKEMM"
+    },
+    {
+     "asset_class": "mutual_fund",
      "category": "US Stocks",
      "current_pct": "0.0944002493",
      "current_value": "118079.2028176274",
@@ -6447,16 +6457,6 @@
      "is_cash": false,
      "name": "Fake Micro Cap Dust",
      "symbol": "FAKET"
-    },
-    {
-     "asset_class": "mutual_fund",
-     "category": "Cash",
-     "current_pct": "0.0028157448",
-     "current_value": "3522.0341895026",
-     "instrument_id": 6,
-     "is_cash": true,
-     "name": "Fake Settlement Fund",
-     "symbol": "VMFXX"
     }
    ],
    "investable_cash": "3522.0341895026",
@@ -6571,6 +6571,16 @@
     },
     {
      "asset_class": "mutual_fund",
+     "category": "Cash",
+     "current_pct": "0.0028157448",
+     "current_value": "4100.00000000",
+     "instrument_id": 6,
+     "is_cash": true,
+     "name": "Fake Money Market Settlement Fund",
+     "symbol": "FAKEMM"
+    },
+    {
+     "asset_class": "mutual_fund",
      "category": "US Stocks",
      "current_pct": "0.0944002493",
      "current_value": "137456.0000000000",
@@ -6588,16 +6598,6 @@
      "is_cash": false,
      "name": "Fake Micro Cap Dust",
      "symbol": "FAKET"
-    },
-    {
-     "asset_class": "mutual_fund",
-     "category": "Cash",
-     "current_pct": "0.0028157448",
-     "current_value": "4100.00000000",
-     "instrument_id": 6,
-     "is_cash": true,
-     "name": "Fake Settlement Fund",
-     "symbol": "VMFXX"
     }
    ],
    "investable_cash": "4100.00000000",
@@ -87641,10 +87641,10 @@
      "currency": "-377.382516",
      "dividends": "0.000000",
      "instrument_id": 6,
-     "name": "Fake Settlement Fund",
+     "name": "Fake Money Market Settlement Fund",
      "native_ccy": "USD",
      "price": "-5.586114",
-     "symbol": "VMFXX",
+     "symbol": "FAKEMM",
      "total": "-382.968630"
     },
     {
@@ -95911,10 +95911,10 @@
      "currency": "0.000000",
      "dividends": "0.000000",
      "instrument_id": 6,
-     "name": "Fake Settlement Fund",
+     "name": "Fake Money Market Settlement Fund",
      "native_ccy": "USD",
      "price": "0.000000",
-     "symbol": "VMFXX",
+     "symbol": "FAKEMM",
      "total": "0.000000"
     },
     {
@@ -102414,10 +102414,10 @@
      "currency": "64.191702",
      "dividends": "0.000000",
      "instrument_id": 6,
-     "name": "Fake Settlement Fund",
+     "name": "Fake Money Market Settlement Fund",
      "native_ccy": "USD",
      "price": "0.590004",
-     "symbol": "VMFXX",
+     "symbol": "FAKEMM",
      "total": "64.781706"
     },
     {
@@ -102937,10 +102937,10 @@
      "currency": "0.000000",
      "dividends": "0.000000",
      "instrument_id": 6,
-     "name": "Fake Settlement Fund",
+     "name": "Fake Money Market Settlement Fund",
      "native_ccy": "USD",
      "price": "0.000000",
-     "symbol": "VMFXX",
+     "symbol": "FAKEMM",
      "total": "0.000000"
     },
     {
@@ -103428,10 +103428,10 @@
      "currency": "16.319145",
      "dividends": "0.000000",
      "instrument_id": 6,
-     "name": "Fake Settlement Fund",
+     "name": "Fake Money Market Settlement Fund",
      "native_ccy": "USD",
      "price": "0.590004",
-     "symbol": "VMFXX",
+     "symbol": "FAKEMM",
      "total": "16.909149"
     },
     {
@@ -104160,10 +104160,10 @@
      "currency": "0.000000",
      "dividends": "0.000000",
      "instrument_id": 6,
-     "name": "Fake Settlement Fund",
+     "name": "Fake Money Market Settlement Fund",
      "native_ccy": "USD",
      "price": "0.000000",
-     "symbol": "VMFXX",
+     "symbol": "FAKEMM",
      "total": "0.000000"
     },
     {
@@ -104833,10 +104833,10 @@
      "currency": "-78.625547",
      "dividends": "0.000000",
      "instrument_id": 6,
-     "name": "Fake Settlement Fund",
+     "name": "Fake Money Market Settlement Fund",
      "native_ccy": "USD",
      "price": "0.534578",
-     "symbol": "VMFXX",
+     "symbol": "FAKEMM",
      "total": "-78.090969"
     },
     {
@@ -107825,10 +107825,10 @@
      "currency": "0.000000",
      "dividends": "0.000000",
      "instrument_id": 6,
-     "name": "Fake Settlement Fund",
+     "name": "Fake Money Market Settlement Fund",
      "native_ccy": "USD",
      "price": "0.000000",
-     "symbol": "VMFXX",
+     "symbol": "FAKEMM",
      "total": "0.000000"
     },
     {
@@ -110166,10 +110166,10 @@
      "currency": "77.875409",
      "dividends": "0.000000",
      "instrument_id": 6,
-     "name": "Fake Settlement Fund",
+     "name": "Fake Money Market Settlement Fund",
      "native_ccy": "USD",
      "price": "0.534578",
-     "symbol": "VMFXX",
+     "symbol": "FAKEMM",
      "total": "78.409987"
     },
     {
@@ -111155,10 +111155,10 @@
      "currency": "0.000000",
      "dividends": "0.000000",
      "instrument_id": 6,
-     "name": "Fake Settlement Fund",
+     "name": "Fake Money Market Settlement Fund",
      "native_ccy": "USD",
      "price": "0.000000",
-     "symbol": "VMFXX",
+     "symbol": "FAKEMM",
      "total": "0.000000"
     },
     {
@@ -112042,10 +112042,10 @@
      "currency": "-189.706327",
      "dividends": "0.000000",
      "instrument_id": 6,
-     "name": "Fake Settlement Fund",
+     "name": "Fake Money Market Settlement Fund",
      "native_ccy": "USD",
      "price": "0.534578",
-     "symbol": "VMFXX",
+     "symbol": "FAKEMM",
      "total": "-189.171749"
     },
     {
@@ -119764,10 +119764,10 @@
      "currency": "0.000000",
      "dividends": "0.000000",
      "instrument_id": 6,
-     "name": "Fake Settlement Fund",
+     "name": "Fake Money Market Settlement Fund",
      "native_ccy": "USD",
      "price": "0.000000",
-     "symbol": "VMFXX",
+     "symbol": "FAKEMM",
      "total": "0.000000"
     },
     {
@@ -126064,10 +126064,10 @@
      "currency": "-377.382516",
      "dividends": "0.000000",
      "instrument_id": 6,
-     "name": "Fake Settlement Fund",
+     "name": "Fake Money Market Settlement Fund",
      "native_ccy": "USD",
      "price": "-5.586114",
-     "symbol": "VMFXX",
+     "symbol": "FAKEMM",
      "total": "-382.968630"
     },
     {
@@ -134334,10 +134334,10 @@
      "currency": "0.000000",
      "dividends": "0.000000",
      "instrument_id": 6,
-     "name": "Fake Settlement Fund",
+     "name": "Fake Money Market Settlement Fund",
      "native_ccy": "USD",
      "price": "0.000000",
-     "symbol": "VMFXX",
+     "symbol": "FAKEMM",
      "total": "0.000000"
     },
     {
@@ -139686,10 +139686,10 @@
      "currency": "-377.382516",
      "dividends": "0.000000",
      "instrument_id": 6,
-     "name": "Fake Settlement Fund",
+     "name": "Fake Money Market Settlement Fund",
      "native_ccy": "USD",
      "price": "-5.586114",
-     "symbol": "VMFXX",
+     "symbol": "FAKEMM",
      "total": "-382.968630"
     },
     {
@@ -147956,10 +147956,10 @@
      "currency": "0.000000",
      "dividends": "0.000000",
      "instrument_id": 6,
-     "name": "Fake Settlement Fund",
+     "name": "Fake Money Market Settlement Fund",
      "native_ccy": "USD",
      "price": "0.000000",
-     "symbol": "VMFXX",
+     "symbol": "FAKEMM",
      "total": "0.000000"
     },
     {
@@ -154787,10 +154787,10 @@
      "currency": "31.336676",
      "dividends": "0.000000",
      "instrument_id": 6,
-     "name": "Fake Settlement Fund",
+     "name": "Fake Money Market Settlement Fund",
      "native_ccy": "USD",
      "price": "0.534578",
-     "symbol": "VMFXX",
+     "symbol": "FAKEMM",
      "total": "31.871254"
     },
     {
@@ -156426,10 +156426,10 @@
      "currency": "0.000000",
      "dividends": "0.000000",
      "instrument_id": 6,
-     "name": "Fake Settlement Fund",
+     "name": "Fake Money Market Settlement Fund",
      "native_ccy": "USD",
      "price": "0.000000",
-     "symbol": "VMFXX",
+     "symbol": "FAKEMM",
      "total": "0.000000"
     },
     {
@@ -298231,7 +298231,7 @@
      "is_money_market": true,
      "market_open": false,
      "mtd_growth": "0.0168657717",
-     "name": "Fake Settlement Fund",
+     "name": "Fake Money Market Settlement Fund",
      "native_currency": "USD",
      "price_as_of": null,
      "price_data_warning": false,
@@ -298239,7 +298239,7 @@
      "price_native": "1",
      "price_type": "nav",
      "shares": "4100.00000000",
-     "symbol": "VMFXX",
+     "symbol": "FAKEMM",
      "today_move": null,
      "today_pct": null,
      "total_growth": "-0.0836259438",
@@ -298528,7 +298528,7 @@
      "is_money_market": true,
      "market_open": false,
      "mtd_growth": "0",
-     "name": "Fake Settlement Fund",
+     "name": "Fake Money Market Settlement Fund",
      "native_currency": "USD",
      "price_as_of": null,
      "price_data_warning": false,
@@ -298536,7 +298536,7 @@
      "price_native": "1",
      "price_type": "nav",
      "shares": "4100.00000000",
-     "symbol": "VMFXX",
+     "symbol": "FAKEMM",
      "today_move": null,
      "today_pct": null,
      "total_growth": "0E-10",
@@ -298871,7 +298871,7 @@
      "is_money_market": true,
      "market_open": false,
      "mtd_growth": "0.0168657717",
-     "name": "Fake Settlement Fund",
+     "name": "Fake Money Market Settlement Fund",
      "native_currency": "USD",
      "price_as_of": null,
      "price_data_warning": false,
@@ -298879,7 +298879,7 @@
      "price_native": "1",
      "price_type": "nav",
      "shares": "4100.00000000",
-     "symbol": "VMFXX",
+     "symbol": "FAKEMM",
      "today_move": null,
      "today_pct": null,
      "total_growth": "-0.0836259438",
@@ -299211,7 +299211,7 @@
      "is_money_market": true,
      "market_open": false,
      "mtd_growth": "0",
-     "name": "Fake Settlement Fund",
+     "name": "Fake Money Market Settlement Fund",
      "native_currency": "USD",
      "price_as_of": null,
      "price_data_warning": false,
@@ -299219,7 +299219,7 @@
      "price_native": "1",
      "price_type": "nav",
      "shares": "4100.00000000",
-     "symbol": "VMFXX",
+     "symbol": "FAKEMM",
      "today_move": null,
      "today_pct": null,
      "total_growth": "0E-10",
@@ -299572,7 +299572,7 @@
      "is_money_market": true,
      "market_open": false,
      "mtd_growth": "0.0168657717",
-     "name": "Fake Settlement Fund",
+     "name": "Fake Money Market Settlement Fund",
      "native_currency": "USD",
      "price_as_of": null,
      "price_data_warning": false,
@@ -299580,7 +299580,7 @@
      "price_native": "1",
      "price_type": "nav",
      "shares": "4100.00000000",
-     "symbol": "VMFXX",
+     "symbol": "FAKEMM",
      "today_move": null,
      "today_pct": null,
      "total_growth": "-0.0836259438",
@@ -299930,7 +299930,7 @@
      "is_money_market": true,
      "market_open": false,
      "mtd_growth": "0",
-     "name": "Fake Settlement Fund",
+     "name": "Fake Money Market Settlement Fund",
      "native_currency": "USD",
      "price_as_of": null,
      "price_data_warning": false,
@@ -299938,7 +299938,7 @@
      "price_native": "1",
      "price_type": "nav",
      "shares": "4100.00000000",
-     "symbol": "VMFXX",
+     "symbol": "FAKEMM",
      "today_move": null,
      "today_pct": null,
      "total_growth": "0E-10",
@@ -300309,7 +300309,7 @@
      "is_money_market": true,
      "market_open": false,
      "mtd_growth": "0.0168657717",
-     "name": "Fake Settlement Fund",
+     "name": "Fake Money Market Settlement Fund",
      "native_currency": "USD",
      "price_as_of": null,
      "price_data_warning": false,
@@ -300317,7 +300317,7 @@
      "price_native": "1",
      "price_type": "nav",
      "shares": "4100.00000000",
-     "symbol": "VMFXX",
+     "symbol": "FAKEMM",
      "today_move": null,
      "today_pct": null,
      "total_growth": "-0.0836259438",
@@ -300685,7 +300685,7 @@
      "is_money_market": true,
      "market_open": false,
      "mtd_growth": "0",
-     "name": "Fake Settlement Fund",
+     "name": "Fake Money Market Settlement Fund",
      "native_currency": "USD",
      "price_as_of": null,
      "price_data_warning": false,
@@ -300693,7 +300693,7 @@
      "price_native": "1",
      "price_type": "nav",
      "shares": "4100.00000000",
-     "symbol": "VMFXX",
+     "symbol": "FAKEMM",
      "today_move": null,
      "today_pct": null,
      "total_growth": "0E-10",
@@ -301010,7 +301010,7 @@
      "is_money_market": true,
      "market_open": false,
      "mtd_growth": "0.0168657717",
-     "name": "Fake Settlement Fund",
+     "name": "Fake Money Market Settlement Fund",
      "native_currency": "USD",
      "price_as_of": null,
      "price_data_warning": false,
@@ -301018,7 +301018,7 @@
      "price_native": "1",
      "price_type": "nav",
      "shares": "4100.00000000",
-     "symbol": "VMFXX",
+     "symbol": "FAKEMM",
      "today_move": null,
      "today_pct": null,
      "total_growth": "-0.0836259438",
@@ -301332,7 +301332,7 @@
      "is_money_market": true,
      "market_open": false,
      "mtd_growth": "0",
-     "name": "Fake Settlement Fund",
+     "name": "Fake Money Market Settlement Fund",
      "native_currency": "USD",
      "price_as_of": null,
      "price_data_warning": false,
@@ -301340,7 +301340,7 @@
      "price_native": "1",
      "price_type": "nav",
      "shares": "4100.00000000",
-     "symbol": "VMFXX",
+     "symbol": "FAKEMM",
      "today_move": null,
      "today_pct": null,
      "total_growth": "0E-10",
@@ -301632,7 +301632,7 @@
      "is_money_market": true,
      "market_open": false,
      "mtd_growth": "0.0168657717",
-     "name": "Fake Settlement Fund",
+     "name": "Fake Money Market Settlement Fund",
      "native_currency": "USD",
      "price_as_of": null,
      "price_data_warning": false,
@@ -301640,7 +301640,7 @@
      "price_native": "1",
      "price_type": "nav",
      "shares": "4100.00000000",
-     "symbol": "VMFXX",
+     "symbol": "FAKEMM",
      "today_move": null,
      "today_pct": null,
      "total_growth": "-0.0836259438",
@@ -301929,7 +301929,7 @@
      "is_money_market": true,
      "market_open": false,
      "mtd_growth": "0",
-     "name": "Fake Settlement Fund",
+     "name": "Fake Money Market Settlement Fund",
      "native_currency": "USD",
      "price_as_of": null,
      "price_data_warning": false,
@@ -301937,7 +301937,7 @@
      "price_native": "1",
      "price_type": "nav",
      "shares": "4100.00000000",
-     "symbol": "VMFXX",
+     "symbol": "FAKEMM",
      "today_move": null,
      "today_pct": null,
      "total_growth": "0E-10",
@@ -302132,6 +302132,29 @@
    "active": true,
    "asset_class": "mutual_fund",
    "asset_class_override": null,
+   "category": "Bonds",
+   "expense_ratio": null,
+   "expense_ratio_override": null,
+   "fetch_symbol": "FAKEMM",
+   "id": 6,
+   "intraday_twin": null,
+   "latest_price_date": "2026-06-30",
+   "ledger_asset_class": "mutual_fund",
+   "ledger_name": "Fake Money Market Settlement Fund",
+   "name": "Fake Money Market Settlement Fund",
+   "name_override": null,
+   "native_currency": "USD",
+   "pricing_mode": "auto",
+   "provider_symbol": null,
+   "symbol": "FAKEMM",
+   "transaction_count": 7,
+   "twin_daily_gap": null,
+   "twin_suggestion": null
+  },
+  {
+   "active": true,
+   "asset_class": "mutual_fund",
+   "asset_class_override": null,
    "category": "US Stocks",
    "expense_ratio": null,
    "expense_ratio_override": null,
@@ -302171,29 +302194,6 @@
    "provider_symbol": null,
    "symbol": "FAKET",
    "transaction_count": 1,
-   "twin_daily_gap": null,
-   "twin_suggestion": null
-  },
-  {
-   "active": true,
-   "asset_class": "mutual_fund",
-   "asset_class_override": null,
-   "category": "Bonds",
-   "expense_ratio": null,
-   "expense_ratio_override": null,
-   "fetch_symbol": "VMFXX",
-   "id": 6,
-   "intraday_twin": null,
-   "latest_price_date": "2026-06-30",
-   "ledger_asset_class": "mutual_fund",
-   "ledger_name": "Fake Settlement Fund",
-   "name": "Fake Settlement Fund",
-   "name_override": null,
-   "native_currency": "USD",
-   "pricing_mode": "auto",
-   "provider_symbol": null,
-   "symbol": "VMFXX",
-   "transaction_count": 7,
    "twin_daily_gap": null,
    "twin_suggestion": null
   },
@@ -307948,7 +307948,7 @@
     "quantity": "-100.00000000",
     "settlement_date": null,
     "source": "manual",
-    "symbol": "VMFXX"
+    "symbol": "FAKEMM"
    },
    {
     "account": "Main Brokerage Account With A Rather Long Label For Overflow Testing",
@@ -308000,7 +308000,7 @@
     "quantity": "-200.00000000",
     "settlement_date": null,
     "source": "manual",
-    "symbol": "VMFXX"
+    "symbol": "FAKEMM"
    },
    {
     "account": "Main Brokerage Account With A Rather Long Label For Overflow Testing",
@@ -308104,7 +308104,7 @@
     "quantity": "-100.00000000",
     "settlement_date": null,
     "source": "manual",
-    "symbol": "VMFXX"
+    "symbol": "FAKEMM"
    },
    {
     "account": "Main Brokerage Account With A Rather Long Label For Overflow Testing",
@@ -308156,7 +308156,7 @@
     "quantity": "-200.00000000",
     "settlement_date": null,
     "source": "manual",
-    "symbol": "VMFXX"
+    "symbol": "FAKEMM"
    },
    {
     "account": "Main Brokerage Account With A Rather Long Label For Overflow Testing",
@@ -308234,7 +308234,7 @@
     "quantity": "-100.00000000",
     "settlement_date": null,
     "source": "manual",
-    "symbol": "VMFXX"
+    "symbol": "FAKEMM"
    },
    {
     "account": "Main Brokerage Account With A Rather Long Label For Overflow Testing",
@@ -308286,7 +308286,7 @@
     "quantity": "-200.00000000",
     "settlement_date": null,
     "source": "manual",
-    "symbol": "VMFXX"
+    "symbol": "FAKEMM"
    },
    {
     "account": "Main Brokerage Account With A Rather Long Label For Overflow Testing",
@@ -309794,7 +309794,7 @@
     "quantity": "5000.00000000",
     "settlement_date": null,
     "source": "manual",
-    "symbol": "VMFXX"
+    "symbol": "FAKEMM"
    },
    {
     "account": "Retirement",
