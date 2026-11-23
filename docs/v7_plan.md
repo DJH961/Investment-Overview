@@ -15,12 +15,17 @@
 > The technical companion, with build notes per push, is
 > [`v7_implementation_notes.md`](v7_implementation_notes.md).
 >
-> **Status (2026-11-22): 7.2.0 is current on `main`; 7.2.1 is open for the owner's review**
-> on `release/7.2.1`: the finished part of 7.3 (pins, statuses, provider, the rate chip, the
-> reworked Conversions page), the Currency page fixes (All range in the sticky bar, Impact's
-> time-weighted chain with idle broker cash, the USD view as the investing side, round-the-clock
-> 1D/1W rate chart with shaded US market hours, Scenarios following the range) and the sold
-> holding lookup. Sessions 2 and 3 of 7.3 stay for 7.3.0.
+> **Status (2026-11-23): 7.3.0 is released from `feat/v7.3.0`. Push 7 (7.3, conversions) is
+> done:**
+> - **Conversion costs** and the Currency page's **Conversions** section;
+> - **smart import matching** (P15);
+> - **recurring plans** for conversions, deposits and multi-fund buys, with est. rows, a
+>   quick-settle sheet and a guided setup (P14);
+> - the **Wise statement import**, kept dollars and "Received in USD";
+> - **American English** throughout, with a separate date setting.
+>
+> P6 (lump sum) was dropped. **Next: 7.3.1**, money-maths consistency, starting with
+> `docs/v7_3_1_money_math_issues.md`. Then push 8 (7.4).
 >
 > **Release train to 7.2.1 (owner, 2026-11-21), one session, merged in this order:**
 >
