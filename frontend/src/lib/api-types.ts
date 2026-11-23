@@ -3492,6 +3492,8 @@ export interface components {
             headline: components["schemas"]["EffectHeadline"];
             /** Holdings */
             holdings?: components["schemas"]["HoldingEffect"][];
+            /** Holdings Note */
+            holdings_note?: string | null;
             investing?: components["schemas"]["InvestingEffect"] | null;
             /**
              * Missing Deposit Days
@@ -4435,6 +4437,8 @@ export interface components {
              * @enum {string}
              */
             lead: "effect" | "gap" | "deposits";
+            /** Lens Note */
+            lens_note?: string | null;
             /** Market */
             market: string;
             /** Note */
@@ -4443,6 +4447,7 @@ export interface components {
             other_ccy?: ("EUR" | "USD") | null;
             /** Other Effect */
             other_effect?: string | null;
+            other_lens?: components["schemas"]["OtherLens"] | null;
             /**
              * Return Basis
              * @enum {string}
@@ -6876,6 +6881,28 @@ export interface components {
             password: boolean;
             /** Targets */
             targets: boolean;
+        };
+        /**
+         * OtherLens
+         * @description The same rate move read from the other currency, labelled as such.
+         */
+        OtherLens: {
+            /** Currency */
+            currency?: ("EUR" | "USD") | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "tailwind" | "headwind" | "neutral";
+            /** Label */
+            label: string;
+            /**
+             * Unit
+             * @enum {string}
+             */
+            unit: "fraction" | "money";
+            /** Value */
+            value?: string | null;
         };
         /**
          * OverviewEstimate

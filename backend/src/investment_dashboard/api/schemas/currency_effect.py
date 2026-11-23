@@ -69,6 +69,17 @@ EffectStatKey = Literal[
 EffectStatUnit = Literal["rate", "fraction", "money", "count"]
 
 
+class OtherLens(ApiModel):
+    """The same rate move read from the other currency, labelled as such."""
+
+    label: str
+    value: DecStr | None = None
+    #: ``fraction`` (a return gap) or ``money``.
+    unit: Literal["fraction", "money"]
+    currency: Ccy | None = None
+    kind: EffectKind
+
+
 class EffectHeadline(ApiModel):
     """EUR return, USD return, the effect between them and the effect in money."""
 
@@ -97,6 +108,10 @@ class EffectHeadline(ApiModel):
     #: USD view gets the EUR side's own effect: what the gap is in euros).
     other_effect: DecStr | None = None
     other_ccy: Ccy | None = None
+    #: The other lens on the same rate move (USD view: the euro-vs-dollar gap).
+    other_lens: OtherLens | None = None
+    #: One sentence on how the two views relate (USD view).
+    lens_note: str | None = None
 
 
 class EffectPoint(ApiModel):
@@ -364,6 +379,8 @@ class CurrencyEffectOut(ApiModel):
     missing_deposit_days: int = 0
     #: One plain sentence about those days for a tip; null when there are none.
     book_note: str | None = None
+    #: USD view of an all-dollar book: why the holdings show no currency effect.
+    holdings_note: str | None = None
     #: USD view only: the investing perspective (null without USD deposits).
     investing: InvestingEffect | None = None
     #: The range as dates (one meaning for the whole page, 7.3.1).

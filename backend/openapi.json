@@ -3887,6 +3887,17 @@
             "title": "Holdings",
             "type": "array"
           },
+          "holdings_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Holdings Note"
+          },
           "investing": {
             "anyOf": [
               {
@@ -6724,6 +6735,17 @@
             "title": "Lead",
             "type": "string"
           },
+          "lens_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lens Note"
+          },
           "market": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Market",
@@ -6766,6 +6788,16 @@
               }
             ],
             "title": "Other Effect"
+          },
+          "other_lens": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OtherLens"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "return_basis": {
             "enum": [
@@ -13652,6 +13684,66 @@
           "complete"
         ],
         "title": "OnboardingOut",
+        "type": "object"
+      },
+      "OtherLens": {
+        "description": "The same rate move read from the other currency, labelled as such.",
+        "properties": {
+          "currency": {
+            "anyOf": [
+              {
+                "enum": [
+                  "EUR",
+                  "USD"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "kind": {
+            "enum": [
+              "tailwind",
+              "headwind",
+              "neutral"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "unit": {
+            "enum": [
+              "fraction",
+              "money"
+            ],
+            "title": "Unit",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "label",
+          "unit",
+          "kind"
+        ],
+        "title": "OtherLens",
         "type": "object"
       },
       "OverviewEstimate": {

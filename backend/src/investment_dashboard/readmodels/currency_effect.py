@@ -128,6 +128,18 @@ MISMATCH_NOTE = (
 )
 
 
+#: How the two views relate (USD view, shown once under its headline).
+LENS_NOTE = (
+    "One rate move, two lenses: a stronger euro shrinks your dollar book in euros "
+    "and makes each euro you send buy more dollars."
+)
+#: The USD view of an all-dollar book: the rate cannot move it.
+HOLDINGS_USD_NOTE = (
+    "Your holdings are in dollars, so in the dollar view the rate does not move them. "
+    "Their currency effect shows in the euro view."
+)
+
+
 def mismatch_note(effect: Decimal, effect_pp: Decimal | None) -> str | None:
     """:data:`MISMATCH_NOTE` when the shown money effect and the shown gap differ in sign.
 
@@ -1108,6 +1120,8 @@ def _one_side(  # noqa: PLR0912, PLR0915
         # Filled by :func:`build_effect_both` from the other side (lead ``gap`` only).
         "other_effect": None,
         "other_ccy": None,
+        "other_lens": None,
+        "lens_note": None,
     }
     # The USD view reads the currency the way you invest: your euros becoming dollars.
     investing = (
@@ -1116,7 +1130,26 @@ def _one_side(  # noqa: PLR0912, PLR0915
         else None
     )
     if investing is not None:
-        headline |= {"lead": "deposits", "kind": investing["kind"], "note": None}
+        # Two lenses on one rate move (7.3.1): the dollar view reads your euros
+        # becoming dollars; the euro-vs-dollar return gap is the euro lens, shown as
+        # a labelled line of its own so the two never read as one contradiction.
+        headline |= {
+            "lead": "deposits",
+            "kind": investing["kind"],
+            "note": None,
+            "other_lens": (
+                {
+                    "label": "Seen from euros",
+                    "value": _f(effect_pp),
+                    "unit": "fraction",
+                    "currency": None,
+                    "kind": kind_of(effect_pp),
+                }
+                if effect_pp is not None
+                else None
+            ),
+            "lens_note": LENS_NOTE,
+        }
 
     if range_key in INTRADAY_RANGES:
         series = intraday_series(
@@ -1259,6 +1292,7 @@ def _one_side(  # noqa: PLR0912, PLR0915
         "run": run,
         "records": records,
         "holdings": holdings,
+        "holdings_note": HOLDINGS_USD_NOTE if ccy == "USD" and not moved else None,
         "session_split": split,
         "buys": buys,
         "stats": stats,
