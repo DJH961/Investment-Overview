@@ -1,29 +1,26 @@
 import { ClipboardCheck, Upload } from "lucide-react";
 import { useState } from "react";
-import { useEstimates, useSettle, type EstimateRow } from "../../lib/queries/recurring";
+import { useEstimates, type EstimateRow } from "../../lib/queries/recurring";
 import { Button, LinkButton } from "../Button";
 import { SettleSheet } from "../SettleSheet";
-import { useToast } from "../Toast";
 import "./ReminderCard.scss";
 
 /**
  * The one quiet reminder for estimated rows from recurring plans: a line per plan that says
  * what input is needed ("Revolut conversion, 1 Dec: type what you received"), never a line
  * per row, and nothing at all for deposits. Each line opens the quick-settle sheet on that
- * plan's drafts; "Accept as estimated" settles them as they are.
+ * plan's drafts: you always see the numbers before they are confirmed.
  */
 export function ReminderCard() {
   const { data } = useEstimates();
   const [queue, setQueue] = useState<readonly EstimateRow[]>([]);
-  const settle = useSettle();
-  const { toast } = useToast();
   if (!data?.count) return null;
   const rowsOf = (planId: number | null, kind: "buy" | "conversion") =>
     data.rows.filter((r) => r.plan_id === planId && (kind === "buy") === (r.row_type === "transaction"));
   return (
     <section className="reminder-card" aria-label="Estimated rows to settle">
       <h2 className="reminder-card__title">
-        <ClipboardCheck aria-hidden /> {data.count} to settle: estimated entries from your plans
+        <ClipboardCheck aria-hidden /> {data.count} estimated {data.count === 1 ? "entry" : "entries"} to settle
       </h2>
       <ul className="reminder-card__list">
         {data.groups.map((g) => {
@@ -42,20 +39,6 @@ export function ReminderCard() {
                 ) : (
                   <span className="reminder-card__btn-slot" aria-hidden />
                 )}
-                <Button
-                  className="reminder-card__btn"
-                  variant="ghost"
-                  fullWidth
-                  loading={settle.isPending}
-                  onClick={() =>
-                    settle.mutate(
-                      { rows: rows.map((r) => ({ row_type: r.row_type, id: r.id })) },
-                      { onError: (e) => toast({ title: "Could not settle", description: e.message, tone: "error" }) },
-                    )
-                  }
-                >
-                  Accept as estimated
-                </Button>
               </span>
             </li>
           );

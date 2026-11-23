@@ -109,15 +109,12 @@ export function SettleSheet({ rows, onClose }: SettleSheetProps) {
   const editRate = (rate: string) =>
     set({ ...draft, rate, received: relinkConversion("rate", { received: draft.received, rate }, row.sent ?? "0").received });
 
+  // Every row is saved with the figures shown: nothing is confirmed unseen.
   const body = (): SettleRowBody => {
     const base = { row_type: row.row_type, id: row.id } as SettleRowBody;
-    if (isBuy) {
-      const changed = draft.total !== original.total || draft.quantity !== original.quantity || draft.priceOverride !== null;
-      // Net is the total; the stored price is the derived (or overridden) one.
-      return changed ? { ...base, price: price || undefined, quantity: draft.quantity, total: draft.total } : base;
-    }
-    const changed = draft.received !== original.received || draft.fee !== original.fee;
-    return changed ? { ...base, received: draft.received, fees: draft.fee } : base;
+    // Net is the total; the stored price is the derived (or overridden) one.
+    if (isBuy) return { ...base, price: price || undefined, quantity: draft.quantity, total: draft.total };
+    return { ...base, received: draft.received, fees: draft.fee };
   };
 
   const last = index >= rows.length - 1;
@@ -196,7 +193,7 @@ export function SettleSheet({ rows, onClose }: SettleSheetProps) {
                     <span className="settle-sheet__price-hint">{draft.touched ? " (total ÷ shares)" : ""}</span>
                   </span>
                   <Button className="settle-sheet__small" variant="ghost" onClick={() => setEditingPrice(true)}>
-                    Edit
+                    Edit price
                   </Button>
                 </>
               )}

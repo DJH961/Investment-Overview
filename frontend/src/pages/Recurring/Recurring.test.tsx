@@ -120,7 +120,7 @@ describe("SettleSheet", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
     wrap(<SettleSheet rows={[buyDraft]} onClose={() => undefined} />);
-    await userEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Edit price" }));
     await userEvent.click(screen.getByRole("button", { name: /Price per share \(typed\): increase by 0\.0001/ }));
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init?.method === "POST")).toBe(true));

@@ -792,7 +792,7 @@ def _seed_recurring(
         for leg, holding in ((legs[0], instrument), (legs[1], second)):
             amount = leg.amount
             price = px(holding.symbol, day)
-            qty = (amount / price).quantize(D("0.00000001"))
+            qty = (amount / price).quantize(D("0.0001"))
             tag = f"manual:plan-{due.isoformat()}-{holding.symbol}"
             add(
                 account,
