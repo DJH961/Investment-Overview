@@ -162,6 +162,7 @@ def estimates(session: SessionDep) -> EstimatesOut:
                 count=g.count,
                 input=cast("Literal['type', 'import']", g.input),
                 message=g.message,
+                provider=cast("Provider | None", g.provider),
             )
             for g in service.reminder_groups(session)
         ],
@@ -183,6 +184,9 @@ def estimates(session: SessionDep) -> EstimatesOut:
                 received=_s(v.received),
                 price_dp=v.price_dp,
                 quantity_dp=v.quantity_dp,
+                eur_rate=_s(v.eur_rate),
+                eur_rate_source=cast("Literal['conversion', 'ecb'] | None", v.eur_rate_source),
+                eur_rate_date=v.eur_rate_date.isoformat() if v.eur_rate_date else None,
             )
             for v in rows
         ],

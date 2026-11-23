@@ -29,14 +29,20 @@ export function ReminderCard() {
             <li key={`${g.plan_id}-${g.kind}`} className="reminder-card__line">
               <span className="reminder-card__message">{g.message}</span>
               <span className="reminder-card__actions">
-                <Button className="reminder-card__btn" variant="primary" fullWidth onClick={() => setQueue(rows)}>
-                  Settle
-                </Button>
                 {g.input === "import" && (
-                  <LinkButton className="reminder-card__btn" to="/import" fullWidth leftIcon={<Upload aria-hidden />}>
+                  <LinkButton
+                    className="reminder-card__btn"
+                    size="sm"
+                    to="/import"
+                    leftIcon={<Upload aria-hidden />}
+                    aria-label={`Import file for ${g.message}`}
+                  >
                     Import file
                   </LinkButton>
                 )}
+                <Button className="reminder-card__btn" size="sm" variant="primary" onClick={() => setQueue(rows)}>
+                  Settle
+                </Button>
               </span>
             </li>
           );

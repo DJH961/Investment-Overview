@@ -4488,6 +4488,18 @@ export interface components {
             date: string;
             /** Due Date */
             due_date: string | null;
+            /**
+             * Eur Rate
+             * @description USD per EUR to value this buy's dollars in EUR: the all-in rate of the plan's own latest conversion on or before the due date, else the latest real conversion, else today's settled ECB fixing. Null for non-USD rows.
+             */
+            eur_rate?: string | null;
+            /**
+             * Eur Rate Date
+             * @description Date of the conversion (or of the ECB fixing) the rate is from.
+             */
+            eur_rate_date?: string | null;
+            /** Eur Rate Source */
+            eur_rate_source?: ("conversion" | "ecb") | null;
             /** Fees */
             fees: string | null;
             /** Id */
@@ -7901,7 +7913,7 @@ export interface components {
             count: number;
             /**
              * Input
-             * @description What settles them: type the figures (conversions) or import the file (buys).
+             * @description 'import' when a file import can settle them (buys, Wise); 'type' otherwise.
              * @enum {string}
              */
             input: "type" | "import";
@@ -7912,11 +7924,16 @@ export interface components {
             kind: "buy" | "conversion";
             /**
              * Message
-             * @description One plain sentence for this plan; never one per row.
+             * @description One short line for this plan; never one per row.
              */
             message: string;
             /** Plan Id */
             plan_id: number | null;
+            /**
+             * Provider
+             * @description Conversion groups: the provider (Wise has a statement import).
+             */
+            provider?: ("wise" | "revolut" | "other") | null;
         };
         /**
          * ReturnSplit

@@ -43,17 +43,12 @@ function shortMoney(amount: string | null, currency: "USD" | "EUR"): string {
 
 const PROVIDER_NAME: Record<string, string> = { wise: "Wise", revolut: "Revolut", other: "another provider" };
 
-/** The short, scannable first line: what happens and how often. */
+/** The title: what is bought, converted or deposited (the cadence is the muted line below). */
 function titleText(p: RecurringPlan): string {
-  const c = cadenceText(p);
-  const every = c.charAt(0).toLowerCase() + c.slice(1); // 'every 2 weeks on Monday'
-  if (p.kind === "conversion") {
-    return `${shortMoney(p.amount, "EUR")} via ${PROVIDER_NAME[p.provider ?? "revolut"]} · ${every}`;
-  }
-  if (p.kind === "deposit") return `${shortMoney(p.amount, "USD")} deposit · ${every}`;
+  if (p.kind === "conversion") return `${shortMoney(p.amount, "EUR")} via ${PROVIDER_NAME[p.provider ?? "revolut"]}`;
+  if (p.kind === "deposit") return `${shortMoney(p.amount, "USD")} deposit`;
   const parts = p.legs.map((l) => `${l.shares ? `${Number(l.shares)} sh` : shortMoney(l.amount, "USD")} ${l.symbol}`);
-  const what = parts.length <= 2 ? parts.join(" + ") : `${parts.length} holdings`;
-  return `${what} · ${every}`;
+  return parts.length <= 2 ? parts.join(" + ") : `${parts.length} holdings`;
 }
 
 const STATUS = {
@@ -109,7 +104,16 @@ export function Recurring() {
                   <Icon aria-hidden />
                 </span>
                 <div className="recurring-page__plan-text">
-                  <strong className="recurring-page__plan-title">{titleText(p)}</strong>
+                  <span className="recurring-page__plan-title">{titleText(p)}</span>
+                  <span className="recurring-page__plan-sub">
+                    {[
+                      cadenceText(p),
+                      p.next_due ? `Next ${formatDate(p.next_due)}` : null,
+                      p.end_date ? `until ${formatDate(p.end_date)}` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </span>
                   {p.account && (
                     <span className="recurring-page__plan-account" data-truncate-ok title={p.account}>
                       {p.account}
@@ -120,14 +124,6 @@ export function Recurring() {
                       {p.legs.map((l) => l.symbol).join(", ")}
                     </span>
                   )}
-                  <span className="recurring-page__plan-sub">
-                    {[
-                      p.next_due ? `Next ${formatDate(p.next_due)}` : null,
-                      p.end_date ? `until ${formatDate(p.end_date)}` : null,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </span>
                   {p.note && <span className="recurring-page__plan-note">{p.note}</span>}
                 </div>
                 <Chip className="recurring-page__plan-status" size="sm" tone={st.tone} icon={st.icon}>

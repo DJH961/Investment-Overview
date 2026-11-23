@@ -41,6 +41,8 @@ function wrap(ui: React.ReactNode) {
   );
 }
 
+vi.mock("../../lib/prefs", () => ({ usePrefs: () => ({ currency: "USD" }) }));
+
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Recurring", () => {
@@ -67,9 +69,11 @@ describe("Recurring", () => {
       ),
     );
     wrap(<Recurring />);
-    expect(await screen.findByText("$200 FAKEL · every month on the 25th")).toBeInTheDocument();
-    expect(screen.getByText("€1,000 via Wise · every month on the 28th")).toBeInTheDocument();
-    expect(screen.getByText("$12.50 FAKEL + 1.5 sh FAKEB · every week on monday")).toBeInTheDocument();
+    expect(await screen.findByText("$200 FAKEL")).toBeInTheDocument();
+    expect(screen.getByText(/^Every month on the 25th/)).toBeInTheDocument();
+    expect(screen.getByText(/^Every week on Monday/)).toBeInTheDocument();
+    expect(screen.getByText("€1,000 via Wise")).toBeInTheDocument();
+    expect(screen.getByText("$12.50 FAKEL + 1.5 sh FAKEB")).toBeInTheDocument();
     expect(screen.getAllByText(/^Fidelity Main Brokerage/)[0]).toBeInTheDocument();
   });
 });
@@ -102,11 +106,11 @@ describe("SettleSheet", () => {
     const onClose = vi.fn();
     wrap(<SettleSheet rows={[buyDraft]} onClose={onClose} />);
     // The draft's own price, at the precision the stepper moves (259.903400 is padding).
-    expect(await screen.findByText("259.9034")).toBeInTheDocument();
+    expect(await screen.findByText(/259\.9034/)).toBeInTheDocument();
     // Total and shares are the big steppers; stepping the total never changes the shares.
     await userEvent.click(screen.getByRole("button", { name: /Total: decrease by 0\.01/ }));
     expect(screen.getByRole("button", { name: /Shares: 0\.7695/ })).toBeInTheDocument();
-    expect(screen.getByText("259.8960")).toBeInTheDocument(); // 199.99 / 0.7695
+    expect(screen.getByText(/259\.8960/)).toBeInTheDocument(); // 199.99 / 0.7695
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     const post = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");

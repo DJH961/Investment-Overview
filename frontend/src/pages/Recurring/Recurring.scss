@@ -49,8 +49,12 @@
     min-width: 0;
   }
 
+  // The standard card-title type: sentence case, medium weight; the rest is muted meta.
   &__plan-title {
     overflow-wrap: anywhere;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-fg);
   }
 
   // The account is a quiet second line: one line, ellipsis for long names.
@@ -72,10 +76,32 @@
     flex: none;
   }
 
+  // Edit / Pause / End / Delete on one line, even at 360 px: compact buttons share the row.
   &__plan-actions {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: var(--space-1);
+    margin-left: calc(var(--space-7) + var(--space-3));
+
+    > * {
+      flex: 0 1 auto;
+      min-width: 0;
+      padding-inline: var(--space-2);
+      white-space: nowrap;
+    }
+
+    @media (max-width: 480px) {
+      margin-left: 0;
+
+      > * {
+        min-height: var(--tap-min);
+        flex: 1 1 0;
+        justify-content: center;
+        gap: var(--space-1);
+        padding-inline: var(--space-1);
+        font-size: var(--font-size-xs);
+      }
+    }
   }
 
   &__kinds {

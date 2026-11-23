@@ -102,6 +102,18 @@ class EstimateOut(ApiModel):
         default=4, description="Decimals the ledger holds for this price (what a stepper moves)."
     )
     quantity_dp: int = Field(default=4, description="Same for the quantity.")
+    eur_rate: DecStr | None = Field(
+        default=None,
+        description=(
+            "USD per EUR to value this buy's dollars in EUR: the all-in rate of the plan's "
+            "own latest conversion on or before the due date, else the latest real "
+            "conversion, else today's settled ECB fixing. Null for non-USD rows."
+        ),
+    )
+    eur_rate_source: Literal["conversion", "ecb"] | None = None
+    eur_rate_date: str | None = Field(
+        default=None, description="Date of the conversion (or of the ECB fixing) the rate is from."
+    )
 
 
 class ReminderGroupOut(ApiModel):
@@ -109,9 +121,12 @@ class ReminderGroupOut(ApiModel):
     kind: Literal["buy", "conversion"]
     count: int
     input: Literal["type", "import"] = Field(
-        description="What settles them: type the figures (conversions) or import the file (buys)."
+        description="'import' when a file import can settle them (buys, Wise); 'type' otherwise."
     )
-    message: str = Field(description="One plain sentence for this plan; never one per row.")
+    message: str = Field(description="One short line for this plan; never one per row.")
+    provider: Provider | None = Field(
+        default=None, description="Conversion groups: the provider (Wise has a statement import)."
+    )
 
 
 class EstimatesOut(ApiModel):

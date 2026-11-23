@@ -304470,17 +304470,19 @@
   "groups": [
    {
     "count": 1,
-    "input": "type",
+    "input": "import",
     "kind": "conversion",
-    "message": "Wise conversion, 28 Jun: type what you received",
-    "plan_id": 2
+    "message": "Wise conversion · 28 Jun",
+    "plan_id": 2,
+    "provider": "wise"
    },
    {
     "count": 2,
     "input": "import",
     "kind": "buy",
-    "message": "Monthly buys (Fidelity): 2 due dates (4 buys) to settle. Import your Fidelity file, or type them",
-    "plan_id": 1
+    "message": "Monthly buys (Fidelity) · 2 due dates, 4 buys",
+    "plan_id": 1,
+    "provider": null
    }
   ],
   "rows": [
@@ -304488,6 +304490,9 @@
     "currency": "EUR",
     "date": "2026-06-28",
     "due_date": "2026-06-28",
+    "eur_rate": null,
+    "eur_rate_date": null,
+    "eur_rate_source": null,
     "fees": "2.500000",
     "id": 1,
     "label": "wise",
@@ -304506,6 +304511,9 @@
     "currency": "USD",
     "date": "2026-06-25",
     "due_date": "2026-06-25",
+    "eur_rate": "1.1776690397",
+    "eur_rate_date": "2026-05-30",
+    "eur_rate_source": "conversion",
     "fees": "0.000000",
     "id": 39,
     "label": "Fidelity Main Brokerage Account With A Rather Long Label For Overflow Testing",
@@ -304524,6 +304532,9 @@
     "currency": "USD",
     "date": "2026-06-25",
     "due_date": "2026-06-25",
+    "eur_rate": "1.1776690397",
+    "eur_rate_date": "2026-05-30",
+    "eur_rate_source": "conversion",
     "fees": "0.000000",
     "id": 37,
     "label": "Fidelity Main Brokerage Account With A Rather Long Label For Overflow Testing",
@@ -304542,6 +304553,9 @@
     "currency": "USD",
     "date": "2026-05-26",
     "due_date": "2026-05-25",
+    "eur_rate": "1.1826649699",
+    "eur_rate_date": "2026-05-08",
+    "eur_rate_source": "conversion",
     "fees": "0.000000",
     "id": 35,
     "label": "Fidelity Main Brokerage Account With A Rather Long Label For Overflow Testing",
@@ -304560,6 +304574,9 @@
     "currency": "USD",
     "date": "2026-05-26",
     "due_date": "2026-05-25",
+    "eur_rate": "1.1826649699",
+    "eur_rate_date": "2026-05-08",
+    "eur_rate_source": "conversion",
     "fees": "0.000000",
     "id": 33,
     "label": "Fidelity Main Brokerage Account With A Rather Long Label For Overflow Testing",

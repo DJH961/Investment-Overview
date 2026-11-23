@@ -46,6 +46,33 @@ describe("stepDecimal", () => {
   });
 });
 
+describe("stepDecimal is plain decimal arithmetic at the step (golden)", () => {
+  it("minus subtracts exactly one step, borrowing across the point", () => {
+    expect(stepDecimal("100.00", 2, -1)).toBe("99.99");
+    expect(stepDecimal("0.10", 2, -1)).toBe("0.09");
+    expect(stepDecimal("1.6094", 4, -1)).toBe("1.6093");
+    expect(stepDecimal("2.0000", 4, -1)).toBe("1.9999");
+    expect(stepDecimal("1000.00", 2, -1)).toBe("999.99");
+    expect(stepDecimal("0.01", 2, -1)).toBe("0.00");
+  });
+  it("plus carries across the point", () => {
+    expect(stepDecimal("99.99", 2, 1)).toBe("100.00");
+    expect(stepDecimal("1.9999", 4, 1)).toBe("2.0000");
+    expect(stepDecimal("0.09", 2, 1)).toBe("0.10");
+  });
+  it("x10 steps a tenth of a unit more and crosses a boundary cleanly", () => {
+    expect(stepDecimal("100.00", 2, -1, 10)).toBe("99.90");
+    expect(stepDecimal("99.95", 2, 1, 10)).toBe("100.05");
+    expect(stepDecimal("0.05", 2, -1, 10)).toBe("0.00");
+    expect(stepDecimal("1.0000", 4, -1, 10)).toBe("0.9990");
+  });
+  it("many minus presses in a row never drift upward", () => {
+    let v = "100.00";
+    for (let i = 0; i < 25; i++) v = stepDecimal(v, 2, -1);
+    expect(v).toBe("99.75");
+  });
+});
+
 describe("splitAtStep", () => {
   it("names the digit a step moves", () => {
     expect(splitAtStep("249.9001")).toEqual({ head: "249.900", digit: "1", tail: "" });

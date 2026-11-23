@@ -40,6 +40,7 @@ from investment_dashboard.repositories import recurring_repo as repo
 from investment_dashboard.services import (
     fx_conversion_service,
     fx_cost_service,
+    fx_service,
     manual_entry,
     prices_service,
     transaction_edit_service,
@@ -708,6 +709,12 @@ class EstimateView:
     #: Decimals the ledger really holds for this account + instrument (what a stepper moves).
     price_dp: int = 4
     quantity_dp: int = 4
+    #: USD per EUR that the dollars of this row are valued at in EUR (buys only), and where
+    #: it comes from: "conversion" (all-in rate of the plan's own latest conversion on or
+    #: before the due date, else the latest real conversion) or "ecb" (today's settled fixing).
+    eur_rate: Decimal | None = None
+    eur_rate_source: str | None = None
+    eur_rate_date: date | None = None
 
 
 #: Stepper precision when an account + instrument has no history (the plan's 0.0001).
@@ -848,9 +855,12 @@ class ReminderGroup:
     plan_id: int | None
     kind: str  # "buy" | "conversion"
     count: int
-    input: str  # "type" (conversions) | "import" (buys; typing stays available)
+    #: "import" when a file import can settle them (buys, Wise conversions); typing stays
+    #: available either way. "type" (Revolut conversions) has no statement to import.
+    input: str
     message: str
     row_ids: tuple[tuple[str, int], ...]
+    provider: str | None = None
 
 
 def _cadence_word(plan: RecurringPlan | None) -> str:
@@ -877,28 +887,26 @@ def reminder_groups(session: Session) -> list[ReminderGroup]:
         dates = sorted({v.due_date or v.date for v in views})
         k = len(dates)
         if row_type == "fx_conversion":
-            provider = (views[0].label or "").title() or "Conversion"
+            key = (views[0].label or "").lower()
+            name = key.title() or "Conversion"
             if k == 1:
                 on = dates[0]
-                message = (
-                    f"{provider} conversion, {on.day} {on.strftime('%b')}: type what you received"
-                )
+                message = f"{name} conversion · {on.day} {on.strftime('%b')}"
             else:
-                message = f"{provider} conversions: {k} to settle: type what you received"
-            out.append(ReminderGroup(plan_id, "conversion", k, "type", message, refs))
+                message = f"{name} conversions · {k} to settle"
+            how = "import" if key == "wise" else "type"
+            out.append(ReminderGroup(plan_id, "conversion", k, how, message, refs, key or None))
         else:
             broker = (views[0].label.split(" ")[0] if views[0].label else "").title()
             title = f"{_cadence_word(plan)} buys" + (f" ({broker})" if broker else "")
-            file_hint = f"import your {broker} file" if broker else "import your broker file"
+            buys = f"{n} {'buy' if n == 1 else 'buys'}"
             if k == 1:
                 on = dates[0]
-                what = f"{n} {'buy' if n == 1 else 'buys'} to settle"
-                title = f"{title}, {on.day} {on.strftime('%b')}"
+                message = f"{title} · {on.day} {on.strftime('%b')}, {buys}"
             elif n == k:
-                what = f"{k} to settle"
+                message = f"{title} · {k} due dates"
             else:
-                what = f"{k} due dates ({n} buys) to settle"
-            message = f"{title}: {what}. {file_hint[0].upper()}{file_hint[1:]}, or type them"
+                message = f"{title} · {k} due dates, {buys}"
             out.append(ReminderGroup(plan_id, "buy", k, "import", message, refs))
     return out
 
@@ -935,9 +943,35 @@ def plan_view(session: Session, plan: RecurringPlan, *, today: date | None = Non
     )
 
 
+def _eur_rate_for(
+    session: Session, on: date, conversions: Sequence[FxConversion]
+) -> tuple[Decimal, str, date] | None:
+    """The EUR value rate for dollars due on ``on`` (all-in USD per EUR, see EstimateView)."""
+
+    def all_in(c: FxConversion) -> Decimal:
+        return c.usd_received / (c.eur_sent + (c.fees_eur or Decimal(0)))
+
+    before = [c for c in conversions if c.date <= on]
+    planned = [c for c in before if c.estimate_plan_id is not None]
+    real = [c for c in before if not c.is_estimate]
+    for pool in (planned, real):
+        if pool:
+            latest = max(pool, key=lambda c: (c.date, c.id))
+            return all_in(latest), "conversion", latest.date
+    ecb = fx_service.get_settled_rate(session, exchange_today(), base="EUR", quote="USD")
+    return (ecb, "ecb", exchange_today()) if ecb else None
+
+
+def _eur_fields(found: tuple[Decimal, str, date] | None) -> dict[str, object]:
+    if found is None:
+        return {}
+    return {"eur_rate": found[0], "eur_rate_source": found[1], "eur_rate_date": found[2]}
+
+
 def estimate_views(session: Session) -> list[EstimateView]:
     """Every est. row to settle, newest first (buys and conversions together)."""
     txns, convs = list_estimates(session)
+    all_conversions = fx_conversion_service.list_conversions(session) if txns else ()
     out: list[EstimateView] = []
     for t in txns:
         account = accounts_repo.get_account(session, t.account_id)
@@ -960,6 +994,11 @@ def estimate_views(session: Session) -> list[EstimateView]:
                 received=None,
                 price_dp=ledger_precision(session, t.account_id, t.instrument_id or 0)[0],
                 quantity_dp=ledger_precision(session, t.account_id, t.instrument_id or 0)[1],
+                **_eur_fields(
+                    _eur_rate_for(session, t.estimate_due_date or t.date, all_conversions)
+                    if account is not None and account.native_currency == "USD"
+                    else None
+                ),
             )
         )
     out.extend(

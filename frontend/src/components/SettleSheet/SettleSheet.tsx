@@ -1,6 +1,7 @@
 import { Check } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { formatDate, formatMoney } from "../../lib/format";
+import { formatDate, formatMoney, formatNumber } from "../../lib/format";
+import { usePrefs } from "../../lib/prefs";
 import { useSettle, type EstimateRow, type SettleRowBody } from "../../lib/queries/recurring";
 import {
   allInRate,
@@ -36,6 +37,11 @@ interface Draft {
 }
 
 const PRICE_SHOWN_DP = 4;
+
+/** The currency's symbol as the app formats it ("US$", "€"), for a prefix on a figure. */
+function symbolOf(currency: "USD" | "EUR"): string {
+  return formatMoney(0, currency, { digits: 0 }).replace(/[\d\s.,]/g, "");
+}
 
 /** What the steppers move: the ledger's precision, without the padding zeros of a long draft. */
 function dpsOf(row: EstimateRow): { priceDp: number; qtyDp: number } {
@@ -82,6 +88,9 @@ export function SettleSheet({ rows, onClose }: SettleSheetProps) {
   const [editingPrice, setEditingPrice] = useState(false);
   const settle = useSettle();
   const { toast } = useToast();
+  // EUR display mode only: a muted "about" line under the total, at the rate the server
+  // sends with the row (the dollars' own conversion, else the ECB rate).
+  const { currency: display } = usePrefs();
 
   // A fresh queue starts at the first draft.
   const signature = rows.map((r) => `${r.row_type}:${r.id}`).join(",");
@@ -102,6 +111,18 @@ export function SettleSheet({ rows, onClose }: SettleSheetProps) {
   }
 
   const isBuy = row.row_type === "transaction";
+  const ccy = (row.currency === "EUR" ? "EUR" : "USD") as "USD" | "EUR";
+  const sym = symbolOf(ccy);
+  const totalIn = Number(draft.total);
+  const rate = Number(row.eur_rate);
+  const aboutTotal =
+    display === "EUR" && ccy === "USD" && rate > 0 && totalIn > 0
+      ? `≈ ${formatMoney(totalIn / rate, "EUR")} ${
+          row.eur_rate_source === "conversion"
+            ? `at your ${formatDate(row.eur_rate_date ?? "")} conversion (${formatNumber(rate, 4)})`
+            : "at the ECB rate"
+        }`
+      : undefined;
   const dps = dpsOf(row);
   const set = (next: Draft) => setDrafts((d) => ({ ...d, [key]: next }));
   // Full precision is what gets stored; the line below shows it rounded to `priceDp`.
@@ -161,7 +182,15 @@ export function SettleSheet({ rows, onClose }: SettleSheetProps) {
         </button>
         {isBuy ? (
           <div className="settle-sheet__fields">
-            <Stepper label="Total" value={draft.total} dp={MONEY_DP} mult={mult} onChange={(v) => set({ ...draft, total: v, touched: true })} />
+            <Stepper
+              label="Total"
+              value={draft.total}
+              dp={MONEY_DP}
+              mult={mult}
+              prefix={sym}
+              hint={aboutTotal}
+              onChange={(v) => set({ ...draft, total: v, touched: true })}
+            />
             <Stepper
               label="Shares"
               value={draft.quantity}
@@ -174,6 +203,7 @@ export function SettleSheet({ rows, onClose }: SettleSheetProps) {
                 <>
                   <Stepper
                     label="Price per share (typed)"
+                    prefix={sym}
                     value={price}
                     dp={dps.priceDp}
                     mult={mult}
@@ -193,7 +223,7 @@ export function SettleSheet({ rows, onClose }: SettleSheetProps) {
               ) : (
                 <>
                   <span className="settle-sheet__price-text">
-                    Price per share <strong className="money">{price || "–"}</strong>
+                    Price per share <strong className="money">{price ? `${sym} ${price}` : "–"}</strong>
                     <span className="settle-sheet__price-hint">{draft.touched ? " (total ÷ shares)" : ""}</span>
                   </span>
                   <Button className="settle-sheet__small" variant="ghost" onClick={() => setEditingPrice(true)}>
@@ -205,7 +235,7 @@ export function SettleSheet({ rows, onClose }: SettleSheetProps) {
           </div>
         ) : (
           <div className="settle-sheet__fields">
-            <Stepper label="USD received" value={draft.received} dp={MONEY_DP} mult={mult} onChange={editReceived} />
+            <Stepper label="USD received" value={draft.received} dp={MONEY_DP} mult={mult} prefix={symbolOf("USD")} onChange={editReceived} />
             <Stepper
               label="Rate"
               value={draft.rate}
@@ -216,6 +246,7 @@ export function SettleSheet({ rows, onClose }: SettleSheetProps) {
             />
             <Stepper
               label="Fee (EUR)"
+              prefix={symbolOf("EUR")}
               value={draft.fee}
               dp={MONEY_DP}
               mult={mult}

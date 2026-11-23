@@ -7005,6 +7005,46 @@
             ],
             "title": "Due Date"
           },
+          "eur_rate": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "USD per EUR to value this buy's dollars in EUR: the all-in rate of the plan's own latest conversion on or before the due date, else the latest real conversion, else today's settled ECB fixing. Null for non-USD rows.",
+            "title": "Eur Rate"
+          },
+          "eur_rate_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Date of the conversion (or of the ECB fixing) the rate is from.",
+            "title": "Eur Rate Date"
+          },
+          "eur_rate_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "conversion",
+                  "ecb"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eur Rate Source"
+          },
           "fees": {
             "anyOf": [
               {
@@ -17013,7 +17053,7 @@
             "type": "integer"
           },
           "input": {
-            "description": "What settles them: type the figures (conversions) or import the file (buys).",
+            "description": "'import' when a file import can settle them (buys, Wise); 'type' otherwise.",
             "enum": [
               "type",
               "import"
@@ -17030,7 +17070,7 @@
             "type": "string"
           },
           "message": {
-            "description": "One plain sentence for this plan; never one per row.",
+            "description": "One short line for this plan; never one per row.",
             "title": "Message",
             "type": "string"
           },
@@ -17044,6 +17084,23 @@
               }
             ],
             "title": "Plan Id"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "wise",
+                  "revolut",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Conversion groups: the provider (Wise has a statement import).",
+            "title": "Provider"
           }
         },
         "required": [
