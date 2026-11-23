@@ -8,6 +8,51 @@ main (7.2.1 #429 and the 360 px chip fix #430 merged in). One release, 7.3.0; PR
 No version bump yet; CHANGELOG entries sit under `[Unreleased]`, folded into
 `## [7.3.0]` at release. Nothing pushed.
 
+## CURRENT STATE (read this first; 2026-11-23 evening)
+
+**Work loop (owner rule, AGENTS.md "UI feedback loop: screenshots first"):** UI agents shoot
+as soon as it compiles; you and the agent reject bad shots first; only good shots go to the
+owner (SendUserFile); full tests run ONCE after his approval. Shot script:
+`.claude/shots73.cjs` (from `frontend/`: `NODE_PATH=$(pwd)/node_modules node
+../.claude/shots73.cjs <outDir> [view…]`, fixture dev server on 5273 via
+`preview_start frontend-fixtures`; `CLIP_Y`/`CLIP_H` env for slices of long phone pages).
+Language: **American English** everywhere (memory `american-english`), except dates.
+
+**Approved by the owner and merged into feat/v7.3.0:** Currency › Conversions section (costs,
+timing, markers, By-year phone mini table, provider side-by-side), Conversions page (year folds,
+no month level, indent, "Paid for deposits on…", 4-line phone rows), `/currency` overflow fixes
+(overflow 16/16 incl. `/currency`). All four 7.3 lanes + P15 undo merged earlier.
+Impact "Mixed" tag REVERTED (d4ad2df2) → 7.3.1 (`docs/v7_3_1_money_math_issues.md`).
+
+**In flight (not merged):**
+1. `lane/v7.3-recurring-polish` (lane C agent; last sha be97e27c, round 2 running). Owner notes
+   being done: Import button on Wise conversion reminders (→ Wise statement card); desktop
+   reminder = one row per item with Import + Settle side by side (Import first), short left text;
+   phones stacked, Import first; plan titles in the app's normal card-title style (amounts as
+   title, "Every month on the 25th · Next 12 Dec" muted, account 2nd muted line); currency on
+   Total / Price per share (and €/$ on conversion fields); in EUR mode only a muted line under
+   Total "≈ €86.12 at your 14 Nov conversion (1.1586)" using the flow's conversion-plan rate
+   (latest on/before due date), else the latest real conversion, else "at the ECB rate"
+   (server-side fields on `GET /estimates`); smart minus (100.00 − 0.01 = 99.99; owner saw
+   100.09: stepper bug) with golden tests; Edit/Pause/End/Delete on one line at 360; shots of
+   every "Set up your routine" step and the Add plan form → then walk the owner through setup
+   (top buttons: "Set up your routine" = guided 3-step conversion → deposit → buys, prefilled
+   from the last 120 days, nothing created until confirmed; "Add plan" = one plan).
+   Already done there: multi-fund buy plans (`recurring_plan_legs` in migration 0027,
+   `transactions.estimate_leg_id` in the unique key), Total/Shares-first stepper with derived
+   price + "Edit price", aligned reminder actions, no "Accept as estimated" (UI only, backend
+   `/settle` unchanged by owner's wish), no est. note, VMFXX fixture fund, capitalized weekdays,
+   price at 4 dp.
+2. `lane/v7.3-american-english` (locale agent, from feat/v7.3.0): remove the en-GB preset
+   (en-US default; stored "en-GB" reads as en-US), "$" not "US$", American spelling in
+   user-visible text, AGENTS.md language line, CHANGELOG Changed. **Dates exception:** separate
+   date setting, default "14 Nov 2026" (month name, day first), options "Nov 14, 2026",
+   "14.11.2026" (German), "2026-11-14", each with a live example; "Sep" not "Sept"; never
+   MM/DD/YYYY by default. Hands back shots of Overview, Transactions, Conversions,
+   Settings › Display.
+
+If an agent is gone: its branch has wip commits; read `git log feat/v7.3.0..<branch>`.
+
 ## Owner decisions (2026-11-22)
 
 - 7.3.0 = conversion costs + Currency "Conversions" section + P15 + P14 + Wise import.
@@ -78,14 +123,20 @@ difference as its own lines: "while your dollars waited" (`usd/r_deposit − usd
 
 ## Left to do
 
-1. Merge lane B's undo and the Impact fix; regenerate openapi/api-types/fixtures; targeted tests.
-2. Full frontend `npm run test` and one clean `npm run test:overflow` (add `/currency` and
-   `/recurring` to the overflow route list).
-3. Known gaps to judge: Data Health `estimated_rows` is warning-level (there is no info
-   severity); rate-chart marker tap on phones is weak (SVG title); no frontend tests for
-   SettleSheet/Recurring beyond stepper maths; setup flow is 3 separate POSTs.
-4. Screenshots of changed views (Conversions page, Currency Conversions section, rate chart
-   markers, Recurring list + setup, settle sheet, Transactions est. chip, Import update rows,
-   Wise import, Impact) at 360/390/768/1280 both themes; critique each; owner approves.
-5. Bump 7.3.0 in lockstep (backend/pyproject, web/ + frontend/package.json, lockfiles,
-   openapi), CHANGELOG `## [7.3.0] — date`, plan status line; PR; CI green.
+1. Owner approves Recurring round 2 shots + the setup walkthrough; merge
+   `lane/v7.3-recurring-polish`.
+2. Owner approves the American English shots; merge `lane/v7.3-american-english` (expect
+   conflicts with recurring polish in format calls / snapshots; regenerate fixtures).
+3. Still unshot for the owner: Transactions est. chip, Import page update rows (P15), Wise import
+   card. Shoot, self-review, send.
+4. Small leftovers: By-year title ~8 px further in than its rows on desktop; Data Health
+   `estimated_rows` is warning-level (no info severity exists); rate-chart marker tap on phones
+   is weak (SVG title); setup flow = 3 separate POSTs.
+5. Then ONE full check round: backend targeted pytest (fx, recurring, import, wise, migration
+   roundtrip, schema, app contract), `npx vitest run --testTimeout=20000`, `npm run
+   test:overflow` (kill stale listeners on 4173 first), ruff/mypy/lint-imports; regenerate
+   openapi/api-types/fixtures once.
+6. Bump 7.3.0 in lockstep (backend/pyproject + `uv lock`, web/ + frontend/package.json +
+   `npm install`, openapi), CHANGELOG `## [7.3.0] — date` (fold Unreleased; drop the reverted
+   Impact "Fixed" line if any remains), plan status line; commit, push, PR to main; CI green;
+   merge (owner trusts merging green PRs).
