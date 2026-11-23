@@ -6,10 +6,10 @@ export interface GlossaryEntry {
 }
 
 export const GLOSSARY: GlossaryEntry[] = [
-  { key: "cagr", term: "CAGR", definition: "Compound annual growth rate: the steady yearly rate of the time-weighted return, so deposits and withdrawals do not count as growth. Under a year invested it is the plain growth, not annualised." },
+  { key: "cagr", term: "CAGR", definition: "Compound annual growth rate: the steady yearly rate of the time-weighted return, so deposits and withdrawals do not count as growth. Under a year invested it is the plain growth, not annualized." },
   { key: "twr", term: "TWR", definition: "Time-weighted return. Chains the return of each sub-period so the size and timing of your deposits do not matter. Use it to judge the investments themselves. It is not the Overview's Total growth, which is money-weighted: (1 + XIRR) to the power of the years held, minus 1." },
-  { key: "xirr", term: "XIRR", definition: "Money-weighted annualised return. Takes the size and date of every deposit and withdrawal into account, so it reflects your own timing." },
-  { key: "volatility", term: "Volatility", definition: "Annualised standard deviation of daily returns. Higher means a bumpier ride." },
+  { key: "xirr", term: "XIRR", definition: "Money-weighted annualized return. Takes the size and date of every deposit and withdrawal into account, so it reflects your own timing." },
+  { key: "volatility", term: "Volatility", definition: "Annualized standard deviation of daily returns. Higher means a bumpier ride." },
   { key: "sharpe", term: "Sharpe ratio", definition: "Return above the risk-free rate per unit of volatility. Above 1 is generally good; negative means you earned less than the risk-free rate." },
   { key: "sortino", term: "Sortino ratio", definition: "Like Sharpe, but only downside volatility counts as risk." },
   { key: "max_drawdown", term: "Max drawdown", definition: "The largest peak-to-trough fall in the period." },
@@ -24,8 +24,8 @@ export const GLOSSARY: GlossaryEntry[] = [
   { key: "risk_free", term: "Risk-free rate", definition: "The return on a very safe asset (a short-term government rate). Sharpe and Sortino measure your return above it." },
   { key: "benchmark", term: "Benchmark (funded)", definition: "A reference index fed with the same deposits on the same dates as your portfolio, so the comparison is fair. The gap shows how far ahead or behind you are." },
   { key: "attribution", term: "Attribution", definition: "How much each holding added to or took from the total return. Net added is the money moved into a holding during the period (cash dividends it paid out count as money moved out). Money-market funds and cash count only what they earned. P&L = End − Start − Net added." },
-  { key: "capital_gain", term: "Capital gain", definition: "Realised plus unrealised price gain after fees, with no dividends in it: total return minus dividend income. Includes gains locked in by selling and money held in cash or savings." },
-  { key: "unrealised_gain", term: "Unrealised gain", definition: "Value minus cost basis of what you still hold, without dividends. It is the part of the capital gain that is not yet locked in by a sale." },
+  { key: "capital_gain", term: "Capital gain", definition: "Realized plus unrealized price gain after fees, with no dividends in it: total return minus dividend income. Includes gains locked in by selling and money held in cash or savings." },
+  { key: "unrealised_gain", term: "Unrealized gain", definition: "Value minus cost basis of what you still hold, without dividends. It is the part of the capital gain that is not yet locked in by a sale." },
   { key: "total_return", term: "Total return", definition: "Capital gain plus dividend income (cash and reinvested), after fees, for the whole portfolio including sold positions. Same number on Overview and Holdings." },
   { key: "net_invested", term: "Net invested", definition: "Deposits minus withdrawals to date." },
 ];

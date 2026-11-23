@@ -249,7 +249,7 @@ describe("Chart", () => {
     expect(screen.getByRole("status")).toHaveTextContent(`TIP${pts[0].t}`);
   });
 
-  it("colours by trend and draws the end marker", () => {
+  it("colors by trend and draws the end marker", () => {
     const { container } = render(<Chart {...props} series={[series[0]]} trend="down" />);
     expect(container.firstElementChild).toHaveClass("chart--down");
     expect(container.querySelector('[data-end-marker="down"]')).not.toBeNull();

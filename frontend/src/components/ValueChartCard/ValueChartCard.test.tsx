@@ -83,13 +83,13 @@ describe("ValueChartCard", () => {
     expect(localStorage.getItem("iv.chart.overview.range")).toBe('"1w"');
   });
 
-  it("1D: dashed previous close, trend colour, day subtitle, growth and coverage note", () => {
+  it("1D: dashed previous close, trend color, day subtitle, growth and coverage note", () => {
     graphData = day;
     const { container } = render(<ValueChartCard currency="EUR" defaultRange="1d" marketOpen />);
     expect(screen.getByText("Prev close €1,005")).toBeInTheDocument();
     expect(container.querySelector(".chart--down")).not.toBeNull();
     // The day label shares the growth line, so ranges never shift the layout.
-    expect(screen.getByTestId("range-growth")).toHaveTextContent("1D · Fri 30/10");
+    expect(screen.getByTestId("range-growth")).toHaveTextContent("1D · Fri 30 Oct");
     expect(screen.getByTestId("range-growth")).toHaveTextContent("-1.50%");
     expect(screen.getByText(/complete for 3 of 5 sessions/)).toBeInTheDocument();
     // axis ticks are clock times
@@ -144,7 +144,7 @@ describe("ValueChartCard", () => {
       .mockReturnValue({ width: 900, height: 300 } as DOMRect);
     const { container, unmount } = render(<ValueChartCard currency="EUR" defaultRange="1d" marketOpen />);
     expect(container.querySelector('[data-series="secondary"]')).not.toBeNull();
-    // Charts use the narrow symbol: "$116.7k", never "US$116.7k".
+    // Charts use the narrow symbol: "$116.7k", never "$116.7k".
     expect(container.querySelector(".chart__axis-label--right")?.textContent).toMatch(/^\$/);
     width.mockRestore();
     fireEvent.click(screen.getByRole("button", { name: "USD" }));

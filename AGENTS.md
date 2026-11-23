@@ -76,6 +76,9 @@ other doc.
   commands.
 - The owner does anything involving accounts, logins or secrets; agents prepare,
   check and explain.
+- **Language: American English** in the UI, number/date formats (en-US default; no
+  en-GB option), code comments and docs going forward. Dates default to the month name
+  ("14 Nov 2026"), never month-first numerics.
 - **Subagents:** either invoke a subagent, wait for it to finish (end your turn and let
   reactive wakeup deliver its result), and actually use its work — **or** do not spawn a
   subagent at all. Never spawn a subagent only to do the same work yourself in parallel

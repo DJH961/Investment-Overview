@@ -56,7 +56,7 @@ describe("OverviewHoldings", () => {
     expect(screen.queryByText("top winner")).toBeNull();
     expect(screen.queryByText("top loser")).toBeNull();
     expect(container.querySelector('[data-symbol="S20"] .overview-holdings__today--stale')).not.toBeNull();
-    // A greyed move says why (never colour alone).
+    // A greyed move says why (never color alone).
     expect(container.querySelector('[data-symbol="S20"] .overview-holdings__today--stale')).toHaveTextContent(
       /an earlier session's move/,
     );

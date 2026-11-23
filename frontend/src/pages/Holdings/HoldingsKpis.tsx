@@ -53,14 +53,14 @@ export function HoldingsKpis({ data, currency }: Props) {
       value: <Money amount={toNum(data?.total_capital_gain)} currency={currency} signed colored />,
       hint: (
         <>
-          <Money amount={toNum(data?.total_unrealised_gain)} currency={currency} signed digits={0} /> unrealised
+          <Money amount={toNum(data?.total_unrealised_gain)} currency={currency} signed digits={0} /> unrealized
         </>
       ),
       tip: (
         <>
-          {glossaryText("capital_gain")} Unrealised gain on what you still hold, plus{" "}
-          <Money amount={toNum(data?.total_realised_other)} currency={currency} signed digits={0} /> realised and other
-          (sold positions, cash and savings, fees). The table below lists the unrealised part per holding.
+          {glossaryText("capital_gain")} Unrealized gain on what you still hold, plus{" "}
+          <Money amount={toNum(data?.total_realised_other)} currency={currency} signed digits={0} /> realized and other
+          (sold positions, cash and savings, fees). The table below lists the unrealized part per holding.
         </>
       ),
     },

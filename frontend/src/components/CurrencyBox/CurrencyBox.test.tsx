@@ -84,7 +84,7 @@ describe("CurrencyBox", () => {
     expect(screen.getByText("since last open")).toBeInTheDocument();
     expect(screen.getByText("Since close")).toBeInTheDocument();
     expect(screen.getByText("EOD FX")).toBeInTheDocument();
-    expect(screen.getByText("as of 30/10, 15:00")).toBeInTheDocument();
+    expect(screen.getByText("as of 30 Oct, 15:00")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Currency effect on Friday" })).toBeInTheDocument();
     expect(container.querySelector(".diverging-bar__row")).toHaveAttribute("data-row", "overnight");
     expect(container.querySelector('[data-row="overnight"]')).toHaveTextContent("paused");
@@ -129,9 +129,9 @@ describe("CurrencyBox", () => {
     render(<CurrencyBox data={overview("USD", {})} />);
     expect(screen.getByText("EUR/USD")).toBeInTheDocument();
     const panel = screen.getByRole("region", { name: "Investing power since yesterday" });
-    expect(within(panel).getAllByText("+US$1.25").length).toBeGreaterThan(0);
+    expect(within(panel).getAllByText("+$1.25").length).toBeGreaterThan(0);
     expect(within(panel).getByText("€500")).toBeInTheDocument();
-    expect(within(panel).getByText("US$540.00")).toBeInTheDocument();
+    expect(within(panel).getByText("$540.00")).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: /Currency effect/ })).toBeNull();
   });
 

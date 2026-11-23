@@ -17,6 +17,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- American English throughout: en-US is the default format, the UK format is gone
+  (a stored "en-GB" reads as en-US), dollars show as $, and user-visible spelling is
+  American (unrealized, color, canceled). Dates are their own setting and default to
+  the month name ("14 Nov 2026"); the other choices are "Nov 14, 2026", "14.11.2026"
+  and "2026-11-14", each shown with today's date. Old stored date formats read as the
+  new default.
+
 ### Added
 - **Smart import matching:** an import row that is almost identical to an existing
   transaction (same account, instrument and type; date within one NYSE trading day; amount

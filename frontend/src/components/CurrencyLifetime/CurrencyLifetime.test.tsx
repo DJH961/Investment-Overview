@@ -26,7 +26,7 @@ afterEach(() => {
 });
 
 describe("CurrencyLifetime", () => {
-  it("shows rate vs average, headwind colouring, FX effect and cash-out value", () => {
+  it("shows rate vs average, headwind coloring, FX effect and cash-out value", () => {
     const { container } = render(<CurrencyLifetime data={data("0.0545")} />);
     expect(screen.getByRole("button", { name: "Currency effect (lifetime)" })).toBeInTheDocument();
     expect(screen.getByText("1.1600")).toBeInTheDocument();

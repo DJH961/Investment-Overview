@@ -20,7 +20,7 @@ const isView = (v: unknown): v is DriftView => v === "category" || v === "fund";
 
 /** Rows shown before "Show all" (the largest drifts first). */
 const FOLD_AT = 8;
-/** The stacked bar only reads well with a handful of distinct colours. */
+/** The stacked bar only reads well with a handful of distinct colors. */
 const BAR_MAX = 6;
 
 /** Share now (fill) against its target (marker), on a scale shared by the whole list. */

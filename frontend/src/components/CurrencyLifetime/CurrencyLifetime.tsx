@@ -47,7 +47,7 @@ export function CurrencyLifetime({ data, rateLine }: CurrencyLifetimeProps) {
   const usdView = data.ccy === "USD";
   const change = usdView ? toNum(split?.usd_vs_eur_pct) : toNum(life.rate_change_pct);
   // A stronger euro (EUR/USD up) - a weaker dollar - is a headwind for a euro investor holding dollars.
-  const favour = change === null ? "flat" : signOf(usdView ? change : -change);
+  const favor = change === null ? "flat" : signOf(usdView ? change : -change);
   const pp = usdView ? toNum(split?.eur_minus_usd_pp) : toNum(split?.currency_effect_pp);
   return (
     <Card title="Currency effect (lifetime)" collapsibleId="overview.currency-lifetime" className="currency-lifetime">
@@ -92,11 +92,11 @@ export function CurrencyLifetime({ data, rateLine }: CurrencyLifetimeProps) {
         </div>
         <div className="currency-lifetime__stat" data-testid="lifetime-rate-move">
           <dt className="currency-lifetime__label">{usdView ? "Dollar vs euro since buying" : "Euro since buying"}</dt>
-          <dd className={clsx("currency-lifetime__value", `currency-lifetime__value--${favour}`)}>
+          <dd className={clsx("currency-lifetime__value", `currency-lifetime__value--${favor}`)}>
             <Percent ratio={change} signed />
           </dd>
           <dd className="currency-lifetime__sub">
-            {favour === "pos" ? "tailwind" : favour === "neg" ? "headwind" : "no effect"}
+            {favor === "pos" ? "tailwind" : favor === "neg" ? "headwind" : "no effect"}
           </dd>
         </div>
         <div className="currency-lifetime__stat" data-testid="lifetime-fx-gap">

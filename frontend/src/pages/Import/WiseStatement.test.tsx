@@ -84,7 +84,7 @@ describe("WiseStatement", () => {
 });
 
 describe("Received in USD status", () => {
-  it("has its own icon and label, never colour alone", () => {
+  it("has its own icon and label, never color alone", () => {
     expect(depositStatusLook("received_usd", false)).toEqual({ label: "Received in USD", tone: "neutral", icon: "usd" });
     expect(rateChipLabel("received_usd")).toBe("USD");
   });

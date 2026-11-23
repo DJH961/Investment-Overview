@@ -33,7 +33,7 @@ export interface TrendChipProps {
 }
 
 /**
- * The quiet Overview hint: `↘ Dollar weakening · normal`. The chip never colours the
+ * The quiet Overview hint: `↘ Dollar weakening · normal`. The chip never colors the
  * direction good or bad (it is good for one lens and bad for the other); only an
  * unusual move gets the warning tint, and always with the word. Tap or hover for both
  * lenses and the numbers behind the label (all from the server's trend block).

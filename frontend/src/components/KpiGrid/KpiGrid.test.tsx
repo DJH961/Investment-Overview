@@ -42,7 +42,7 @@ describe("KpiGrid", () => {
       expect(screen.getByText(l)).toBeInTheDocument();
     }
     expect(screen.getByText("€100,000.00")).toBeInTheDocument();
-    expect(screen.getByText("US$110,000.00")).toBeInTheDocument();
+    expect(screen.getByText("$110,000.00")).toBeInTheDocument();
     expect(screen.getByText("+6.00%")).toBeInTheDocument(); // YTD in USD
     expect(screen.getByText("Beating")).toBeInTheDocument();
     // One comparison per line: "You +25.00%" over "VT +20.00%".
@@ -71,7 +71,7 @@ describe("KpiGrid", () => {
     it("shows the server's day Total in both currencies", () => {
       render(<KpiGrid data={shut(null)} currency="EUR" loading={false} />);
       expect(screen.getByText("+€420.00")).toBeInTheDocument();
-      expect(screen.getByText("+US$500.00")).toBeInTheDocument();
+      expect(screen.getByText("+$500.00")).toBeInTheDocument();
     });
 
     it("never repeats the ☀/☾ split or the FX figure, so EUR and USD have the same shape", () => {

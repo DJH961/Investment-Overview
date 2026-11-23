@@ -78,7 +78,7 @@ describe("Lookup (not held)", () => {
     // Follows the app's EUR / USD switch (EUR here): no local currency switch.
     expect(screen.queryByRole("radio", { name: "EUR" })).toBeNull();
     expect(screen.getByText(/Each point in EUR/)).toBeInTheDocument();
-    expect(screen.queryByText("Unrealised gain")).toBeNull();
+    expect(screen.queryByText("Unrealized gain")).toBeNull();
   });
 
   it("Details shows exchange, currency, type and the 52-week range", () => {

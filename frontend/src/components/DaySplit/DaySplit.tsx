@@ -136,7 +136,7 @@ export function HoldingDaySplit({
  * The day's move is two things: the session (everything since the open after the open,
  * the last session's move after the close) and the currency's overnight move (last night's
  * while the market trades, close to now after the close).
- * This is the one place that words and colours them, so the graph, the hero, the KPI tile
+ * This is the one place that words and colors them, so the graph, the hero, the KPI tile
  * and every holding read the same. In hide mode only percents show (`Money` masks itself).
  */
 export function DaySplit({

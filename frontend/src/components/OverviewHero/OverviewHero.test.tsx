@@ -22,7 +22,7 @@ describe("OverviewHero", () => {
   it("shows both currencies, the day caption and the return split", () => {
     const { container } = render(<OverviewHero data={base} currency="EUR" loading={false} now={NOW} />);
     expect(screen.getByText("€200,000.00")).toBeInTheDocument();
-    expect(screen.getByText("US$216,000.00")).toBeInTheDocument();
+    expect(screen.getByText("$216,000.00")).toBeInTheDocument();
     expect(screen.getByText("+€1,500.00")).toBeInTheDocument();
     expect(screen.getByText("Last session · Fri")).toBeInTheDocument();
     // When the price is from vs when the app fetched it, both labelled.
@@ -149,7 +149,7 @@ describe("OverviewHero", () => {
     expect(screen.getByTestId("hero-estimate-chip")).toHaveTextContent("≈ est.");
     expect(screen.getByRole("button", { name: "About the estimated total" })).toBeInTheDocument();
     // Secondary currency follows its own estimate.
-    expect(screen.getByText("US$217,728.00")).toBeInTheDocument();
+    expect(screen.getByText("$217,728.00")).toBeInTheDocument();
     // The official book sits with the headline: the estimate only ever stands in
     // for it, so the real number belongs beside the one replacing it.
     const official = screen.getByTestId("hero-official");

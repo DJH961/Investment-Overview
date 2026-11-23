@@ -30,7 +30,7 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 /** A row the owner can import: a conversion not already in the ledger. */
 export const isImportable = (r: Row) => r.status === "conversion" && !r.is_duplicate;
 
-/** Why a row is not importable, as an icon chip (never colour alone). */
+/** Why a row is not importable, as an icon chip (never color alone). */
 function RowStatus({ row }: { row: Row }) {
   if (row.is_duplicate) {
     return (

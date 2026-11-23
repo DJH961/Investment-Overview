@@ -56,7 +56,7 @@ const shareText = (s: string) => {
   return formatQuantity(n, Number.isInteger(n) ? 0 : 4);
 };
 
-/** One trade: a Buy / Sell word (never colour alone), the fund, shares and the amount, in aligned columns. */
+/** One trade: a Buy / Sell word (never color alone), the fund, shares and the amount, in aligned columns. */
 function TradeRow({ r, ccy }: { r: BuilderPlanRow; ccy: string }) {
   const add = num(r.add_value) ?? 0;
   const sell = add < 0;
