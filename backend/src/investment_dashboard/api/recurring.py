@@ -166,6 +166,12 @@ def setup_plan(
         Query(gt=0, description="Step 3: the dollars to buy with (step 2's deposit)."),
     ] = None,
     account_id: int | None = None,
+    conversion_unit: Unit | None = None,
+    conversion_every: Annotated[int, Query(ge=1)] = 1,
+    deposit_unit: Unit | None = None,
+    deposit_every: Annotated[int, Query(ge=1)] = 1,
+    buy_unit: Unit | None = None,
+    buy_every: Annotated[int, Query(ge=1)] = 1,
 ) -> SetupPlanOut:
     """Defaults that flow between the setup steps; every figure is computed here.
 
@@ -175,13 +181,24 @@ def setup_plan(
     """
     conv = (
         recurring_setup.conversion_estimate(
-            session, eur=eur_amount, provider=provider, fee_eur=expected_fee
+            session,
+            eur=eur_amount,
+            provider=provider,
+            fee_eur=expected_fee,
+            conversion=(conversion_unit, conversion_every) if conversion_unit else None,
+            deposit=(deposit_unit, deposit_every) if deposit_unit else None,
         )
         if eur_amount is not None
         else None
     )
     split = (
-        recurring_setup.buy_split(session, account_id=account_id, total=buy_total_usd)
+        recurring_setup.buy_split(
+            session,
+            account_id=account_id,
+            total=buy_total_usd,
+            deposit=(deposit_unit, deposit_every) if deposit_unit else None,
+            buy=(buy_unit, buy_every) if buy_unit else None,
+        )
         if buy_total_usd is not None and account_id is not None
         else None
     )
@@ -195,11 +212,13 @@ def setup_plan(
             off_pct=None if conv.off_pct is None else format(conv.off_pct, "f"),
             rate=format(conv.rate, "f"),
             usd=format(conv.usd, "f"),
+            deposit_usd=format(conv.deposit_usd, "f"),
         ),
         split=None
         if split is None
         else BuySplitOut(
             total=format(split.total, "f"),
+            deposit_total=format(split.deposit_total, "f"),
             method=cast("Literal['allocation', 'history', 'equal', 'none']", split.method),
             allocation_name=split.allocation_name,
             has_allocation_plan=split.has_allocation_plan,

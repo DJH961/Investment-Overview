@@ -132,3 +132,71 @@ def test_conversion_estimate_is_the_ecb_rate_less_the_fee_in_whole_dollars(
     assert got is not None
     assert got.off_pct is None and got.rate == D("1.16")  # no history: plain ECB
     assert got.usd == D("1157")  # (1000 - 2.50) x 1.16 = 1157.10
+
+
+def test_a_monthly_deposit_is_spread_over_the_buy_runs(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    acct, _a, _b = _account(session)
+    _no_plan(monkeypatch)
+    monthly = ("months", 1)
+
+    def run_total(buy: tuple[str, int]) -> tuple[Decimal, Decimal, Decimal]:
+        got = recurring_setup.buy_split(
+            session, account_id=acct.id, total=D("2750"), deposit=monthly, buy=buy
+        )
+        return got.total, got.deposit_total, sum((leg.amount for leg in got.legs), D(0))
+
+    # Monthly -> weekly: 2,750 x 12 / 52 = 634.62, whole dollars 635, split exactly.
+    assert run_total(("weeks", 1)) == (D("635"), D("2750"), D("635"))
+    # Monthly -> monthly: the whole deposit each time.
+    assert run_total(("months", 1)) == (D("2750"), D("2750"), D("2750"))
+    # Monthly -> every 2 weeks: 2,750 x 12 / 26 = 1,269.23.
+    assert run_total(("weeks", 2)) == (D("1269"), D("2750"), D("1269"))
+    # Without cadences the whole amount is one run (the old behaviour).
+    plain = recurring_setup.buy_split(session, account_id=acct.id, total=D("2750"))
+    assert (plain.total, plain.deposit_total) == (D("2750"), D("2750"))
+
+
+def test_mixed_cadences_chain_per_run(session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    acct, _a, _b = _account(session)
+    _no_plan(monkeypatch)
+    session.add(FxHistory(date=exchange_today(), base="EUR", quote="USD", rate=D("1.1600")))
+    session.flush()
+    monthly, biweekly, weekly = ("months", 1), ("weeks", 2), ("weeks", 1)
+    # Monthly conversion of 1,000 EUR (fee 2.50): (1000 - 2.50) x 1.16 = 1,157.10 a month.
+    conv = recurring_setup.conversion_estimate(
+        session,
+        eur=D("1000"),
+        provider="revolut",
+        fee_eur=D("2.50"),
+        conversion=monthly,
+        deposit=biweekly,
+    )
+    assert conv is not None and conv.usd == D("1157")
+    assert conv.deposit_usd == D("534")  # 1,157.10 x 12 / 26 = 534.05 every 2 weeks
+    # ... deposited every 2 weeks, bought weekly: half of each deposit a week.
+    buys = recurring_setup.buy_split(
+        session, account_id=acct.id, total=conv.deposit_usd, deposit=biweekly, buy=weekly
+    )
+    assert (buys.total, buys.deposit_total) == (D("267"), D("534"))
+    # The reverse direction: a weekly conversion deposited monthly (x 52 / 12).
+    back = recurring_setup.conversion_estimate(
+        session,
+        eur=D("1000"),
+        provider="revolut",
+        fee_eur=D("2.50"),
+        conversion=weekly,
+        deposit=monthly,
+    )
+    assert back is not None and back.deposit_usd == D("5014")  # 1,157.10 x 52 / 12 = 5,014.1
+    # Same cadence on both sides keeps the figure; no cadences means one run.
+    same = recurring_setup.conversion_estimate(
+        session,
+        eur=D("1000"),
+        provider="revolut",
+        fee_eur=D("2.50"),
+        conversion=monthly,
+        deposit=monthly,
+    )
+    assert same is not None and same.deposit_usd == D("1157")

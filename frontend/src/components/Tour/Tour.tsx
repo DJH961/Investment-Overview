@@ -7,6 +7,8 @@ import { TOUR_STEPS, type TourStep } from "./steps";
 import "./Tour.scss";
 
 const SEEN_KEY = "iv.tour.seen";
+/** Built for fixtures (`VITE_FIXTURES=1`): the tour stays off unless asked for. */
+const FIXTURE_BUILD = import.meta.env.VITE_FIXTURES === "1";
 const REPLAY_KEY = "iv.tour.replay";
 
 function safeGet(key: string): string | null {
@@ -58,7 +60,10 @@ export function Tour() {
   const [seenPath, setSeenPath] = useState<string | null>(null);
   if (pathname !== seenPath) {
     setSeenPath(pathname);
-    if (!onLogin && !active && (safeGet(REPLAY_KEY) === "1" || safeGet(SEEN_KEY) !== "1")) {
+    // Fixture builds (screenshots, overflow and e2e runs, agents) never start the tour on
+    // their own: it covers the page. Help's replay still starts it, and `?tour=1` forces it.
+    const autoStart = !FIXTURE_BUILD || new URLSearchParams(window.location.search).get("tour") === "1";
+    if (!onLogin && !active && (safeGet(REPLAY_KEY) === "1" || (autoStart && safeGet(SEEN_KEY) !== "1"))) {
       safeRemove(REPLAY_KEY);
       setIndex(0);
       setActive(true);

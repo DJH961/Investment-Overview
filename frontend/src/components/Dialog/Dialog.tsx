@@ -12,14 +12,16 @@ export interface DialogProps {
   children?: ReactNode;
   /** Footer row, typically Buttons. */
   footer?: ReactNode;
+  /** Sit near the top of the viewport (a tall form) instead of the middle. */
+  top?: boolean;
 }
 
-export function Dialog({ open, onOpenChange, title, description, children, footer }: DialogProps) {
+export function Dialog({ open, onOpenChange, title, description, children, footer, top = false }: DialogProps) {
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal>
         <RadixDialog.Overlay className="dialog__overlay" />
-        <RadixDialog.Content className="dialog__content" {...(description ? {} : { "aria-describedby": undefined })}>
+        <RadixDialog.Content className={`dialog__content${top ? " dialog__content--top" : ""}`} {...(description ? {} : { "aria-describedby": undefined })}>
           <header className="dialog__header">
             <div className="dialog__heading">
               <RadixDialog.Title className="dialog__title">{title}</RadixDialog.Title>

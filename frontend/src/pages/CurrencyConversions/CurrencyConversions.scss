@@ -499,6 +499,12 @@
       }
     }
 
+    // The id column aligns its items to the start, so stretch the chips + note row to
+    // the column width; otherwise it sizes to its text and a long note spills past it.
+    &__tags {
+      align-self: stretch;
+    }
+
     &__note--wide {
       display: block;
       max-width: 100%;
