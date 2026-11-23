@@ -352,7 +352,7 @@
   // Desktop: name | currency bar | currency | price | dividends | change.
   &__row {
     display: grid;
-    grid-template-columns: minmax(10rem, 1.3fr) minmax(8rem, 1.5fr) repeat(4, minmax(5.5rem, 0.6fr));
+    grid-template-columns: minmax(7rem, 1.3fr) minmax(6rem, 1.5fr) repeat(4, minmax(4.75rem, 0.6fr));
     align-items: center;
     gap: var(--space-4);
     padding: var(--space-3) 0;
@@ -490,6 +490,7 @@
   &__item {
     display: flex;
     flex: 1 1 0;
+    flex-wrap: wrap;
     align-items: baseline;
     justify-content: center;
     gap: var(--space-2);
@@ -503,6 +504,8 @@
 
   &__label {
     display: inline-flex;
+    flex: none;
+    white-space: nowrap;
     align-items: center;
     gap: var(--space-1);
     color: var(--color-muted);

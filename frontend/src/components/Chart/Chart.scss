@@ -391,7 +391,10 @@
   &__legend-extra {
     display: inline-flex;
     align-items: center;
-    flex: 0 0 auto;
+    // Shrinks (never past its content's wrapping) so a long note such as the rate chart's
+    // keys wraps on a phone instead of pushing the legend wider than its card.
+    flex: 0 1 auto;
+    min-width: 0;
     margin-left: auto;
     padding-left: var(--space-3);
     white-space: nowrap;
