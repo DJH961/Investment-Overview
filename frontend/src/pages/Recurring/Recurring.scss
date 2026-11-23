@@ -116,14 +116,85 @@
     gap: var(--space-3);
   }
 
-  &__form-kind,
-  &__setup-step {
+  &__form-kind {
     margin: 0;
     font-weight: var(--font-weight-semibold);
   }
 
+  &__setup {
+    display: grid;
+    gap: var(--space-3);
+  }
+
+  &__setup-step {
+    margin: 0;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  // 1 - 2 - 3: where you are in the wizard (the number is the label, never colour alone).
+  &__steps {
+    display: flex;
+    gap: var(--space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__steps-dot {
+    display: grid;
+    place-items: center;
+    width: var(--space-6);
+    height: var(--space-6);
+    border: var(--border-width) solid var(--color-border-strong);
+    border-radius: var(--radius-full);
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+
+    &--done {
+      background: var(--color-accent-soft);
+    }
+
+    &--current {
+      border-color: var(--color-accent);
+      background: var(--color-accent);
+      color: var(--color-accent-fg);
+      font-weight: var(--font-weight-semibold);
+    }
+  }
+
+  &__linklike {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--color-accent);
+    font: inherit;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+
+  // Phones: the wizard's buttons stay at the foot of the scrolling sheet.
+  &__setup-footer {
+    position: sticky;
+    bottom: calc(-1 * var(--space-4) - var(--safe-bottom));
+    z-index: 1;
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-2);
+    margin: var(--space-3) calc(-1 * var(--space-4)) 0;
+    padding: var(--space-3) var(--space-4) calc(var(--space-3) + var(--safe-bottom));
+    border-top: var(--border-width) solid var(--color-border);
+    background: var(--color-surface);
+  }
+
+  &__setup-hint {
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-sm);
+  }
+
   &__setup-note {
-    margin: 0 0 var(--space-2);
+    margin: 0;
     color: var(--color-muted);
     font-size: var(--font-size-sm);
   }
@@ -165,6 +236,12 @@
       grid-template-columns: minmax(0, 1fr) auto;
       align-items: end;
     }
+  }
+
+  &__legs-total {
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-sm);
   }
 
   &__leg-actions {

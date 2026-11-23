@@ -126,6 +126,8 @@ GET_ENDPOINTS: tuple[str, ...] = (
     "/api/recurring/plans",
     "/api/recurring/estimates",
     "/api/recurring/suggestions",
+    # Fixture mode prefix-matches the query: one answer carries both the conversion and the split.
+    "/api/recurring/setup-plan?eur_amount=250&provider=revolut&buy_total_usd=2750&account_id=1",
     "/api/onboarding",
     "/api/refresh/status",
     "/api/settings",
@@ -822,6 +824,36 @@ def _seed_recurring(
                 is_estimate=est,
                 external_id=f"{tag}:vmfxx",
             )
+    # A recent rhythm for "Set up your routine" to suggest from: a EUR 250 Revolut conversion on
+    # the 14th of each month, and weekly Monday buys of two funds (all real, settled rows).
+    for month in (3, 4, 5, 6):
+        day = _dt.date(2026, month, 14)
+        session.add(
+            FxConversion(
+                date=day,
+                eur_sent=D("250.00"),
+                usd_received=(D("250") * rate_on(day) * D("0.996")).quantize(D("0.01")),
+                provider="revolut",
+                created_at=_dt.datetime.combine(day, _dt.time(9, 0)),
+                updated_at=_dt.datetime.combine(day, _dt.time(9, 0)),
+            )
+        )
+    monday = _dt.date(2026, 4, 27)
+    while monday <= _dt.date(2026, 6, 22):
+        for holding, amount in ((instrument, D("200")), (second, D("100"))):
+            price = px(holding.symbol, monday)
+            add(
+                account,
+                monday,
+                "buy",
+                f"-{amount:.2f}",
+                instrument_id=holding.id,
+                quantity=(amount / price).quantize(D("0.0001")),
+                price_native=price,
+                gross_native=amount,
+                fees_native=D("0"),
+            )
+        monday += _dt.timedelta(days=7)
     for due in (_dt.date(2026, 6, 28),):  # a Sunday: the Friday fixing applies
         rate = rate_on(due) * D("0.996")
         session.add(

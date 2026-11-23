@@ -835,13 +835,15 @@ def suggest_routine(  # noqa: PLR0912 - three independent collectors, narrated i
                 "buy", cadence, account_id=account_id, account=name_of(account_id), legs=legs
             )
         )
-    by_provider: dict[str, list[recurrence_suggest.Observation]] = {}
+    # A recurring conversion repeats its amount: group by provider and amount (25 EUR wide).
+    by_provider: dict[tuple[str, int], list[recurrence_suggest.Observation]] = {}
     for c in fx_conversion_service.list_conversions(session):
         if not c.is_estimate and since <= c.date <= day:
-            by_provider.setdefault(c.provider or DEFAULT_PROVIDER, []).append(
+            bucket = int((c.eur_sent / 25).to_integral_value(rounding="ROUND_HALF_UP"))
+            by_provider.setdefault((c.provider or DEFAULT_PROVIDER, bucket), []).append(
                 recurrence_suggest.Observation(c.date, c.eur_sent)
             )
-    for provider, obs in by_provider.items():
+    for (provider, _bucket), obs in by_provider.items():
         s = recurrence_suggest.suggest_cadence(obs)
         if s is not None:
             out.append(Suggestion("conversion", s, provider=provider))

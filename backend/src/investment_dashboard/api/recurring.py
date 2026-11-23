@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Literal, cast
+from typing import Annotated, Literal, cast
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Query, Response
 
 from investment_dashboard.api.deps import SessionDep
 from investment_dashboard.api.schemas.recurring import (
+    BuySplitOut,
+    ConversionEstimateOut,
     EstimateOut,
     EstimatesOut,
     LegOut,
@@ -21,10 +23,13 @@ from investment_dashboard.api.schemas.recurring import (
     RowType,
     SettleIn,
     SettleOut,
+    SetupPlanOut,
+    SplitLegOut,
     SuggestedLegOut,
     SuggestionOut,
     Unit,
 )
+from investment_dashboard.readmodels import recurring_setup
 from investment_dashboard.services import recurring_service as service
 
 router = APIRouter(tags=["recurring"])
@@ -148,6 +153,64 @@ def suggestions(session: SessionDep) -> list[SuggestionOut]:
         )
         for s in service.suggest_routine(session)
     ]
+
+
+@router.get("/recurring/setup-plan", response_model=SetupPlanOut)
+def setup_plan(
+    session: SessionDep,
+    eur_amount: Annotated[Decimal | None, Query(gt=0, description="Step 1: EUR converted.")] = None,
+    provider: Provider = "revolut",
+    expected_fee: Annotated[Decimal | None, Query(ge=0)] = None,
+    buy_total_usd: Annotated[
+        Decimal | None,
+        Query(gt=0, description="Step 3: the dollars to buy with (step 2's deposit)."),
+    ] = None,
+    account_id: int | None = None,
+) -> SetupPlanOut:
+    """Defaults that flow between the setup steps; every figure is computed here.
+
+    Each step inherits only from the one before it: the deposit starts from the conversion's
+    dollars, the buys from the deposit amount (split by the allocation plan, else by the
+    recent buys, else equally).
+    """
+    conv = (
+        recurring_setup.conversion_estimate(
+            session, eur=eur_amount, provider=provider, fee_eur=expected_fee
+        )
+        if eur_amount is not None
+        else None
+    )
+    split = (
+        recurring_setup.buy_split(session, account_id=account_id, total=buy_total_usd)
+        if buy_total_usd is not None and account_id is not None
+        else None
+    )
+    return SetupPlanOut(
+        conversion=None
+        if conv is None
+        else ConversionEstimateOut(
+            eur=format(conv.eur, "f"),
+            fee_eur=format(conv.fee_eur, "f"),
+            ecb_rate=format(conv.ecb_rate, "f"),
+            off_pct=None if conv.off_pct is None else format(conv.off_pct, "f"),
+            rate=format(conv.rate, "f"),
+            usd=format(conv.usd, "f"),
+        ),
+        split=None
+        if split is None
+        else BuySplitOut(
+            total=format(split.total, "f"),
+            method=cast("Literal['allocation', 'history', 'equal', 'none']", split.method),
+            allocation_name=split.allocation_name,
+            has_allocation_plan=split.has_allocation_plan,
+            legs=[
+                SplitLegOut(
+                    instrument_id=g.instrument_id, symbol=g.symbol, amount=format(g.amount, "f")
+                )
+                for g in split.legs
+            ],
+        ),
+    )
 
 
 @router.get("/recurring/estimates", response_model=EstimatesOut)

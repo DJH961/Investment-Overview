@@ -5,6 +5,7 @@ import { Field } from "../../components/Field";
 import { Input } from "../../components/Input";
 import { Select } from "../../components/Select";
 import { useToast } from "../../components/Toast";
+import { formatMoney } from "../../lib/format";
 import { useAccounts } from "../../lib/queries/accounts";
 import { useInstruments } from "../../lib/queries/instruments";
 import { useSavePlan, type PlanKind, type RecurringPlanInput } from "../../lib/queries/recurring";
@@ -17,9 +18,9 @@ export const KIND_LABEL: Record<PlanKind, string> = {
 
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const UNIT_OPTIONS = [
-  { value: "days", label: "days" },
-  { value: "weeks", label: "weeks" },
-  { value: "months", label: "months" },
+  { value: "days", label: "Days" },
+  { value: "weeks", label: "Weeks" },
+  { value: "months", label: "Months" },
 ];
 const PROVIDER_OPTIONS = [
   { value: "revolut", label: "Revolut" },
@@ -46,14 +47,19 @@ export interface PlanFormProps {
   initial?: Partial<RecurringPlanInput>;
   /** Hide the kind line when the surrounding UI already names it (setup step, kind buttons). */
   hideKind?: boolean;
+  /** The surrounding wizard renders the buttons (a footer that stays visible) and submits this form by id. */
+  hideActions?: boolean;
+  formId?: string;
   saveLabel?: string;
   skipLabel?: string;
-  onSaved: () => void;
+  /** The deposit these buys are paid from (dollars): shows "Total $X of $Y" under the holdings. */
+  depositTotal?: number;
+  onSaved: (body?: RecurringPlanInput) => void;
   onSkip?: () => void;
 }
 
 /** One form for the three plan kinds (the setup flow and the edit sheet both use it). */
-export function PlanForm({ kind, id, initial, hideKind, saveLabel = "Save plan", skipLabel, onSaved, onSkip }: PlanFormProps) {
+export function PlanForm({ kind, id, initial, hideKind, hideActions, formId, depositTotal, saveLabel = "Save plan", skipLabel, onSaved, onSkip }: PlanFormProps) {
   const accounts = useAccounts();
   const instruments = useInstruments();
   const save = useSavePlan();
@@ -76,6 +82,9 @@ export function PlanForm({ kind, id, initial, hideKind, saveLabel = "Save plan",
   const [amount, setAmount] = useState(plain(initial?.amount));
   const [provider, setProvider] = useState<string>(initial?.provider ?? "revolut");
   const [fee, setFee] = useState(plain(initial?.expected_fee));
+
+  const legsTotal = legs.reduce((sum, l) => sum + (l.mode === "amount" ? Number(l.value) || 0 : 0), 0);
+  const fmtUsd = (n: number) => formatMoney(n, "USD", { digits: Number.isInteger(n) ? 0 : 2 });
 
   const accountOptions = (accounts.data ?? []).map((a) => ({ value: String(a.id), label: `${brokerName(a.broker)} ${a.account_label}` }));
   const instrumentOptions = (instruments.data ?? []).map((i) => ({ value: String(i.id), label: i.symbol }));
@@ -108,7 +117,7 @@ export function PlanForm({ kind, id, initial, hideKind, saveLabel = "Save plan",
       {
         onSuccess: () => {
           toast({ title: id === undefined ? "Plan added" : "Plan saved", tone: "success" });
-          onSaved();
+          onSaved(body);
         },
         onError: (e) => toast({ title: "Could not save the plan", description: e.message, tone: "error" }),
       },
@@ -117,6 +126,7 @@ export function PlanForm({ kind, id, initial, hideKind, saveLabel = "Save plan",
 
   return (
     <form
+      id={formId}
       className="recurring-page__form"
       onSubmit={(e) => {
         e.preventDefault();
@@ -197,6 +207,12 @@ export function PlanForm({ kind, id, initial, hideKind, saveLabel = "Save plan",
               </div>
             </div>
           ))}
+          {depositTotal != null && depositTotal > 0 && (
+            <p className="recurring-page__legs-total" aria-live="polite">
+              Total {fmtUsd(legsTotal)} of {fmtUsd(depositTotal)} deposited
+              {legsTotal > depositTotal ? " (more than the deposit)" : legsTotal < depositTotal ? " (less than the deposit)" : ""}
+            </p>
+          )}
           <Button
             variant="secondary"
             className="recurring-page__leg-btn"
@@ -234,16 +250,18 @@ export function PlanForm({ kind, id, initial, hideKind, saveLabel = "Save plan",
         <Field label="Starts">{(c) => <Input id={c.id} type="date" value={start} onChange={(e) => setStart(e.target.value)} />}</Field>
         <Field label="Ends (optional)">{(c) => <Input id={c.id} type="date" value={end} onChange={(e) => setEnd(e.target.value)} />}</Field>
       </div>
-      <div className="recurring-page__form-actions">
-        {onSkip && (
-          <Button variant="ghost" onClick={onSkip}>
-            {skipLabel ?? "Skip"}
+      {!hideActions && (
+        <div className="recurring-page__form-actions">
+          {onSkip && (
+            <Button variant="ghost" onClick={onSkip}>
+              {skipLabel ?? "Skip"}
+            </Button>
+          )}
+          <Button type="submit" variant="primary" loading={save.isPending}>
+            {saveLabel}
           </Button>
-        )}
-        <Button type="submit" variant="primary" loading={save.isPending}>
-          {saveLabel}
-        </Button>
-      </div>
+        </div>
+      )}
     </form>
   );
 }

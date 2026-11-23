@@ -1667,6 +1667,57 @@
         "title": "BuilderStateIO",
         "type": "object"
       },
+      "BuySplitOut": {
+        "properties": {
+          "allocation_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allocation Name"
+          },
+          "has_allocation_plan": {
+            "title": "Has Allocation Plan",
+            "type": "boolean"
+          },
+          "legs": {
+            "items": {
+              "$ref": "#/components/schemas/SplitLegOut"
+            },
+            "title": "Legs",
+            "type": "array"
+          },
+          "method": {
+            "description": "What the split follows: the allocation plan, the recent buys, or equal parts.",
+            "enum": [
+              "allocation",
+              "history",
+              "equal",
+              "none"
+            ],
+            "title": "Method",
+            "type": "string"
+          },
+          "total": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Total",
+            "type": "string"
+          }
+        },
+        "required": [
+          "total",
+          "method",
+          "allocation_name",
+          "has_allocation_plan",
+          "legs"
+        ],
+        "title": "BuySplitOut",
+        "type": "object"
+      },
       "ByCurrency_AllocationsResponse_": {
         "properties": {
           "EUR": {
@@ -2762,6 +2813,60 @@
           "eur"
         ],
         "title": "ConversionBatchOut",
+        "type": "object"
+      },
+      "ConversionEstimateOut": {
+        "properties": {
+          "ecb_rate": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Ecb Rate",
+            "type": "string"
+          },
+          "eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Eur",
+            "type": "string"
+          },
+          "fee_eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Fee Eur",
+            "type": "string"
+          },
+          "off_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The provider's average distance from the ECB rate.",
+            "title": "Off Pct"
+          },
+          "rate": {
+            "description": "ecb_rate x (1 + off_pct): USD per EUR.",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Rate",
+            "type": "string"
+          },
+          "usd": {
+            "description": "Whole dollars the conversion yields: (eur - fee) x rate.",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd",
+            "type": "string"
+          }
+        },
+        "required": [
+          "eur",
+          "fee_eur",
+          "ecb_rate",
+          "off_pct",
+          "rate",
+          "usd"
+        ],
+        "title": "ConversionEstimateOut",
         "type": "object"
       },
       "ConversionMarker": {
@@ -19319,6 +19424,34 @@
         "title": "SettleRowIn",
         "type": "object"
       },
+      "SetupPlanOut": {
+        "properties": {
+          "conversion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConversionEstimateOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Step 1's dollars (null without an ECB rate)."
+          },
+          "split": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BuySplitOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Step 3's holdings split."
+          }
+        },
+        "title": "SetupPlanOut",
+        "type": "object"
+      },
       "ShareCountEntry": {
         "description": "One share count typed from the broker's screen.",
         "properties": {
@@ -19401,6 +19534,30 @@
           "eur"
         ],
         "title": "SliceOut",
+        "type": "object"
+      },
+      "SplitLegOut": {
+        "properties": {
+          "amount": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Amount",
+            "type": "string"
+          },
+          "instrument_id": {
+            "title": "Instrument Id",
+            "type": "integer"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instrument_id",
+          "symbol",
+          "amount"
+        ],
+        "title": "SplitLegOut",
         "type": "object"
       },
       "SplitPoint": {
@@ -27726,6 +27883,138 @@
           }
         },
         "summary": "Settle",
+        "tags": [
+          "recurring"
+        ]
+      }
+    },
+    "/api/recurring/setup-plan": {
+      "get": {
+        "description": "Defaults that flow between the setup steps; every figure is computed here.\n\nEach step inherits only from the one before it: the deposit starts from the conversion's\ndollars, the buys from the deposit amount (split by the allocation plan, else by the\nrecent buys, else equally).",
+        "operationId": "setup_plan_api_recurring_setup_plan_get",
+        "parameters": [
+          {
+            "description": "Step 1: EUR converted.",
+            "in": "query",
+            "name": "eur_amount",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Step 1: EUR converted.",
+              "title": "Eur Amount"
+            }
+          },
+          {
+            "in": "query",
+            "name": "provider",
+            "required": false,
+            "schema": {
+              "default": "revolut",
+              "enum": [
+                "wise",
+                "revolut",
+                "other"
+              ],
+              "title": "Provider",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "expected_fee",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Expected Fee"
+            }
+          },
+          {
+            "description": "Step 3: the dollars to buy with (step 2's deposit).",
+            "in": "query",
+            "name": "buy_total_usd",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Step 3: the dollars to buy with (step 2's deposit).",
+              "title": "Buy Total Usd"
+            }
+          },
+          {
+            "in": "query",
+            "name": "account_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupPlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Setup Plan",
         "tags": [
           "recurring"
         ]

@@ -115,7 +115,7 @@ describe("SettleSheet", () => {
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     const post = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
     const body = JSON.parse(String(post?.[1]?.body));
-    expect(body.rows[0]).toMatchObject({ row_type: "transaction", id: 9, price: "259.8960", quantity: "0.7695", total: "199.99" });
+    expect(body.rows[0]).toMatchObject({ row_type: "transaction", id: 9, price: "259.896036", quantity: "0.7695", total: "199.99" });
   });
 
   it("lets a typed price override the derived one without moving total or shares", async () => {

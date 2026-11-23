@@ -1821,6 +1821,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/recurring/setup-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Setup Plan
+         * @description Defaults that flow between the setup steps; every figure is computed here.
+         *
+         *     Each step inherits only from the one before it: the deposit starts from the conversion's
+         *     dollars, the buys from the deposit amount (split by the allocation plan, else by the
+         *     recent buys, else equally).
+         */
+        get: operations["setup_plan_api_recurring_setup_plan_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/recurring/suggestions": {
         parameters: {
             query?: never;
@@ -2712,6 +2736,23 @@ export interface components {
              */
             mode: "fund" | "category";
         };
+        /** BuySplitOut */
+        BuySplitOut: {
+            /** Allocation Name */
+            allocation_name: string | null;
+            /** Has Allocation Plan */
+            has_allocation_plan: boolean;
+            /** Legs */
+            legs: components["schemas"]["SplitLegOut"][];
+            /**
+             * Method
+             * @description What the split follows: the allocation plan, the recent buys, or equal parts.
+             * @enum {string}
+             */
+            method: "allocation" | "history" | "equal" | "none";
+            /** Total */
+            total: string;
+        };
         /** ByCurrency[AllocationsResponse] */
         ByCurrency_AllocationsResponse_: {
             EUR: components["schemas"]["AllocationsResponse"];
@@ -3076,6 +3117,30 @@ export interface components {
             /** Eur */
             eur: string;
             /** Usd */
+            usd: string;
+        };
+        /** ConversionEstimateOut */
+        ConversionEstimateOut: {
+            /** Ecb Rate */
+            ecb_rate: string;
+            /** Eur */
+            eur: string;
+            /** Fee Eur */
+            fee_eur: string;
+            /**
+             * Off Pct
+             * @description The provider's average distance from the ECB rate.
+             */
+            off_pct: string | null;
+            /**
+             * Rate
+             * @description ecb_rate x (1 + off_pct): USD per EUR.
+             */
+            rate: string;
+            /**
+             * Usd
+             * @description Whole dollars the conversion yields: (eur - fee) x rate.
+             */
             usd: string;
         };
         /** ConversionMarker */
@@ -8594,6 +8659,13 @@ export interface components {
             /** Total */
             total?: number | string | null;
         };
+        /** SetupPlanOut */
+        SetupPlanOut: {
+            /** @description Step 1's dollars (null without an ECB rate). */
+            conversion?: components["schemas"]["ConversionEstimateOut"] | null;
+            /** @description Step 3's holdings split. */
+            split?: components["schemas"]["BuySplitOut"] | null;
+        };
         /**
          * ShareCountEntry
          * @description One share count typed from the broker's screen.
@@ -8630,6 +8702,15 @@ export interface components {
             eur: string;
             /** Usd */
             usd: string;
+        };
+        /** SplitLegOut */
+        SplitLegOut: {
+            /** Amount */
+            amount: string;
+            /** Instrument Id */
+            instrument_id: number;
+            /** Symbol */
+            symbol: string;
         };
         /** SplitPoint */
         SplitPoint: {
@@ -13359,6 +13440,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SettleOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    setup_plan_api_recurring_setup_plan_get: {
+        parameters: {
+            query?: {
+                /** @description Step 1: EUR converted. */
+                eur_amount?: number | string | null;
+                provider?: "wise" | "revolut" | "other";
+                expected_fee?: number | string | null;
+                /** @description Step 3: the dollars to buy with (step 2's deposit). */
+                buy_total_usd?: number | string | null;
+                account_id?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupPlanOut"];
                 };
             };
             /** @description Validation Error */

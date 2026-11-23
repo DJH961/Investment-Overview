@@ -151,6 +151,7 @@ _LABELS: dict[tuple[str, str], tuple[str, str]] = {
     ),
     ("POST", "/api/recurring/settle"): ("estimated rows settled", "estimate settle rejected"),
     ("GET", "/api/recurring/estimates"): ("estimated rows read", "estimated rows failed"),
+    ("GET", "/api/recurring/setup-plan"): ("setup defaults read", "setup defaults failed"),
     ("PUT", "/api/fx-conversions/received-in-usd/{deposit_txn_id}"): (
         "deposit marked as received in USD",
         "deposit mark rejected",
