@@ -12,7 +12,6 @@ import { chartMoneyFormat, formatAxisDate, formatDate, formatNumber, formatPerce
 import {
   useFxCosts,
   type FxCostProviderDto,
-  type FxCostRowDto,
   type FxCostsDto,
   type FxCostYearDto,
 } from "../../../../lib/queries/fxCosts";
@@ -40,11 +39,6 @@ const pctText = (v: string | null | undefined) => formatPercent(toNum(v ?? null)
 function Cost({ value, ccy }: { value: string | null | undefined; ccy: FxCostsDto["currency"] }) {
   // Signed plain text on purpose: for a cost, "up" is bad, so no gain/loss colour.
   return <Money amount={toNum(value ?? null)} currency={ccy} signed digits={2} />;
-}
-
-function rowNote(r: FxCostRowDto | null | undefined) {
-  if (!r) return undefined;
-  return `${formatDate(r.date)} · ${offText(r.off_pct)}`;
 }
 
 function stats(d: FxCostsDto): StatItem[] {
@@ -79,16 +73,11 @@ function stats(d: FxCostsDto): StatItem[] {
       tip: "All-in rate (fees included) against the ECB daily reference, averaged with each conversion weighted by the euros it converted, not a plain mean of percentages. Negative: fewer dollars per euro than the reference.",
     },
     {
-      key: "best",
-      label: "Best",
-      value: offText(d.best?.off_pct),
-      note: rowNote(d.best),
-    },
-    {
-      key: "worst",
-      label: "Worst",
-      value: offText(d.worst?.off_pct),
-      note: rowNote(d.worst),
+      key: "bestworst",
+      label: "Best / worst",
+      value: `${offText(d.best?.off_pct)} · ${offText(d.worst?.off_pct)}`,
+      note: d.best && d.worst ? `${formatDate(d.best.date)} · ${formatDate(d.worst.date)}` : undefined,
+      tip: "The best and the worst conversion, as the all-in distance from the ECB daily reference.",
     },
   ];
 }
@@ -175,20 +164,6 @@ function YearsCard({ d }: { d: FxCostsDto }) {
       sortValue: (r) => toNum(r.converted),
     },
     {
-      key: "fees",
-      header: "Fees",
-      align: "right",
-      cell: (r) => <Money amount={toNum(r.fees)} currency={ccy} digits={2} />,
-      sortValue: (r) => toNum(r.fees),
-    },
-    {
-      key: "spread",
-      header: "Spread",
-      align: "right",
-      cell: (r) => <Cost value={r.spread} ccy={ccy} />,
-      sortValue: (r) => toNum(r.spread),
-    },
-    {
       key: "cost",
       header: "Cost",
       align: "right",
@@ -199,7 +174,7 @@ function YearsCard({ d }: { d: FxCostsDto }) {
     },
     {
       key: "pct",
-      header: "% of converted",
+      header: "Cost %",
       align: "right",
       cell: (r) => pctText(r.cost_pct),
       sortValue: (r) => toNum(r.cost_pct),
@@ -240,18 +215,11 @@ function ProvidersCard({ d }: { d: FxCostsDto }) {
     },
     {
       key: "count",
-      header: "Conversions",
+      header: "Conv.",
       align: "right",
       phone: "sub",
-      cell: (r) => `${r.count} ${r.count === 1 ? "conversion" : "conversions"}`,
+      cell: (r) => r.count,
       sortValue: (r) => r.count,
-    },
-    {
-      key: "converted",
-      header: "Converted",
-      align: "right",
-      cell: (r) => <Money amount={toNum(r.converted)} currency={ccy} digits={0} />,
-      sortValue: (r) => toNum(r.converted),
     },
     {
       key: "cost",
@@ -264,14 +232,14 @@ function ProvidersCard({ d }: { d: FxCostsDto }) {
     },
     {
       key: "pct",
-      header: "% of converted",
+      header: "Cost %",
       align: "right",
       cell: (r) => pctText(r.cost_pct),
       sortValue: (r) => toNum(r.cost_pct),
     },
     {
       key: "avg",
-      header: "Average vs ECB",
+      header: "vs ECB",
       align: "right",
       cell: (r) => offText(r.avg_off_pct),
       sortValue: (r) => toNum(r.avg_off_pct),
