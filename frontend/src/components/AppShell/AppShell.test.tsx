@@ -57,7 +57,11 @@ describe("AppShell", () => {
     act(() => setRefreshState({ running: true, explicit: false, source: "scheduled" }));
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
     expect(screen.queryByText("Updating…")).toBeNull();
-    expect(screen.getByRole("button", { name: "Updating prices" })).toBeEnabled();
+    const quiet = screen.getByRole("button", { name: "Updating prices" });
+    expect(quiet).toBeEnabled();
+    // Still icon with a pulse ring: only the owner's own refresh spins.
+    expect(quiet.querySelector(".top-bar__spin")).toBeNull();
+    expect(document.querySelector(".top-bar__refresh--pulse")).not.toBeNull();
     act(() => setRefreshState({ explicit: true }));
     expect(screen.getByRole("progressbar")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Refresh data" })).toBeDisabled();

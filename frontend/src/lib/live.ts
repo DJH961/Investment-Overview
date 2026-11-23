@@ -4,7 +4,7 @@ import { jobAffectsReports, markStaleAndRefetch, scheduleRefetchAllActive, setti
 import { api } from "./api";
 import { applyTick, patchGraphPoint, patchOverviewFromEvent, type TickLike, type TickPointDto } from "./tickPatch";
 import type { components } from "./api-types";
-import { applyRefreshEvent } from "./refresh";
+import { applyRefreshEvent, takeDeferredAutoRefetch } from "./refresh";
 import { getServerStatus, setServerStatus } from "./serverStatus";
 import { noteServerVersion } from "./appVersion";
 
@@ -248,7 +248,9 @@ export function handleLiveEvent(queryClient: QueryClient, data: string): void {
     // tick-dependent queries follows. Inactive ones are only marked stale.
     noteSeq(ev);
     applyTick(queryClient, ev as TickLike);
-    markStaleAndRefetch(queryClient, "tick");
+    // An automatic price run just before this tick folds its report refetch into this
+    // tick's wave: one round of refetches a minute, not two.
+    markStaleAndRefetch(queryClient, type === "tick" && takeDeferredAutoRefetch() ? "refresh" : "tick");
   } else if (type === "refresh") {
     markStaleAndRefetch(queryClient, "refresh");
   } else if (type === "graphs" && typeof ev.range === "string") {

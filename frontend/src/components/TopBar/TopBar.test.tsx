@@ -127,18 +127,54 @@ describe("TopBar summary on a phone", () => {
 });
 
 describe("TopBar update states", () => {
-  it("quiet update: the icon spins without visible text; the button stays usable", () => {
+  it("quiet update: the icon stays still inside a pulse ring; the button stays usable", () => {
     renderBar({ compact: false, quietUpdating: true });
     expect(screen.queryByText("Updating…")).toBeNull();
     const refresh = screen.getByRole("button", { name: "Updating prices" });
     expect(refresh).toBeEnabled();
-    expect(refresh.querySelector(".top-bar__spin")).not.toBeNull();
+    expect(refresh.querySelector(".top-bar__spin")).toBeNull();
+    expect(document.querySelector(".top-bar__refresh--pulse")).not.toBeNull();
+  });
+
+  it("an automatic update that lands turns the icon once and flips the stamp", () => {
+    const bar = (landed: number, updated: string) => (
+      <QueryClientProvider client={new QueryClient()}>
+        <PrefsProvider>
+          <MemoryRouter>
+            <TopBar
+              title="Overview"
+              freshness={{ status: "live", label: "Live", updated }}
+              compact={false}
+              onRefresh={vi.fn()}
+              onLogout={vi.fn()}
+              landed={landed}
+            />
+          </MemoryRouter>
+        </PrefsProvider>
+      </QueryClientProvider>
+    );
+    const { rerender } = render(bar(3, "Updated 15:30"));
+    // The count it mounts with plays nothing.
+    expect(document.querySelector(".top-bar__landed")).toBeNull();
+    expect(document.querySelector(".top-bar__updated-text--flip")).toBeNull();
+    rerender(bar(4, "Updated 15:31"));
+    const icon = screen.getByRole("button", { name: "Refresh data" }).querySelector("svg")!;
+    expect(icon).toHaveClass("top-bar__landed");
+    expect(document.querySelector(".top-bar__updated-text--flip")).toHaveTextContent("Updated 15:31");
+    // One turn only: the class goes when the animation ends.
+    // jsdom has no AnimationEvent, so React listens for the prefixed name there.
+    fireEvent.animationEnd(icon);
+    fireEvent(icon, new Event("webkitAnimationEnd", { bubbles: true }));
+    expect(icon).not.toHaveClass("top-bar__landed");
   });
 
   it("an explicit (loud) refresh spins and disables but adds no text", () => {
     renderBar({ compact: false, refreshing: true });
     expect(screen.queryByText("Updating…")).toBeNull();
-    expect(screen.getByRole("button", { name: "Refresh data" })).toBeDisabled();
+    const refresh = screen.getByRole("button", { name: "Refresh data" });
+    expect(refresh).toBeDisabled();
+    expect(refresh.querySelector(".top-bar__spin")).not.toBeNull();
+    expect(document.querySelector(".top-bar__refresh--pulse")).toBeNull();
   });
 
   it("idle shows nothing extra", () => {
