@@ -90,7 +90,7 @@ class Window:
         }
 
 
-def resolve(range_key: str, today: date, first: date | None) -> Window:
+def resolve(range_key: str, today: date, first: date | None) -> Window:  # noqa: PLR0911
     """The window for ``range_key`` on ``today`` (exchange date)."""
     end = last_settled_day(today)
     key = range_key.lower()
