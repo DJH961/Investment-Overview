@@ -8,6 +8,22 @@ main (7.2.1 #429 and the 360 px chip fix #430 merged in). One release, 7.3.0; PR
 No version bump yet; CHANGELOG entries sit under `[Unreleased]`, folded into
 `## [7.3.0]` at release. Nothing pushed.
 
+## RELEASE STATE (2026-11-23, latest)
+
+- 7.3.0 bumped and committed on feat/v7.3.0 (4ba083b3: versions, lockfiles, openapi, CHANGELOG
+  `## [7.3.0] — 2026-11-23`, plan status line). Pushed; **draft PR #431**
+  (https://github.com/DJH961/Investment-Overview/pull/431), bound to this session.
+- Merged since the state below: recurring polish round 3, American English (dates exception:
+  "14 Nov 2026" default + "Nov 14, 2026", "14.11.2026", ISO), setup polish afba4ba3, fixture
+  fund renamed FAKEMM (public repo: fake tickers only). Date/locale scan of all 16 routes clean
+  (`.claude/scan-text.cjs`).
+- Still open: lane C final fix (mixed cadences per-run inheritance monthly→biweekly→weekly with
+  notes, Add plan/setup dialog near the top on desktop, more 390 setup shots) → owner approval →
+  merge → regenerate fixtures/openapi if changed → push → mark PR ready → CI green → merge.
+  Fold any new `[Unreleased]` lines into 7.3.0 at that merge.
+- Local release checks script: scratchpad `release_checks.sh` (backend gate + targeted pytest,
+  vitest, web tests, overflow, sequential).
+
 ## CURRENT STATE (read this first; 2026-11-23 evening)
 
 **Work loop (owner rule, AGENTS.md "UI feedback loop: screenshots first"):** UI agents shoot

@@ -17,6 +17,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [7.3.0] — 2026-11-23
+
 ### Changed
 - American English throughout: en-US is the default format, the UK format is gone
   (a stored "en-GB" reads as en-US), dollars show as $, and user-visible spelling is
@@ -45,8 +47,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Each conversion is measured against its own day's ECB fixing (a weekend conversion against
   the last fixing before it); the USD view is the dollars you did not get, worked out per
   conversion at its own fixing. New `GET /api/fx-conversions/costs?range=`, pure maths in
-  `domain/fx_spread.py`, no new columns. The Conversions page gains **Fees** and **Cost**
-  columns, and on phones the cost joins the sub line.
+  `domain/fx_spread.py`, no new columns. The Conversions page stays light: total cost and
+  average vs ECB in its stat strip, each conversion's cost in its detail line, and a link to
+  the section for the deep dive.
 - **Timing:** your rate against the mean ECB fixing of the month you converted in, per
   conversion and weighted overall ("You converted 0.6 % better than the month average");
   a running month is averaged so far.
