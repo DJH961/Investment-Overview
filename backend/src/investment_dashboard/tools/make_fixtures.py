@@ -493,11 +493,11 @@ def seed_full(session: Any) -> None:
 
     # The brokerage account's core (settlement) fund: constant $1.00 NAV, so a recurring buy
     # shows its est. money-market draw. The retirement account has none (the plan note shows).
-    inst["VMFXX"] = instruments_repo.get_or_create(
-        session, symbol="VMFXX", name="Fake Settlement Fund", asset_class="mutual_fund"
+    inst["FAKEMM"] = instruments_repo.get_or_create(
+        session, symbol="FAKEMM", name="Fake Money Market Settlement Fund", asset_class="mutual_fund"
     )
-    prices_repo.upsert_closes(session, inst["VMFXX"].id, {d: D("1") for d in days})
-    instrument_overrides_repo.set_category(session, inst["VMFXX"].id, "Bonds")
+    prices_repo.upsert_closes(session, inst["FAKEMM"].id, {d: D("1") for d in days})
+    instrument_overrides_repo.set_category(session, inst["FAKEMM"].id, "Bonds")
 
     # The default market benchmark (not held), so "Vs market", beta and alpha have a
     # series to compare with: it follows the world fund with its own noise and a lower
@@ -595,7 +595,7 @@ def seed_full(session: Any) -> None:
     d0 = _dt.date(2023, 3, 1)
     add(brokerage, d0, "deposit", "900000.00")
     add(retirement, d0, "deposit", "180000.00")
-    buy(brokerage, "VMFXX", d0 + _dt.timedelta(days=1), "5000")
+    buy(brokerage, "FAKEMM", d0 + _dt.timedelta(days=1), "5000")
     buy(brokerage, "FAKEL", _dt.date(2023, 3, 2), "4000")
     buy(brokerage, "FAKEL", _dt.date(2024, 1, 16), "250.5")
     buy(brokerage, "FAKEB", _dt.date(2023, 3, 6), "1500")
@@ -655,7 +655,7 @@ def seed_full(session: Any) -> None:
         add,
         brokerage,
         inst["FAKEL"],
-        inst["VMFXX"],
+        inst["FAKEMM"],
         inst["FAKEB"],
         retirement,
         px,
