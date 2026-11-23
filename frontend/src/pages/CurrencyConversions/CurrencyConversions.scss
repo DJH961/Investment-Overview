@@ -187,13 +187,15 @@
   &__id {
     grid-area: id;
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    overflow: hidden;
     align-items: center;
     gap: var(--space-1) var(--space-2);
     min-width: 0;
   }
 
   &__date {
+    flex: none;
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
     font-variant-numeric: tabular-nums;
@@ -460,6 +462,7 @@
 
     &__id {
       flex-direction: column;
+      overflow: visible;
       align-items: flex-start;
     }
 
