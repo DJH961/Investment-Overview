@@ -63,7 +63,7 @@ function stats(d: FxCostsDto): StatItem[] {
       key: "cost",
       label: "Total cost",
       value: <Cost value={s.cost} ccy={d.currency} />,
-      note: s.cost_pct !== null ? `${pctText(s.cost_pct)} of what you converted` : undefined,
+      note: s.cost_pct !== null ? `${pctText(s.cost_pct)} of converted` : undefined,
       tip: `Fees plus spread. ${FIXING_TIP}`,
     },
     {
@@ -119,6 +119,7 @@ function TimingCard({ d }: { d: FxCostsDto }) {
 }
 
 function CumulativeCard({ d }: { d: FxCostsDto }) {
+  const phone = useIsPhone();
   const series = useMemo<ChartSeries[]>(
     () => [
       {
@@ -142,8 +143,9 @@ function CumulativeCard({ d }: { d: FxCostsDto }) {
           valueFormat={chartMoneyFormat(d.currency, "axis")}
           timeFormat={(t) => formatAxisDate(t, Infinity)}
           tooltipTimeFormat={(t) => formatDate(new Date(t), "medium")}
-          height={200}
+          height={phone ? 160 : 200}
           ariaLabel="Cumulative cost of converting"
+          legendExtra="Steps up on the days you converted"
         />
       ) : (
         <p className="conv-section__muted">One conversion so far: a line needs at least two.</p>
