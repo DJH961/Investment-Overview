@@ -5,6 +5,7 @@ import { Field } from "../../components/Field";
 import { Input } from "../../components/Input";
 import { Select } from "../../components/Select";
 import { useToast } from "../../components/Toast";
+import { formatMoney } from "../../lib/format";
 import { useAccounts } from "../../lib/queries/accounts";
 import { useInstruments } from "../../lib/queries/instruments";
 import { useSavePlan, type PlanKind, type RecurringPlanInput } from "../../lib/queries/recurring";
@@ -51,12 +52,14 @@ export interface PlanFormProps {
   formId?: string;
   saveLabel?: string;
   skipLabel?: string;
-  onSaved: () => void;
+  /** The deposit these buys are paid from (dollars): shows "Total $X of $Y" under the holdings. */
+  depositTotal?: number;
+  onSaved: (body?: RecurringPlanInput) => void;
   onSkip?: () => void;
 }
 
 /** One form for the three plan kinds (the setup flow and the edit sheet both use it). */
-export function PlanForm({ kind, id, initial, hideKind, hideActions, formId, saveLabel = "Save plan", skipLabel, onSaved, onSkip }: PlanFormProps) {
+export function PlanForm({ kind, id, initial, hideKind, hideActions, formId, depositTotal, saveLabel = "Save plan", skipLabel, onSaved, onSkip }: PlanFormProps) {
   const accounts = useAccounts();
   const instruments = useInstruments();
   const save = useSavePlan();
@@ -79,6 +82,9 @@ export function PlanForm({ kind, id, initial, hideKind, hideActions, formId, sav
   const [amount, setAmount] = useState(plain(initial?.amount));
   const [provider, setProvider] = useState<string>(initial?.provider ?? "revolut");
   const [fee, setFee] = useState(plain(initial?.expected_fee));
+
+  const legsTotal = legs.reduce((sum, l) => sum + (l.mode === "amount" ? Number(l.value) || 0 : 0), 0);
+  const fmtUsd = (n: number) => formatMoney(n, "USD", { digits: Number.isInteger(n) ? 0 : 2 });
 
   const accountOptions = (accounts.data ?? []).map((a) => ({ value: String(a.id), label: `${brokerName(a.broker)} ${a.account_label}` }));
   const instrumentOptions = (instruments.data ?? []).map((i) => ({ value: String(i.id), label: i.symbol }));
@@ -111,7 +117,7 @@ export function PlanForm({ kind, id, initial, hideKind, hideActions, formId, sav
       {
         onSuccess: () => {
           toast({ title: id === undefined ? "Plan added" : "Plan saved", tone: "success" });
-          onSaved();
+          onSaved(body);
         },
         onError: (e) => toast({ title: "Could not save the plan", description: e.message, tone: "error" }),
       },
@@ -201,6 +207,12 @@ export function PlanForm({ kind, id, initial, hideKind, hideActions, formId, sav
               </div>
             </div>
           ))}
+          {depositTotal != null && depositTotal > 0 && (
+            <p className="recurring-page__legs-total" aria-live="polite">
+              Total {fmtUsd(legsTotal)} of {fmtUsd(depositTotal)} deposited
+              {legsTotal > depositTotal ? " (more than the deposit)" : legsTotal < depositTotal ? " (less than the deposit)" : ""}
+            </p>
+          )}
           <Button
             variant="secondary"
             className="recurring-page__leg-btn"

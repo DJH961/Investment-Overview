@@ -187,6 +187,10 @@
     background: var(--color-surface);
   }
 
+  &__setup-hint {
+    display: block;
+  }
+
   &__setup-note {
     margin: 0;
     color: var(--color-muted);
@@ -230,6 +234,12 @@
       grid-template-columns: minmax(0, 1fr) auto;
       align-items: end;
     }
+  }
+
+  &__legs-total {
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-sm);
   }
 
   &__leg-actions {

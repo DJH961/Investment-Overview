@@ -180,3 +180,35 @@ class SettleIn(ApiModel):
 class SettleOut(ApiModel):
     settled: int
     remaining: int
+
+
+class ConversionEstimateOut(ApiModel):
+    eur: DecStr
+    fee_eur: DecStr
+    ecb_rate: DecStr
+    off_pct: DecStr | None = Field(description="The provider's average distance from the ECB rate.")
+    rate: DecStr = Field(description="ecb_rate x (1 + off_pct): USD per EUR.")
+    usd: DecStr = Field(description="Whole dollars the conversion yields: (eur - fee) x rate.")
+
+
+class SplitLegOut(ApiModel):
+    instrument_id: int
+    symbol: str
+    amount: DecStr
+
+
+class BuySplitOut(ApiModel):
+    total: DecStr
+    method: Literal["allocation", "history", "equal", "none"] = Field(
+        description="What the split follows: the allocation plan, the recent buys, or equal parts."
+    )
+    allocation_name: str | None
+    has_allocation_plan: bool
+    legs: list[SplitLegOut]
+
+
+class SetupPlanOut(ApiModel):
+    conversion: ConversionEstimateOut | None = Field(
+        default=None, description="Step 1's dollars (null without an ECB rate)."
+    )
+    split: BuySplitOut | None = Field(default=None, description="Step 3's holdings split.")

@@ -12,6 +12,7 @@ export type Estimates = S["EstimatesOut"];
 export type ReminderGroup = S["ReminderGroupOut"];
 export type PlanSuggestion = S["SuggestionOut"];
 export type SettleBody = S["SettleIn"];
+export type SetupPlan = S["SetupPlanOut"];
 export type SettleRowBody = S["SettleRowIn"];
 
 export function usePlans() {
@@ -66,5 +67,32 @@ export function useSettle() {
   return useMutation({
     mutationFn: (body: SettleBody) => api<S["SettleOut"]>("/api/recurring/settle", { method: "POST", body }),
     onSuccess: () => invalidateFor(qc, "recurringSettle"),
+  });
+}
+
+/**
+ * Defaults that flow between the setup steps, computed on the server: the dollars a
+ * conversion yields (step 1) and a dollar total split across an account's holdings (step 3).
+ */
+export function useSetupPlan(params: {
+  eur?: string;
+  provider?: string;
+  fee?: string;
+  total?: string;
+  accountId?: number | null;
+}) {
+  const q = new URLSearchParams();
+  if (params.eur) q.set("eur_amount", params.eur);
+  if (params.provider) q.set("provider", params.provider);
+  if (params.fee) q.set("expected_fee", params.fee);
+  if (params.total && params.accountId) {
+    q.set("buy_total_usd", params.total);
+    q.set("account_id", String(params.accountId));
+  }
+  const enabled = Boolean(params.eur) || Boolean(params.total && params.accountId);
+  return useQuery({
+    queryKey: ["recurring", "setup-plan", q.toString()],
+    queryFn: ({ signal }) => api<SetupPlan>(`/api/recurring/setup-plan?${q.toString()}`, { signal }),
+    enabled,
   });
 }
