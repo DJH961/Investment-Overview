@@ -26,7 +26,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   so links such as conversion pins survive. Each row can still be skipped or imported as new.
   Exact duplicates are skipped as before. Estimated rows (recurring plans) use a looser
   profile (3 trading days, 2 % or 0.50). Every tolerance is under Settings > Import rules.
-  The confirm result and the activity log count the updated rows.
+  The confirm result and the activity log count the updated rows. Undoing the import puts
+  every updated transaction back exactly as it was (figures, source and est. flag, also a
+  buy's core-fund leg) and then removes the rows it inserted; the undo preview, result and
+  activity line count the restored rows.
 - **What converting costs you (7.3, second half):** a new **Conversions** section on the
   Currency page. It shows fees, spread, total cost, the average distance from the ECB daily
   reference (weighted by the euros converted), the best and worst conversion, the cumulative

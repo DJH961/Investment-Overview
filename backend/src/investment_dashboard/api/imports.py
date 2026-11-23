@@ -388,6 +388,7 @@ def _batch_out(v: BatchView) -> ImportBatchOut:
         row_count=v.row_count,
         current_rows=v.current_rows,
         duplicate_count=v.duplicate_count,
+        updated_count=v.updated_count,
         status=v.status,  # type: ignore[arg-type]
         actor=v.actor,
         undone_at=v.undone_at,
@@ -427,6 +428,7 @@ def undo_preview(batch_id: int, session: SessionDep) -> ImportUndoPreview:
         rows_truncated=p.total > len(p.rows),
         total=p.total,
         detached=p.detached,
+        restored=p.restored,
         earliest_date=p.earliest_date.isoformat() if p.earliest_date else None,
         latest_date=p.latest_date.isoformat() if p.latest_date else None,
         confirm_word=p.confirm_word,
@@ -450,5 +452,6 @@ def undo_batch(
         batch=_batch_out(result.batch),
         deleted=result.deleted,
         backup=result.backup,
+        restored=result.restored,
         invalidated_from=result.invalidated_from.isoformat() if result.invalidated_from else None,
     )

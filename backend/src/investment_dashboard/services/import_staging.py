@@ -492,9 +492,8 @@ def confirm(
         layout=staged.layout,
         resolutions=staged.resolutions,
     )
-    # (Rows that only updated existing transactions leave no batch: they are not
-    # undoable as an import, see ``import_update_service.apply_import_update``.)
-    if result.inserted:
+    # A batch that only updated existing rows is kept too: its undo restores them.
+    if result.inserted or result.updated:
         batch.row_count = result.inserted
         batch.duplicate_count = result.duplicates
         session.flush()

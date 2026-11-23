@@ -5670,6 +5670,11 @@ export interface components {
             undone_by: string | null;
             /** Undone Rows */
             undone_rows: number | null;
+            /**
+             * Updated Count
+             * @default 0
+             */
+            updated_count: number;
         };
         /**
          * ImportBroker
@@ -6018,6 +6023,11 @@ export interface components {
             earliest_date: string | null;
             /** Latest Date */
             latest_date: string | null;
+            /**
+             * Restored
+             * @default 0
+             */
+            restored: number;
             /** Rows */
             rows: components["schemas"]["ImportUndoRow"][];
             /** Rows Truncated */
@@ -6042,6 +6052,11 @@ export interface components {
             deleted: number;
             /** Invalidated From */
             invalidated_from: string | null;
+            /**
+             * Restored
+             * @default 0
+             */
+            restored: number;
         };
         /** ImportUndoRow */
         ImportUndoRow: {
