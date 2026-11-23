@@ -16,6 +16,7 @@ Inputs are the Overview payloads as plain JSON-shaped dicts (``ccy -> payload``)
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any, Literal
@@ -153,7 +154,7 @@ def _stats(ccy: str, payload: dict[str, Any], one_cent: dict[str, Any] | None) -
         out.append(_stat("rate_now", spot, "rate"))
 
     if ccy == "EUR":
-        net = _d((today.get("effect_eur") or {}).get("net"))
+        net = effect_today_eur(payload)
         if net is not None:
             out.append(_stat("effect_today", net, "money", currency="EUR", kind=_kind(net)))
     else:
@@ -197,6 +198,19 @@ def _stats(ccy: str, payload: dict[str, Any], one_cent: dict[str, Any] | None) -
     return out
 
 
+def effect_today_eur(eur_payload: Mapping[str, Any]) -> Decimal | None:
+    """Today's currency effect in EUR: the Overview day split's currency part.
+
+    One source for "today" on the whole page (strip, Impact 1D, the hero's split);
+    the fx_effect net is only the fallback when no day split exists yet (7.3.1).
+    """
+    split = eur_payload.get("day_split") or {}
+    cur = _d(split.get("currency_move"))
+    if cur is not None:
+        return cur
+    return _d((eur_payload["currency"]["today"].get("effect_eur") or {}).get("net"))
+
+
 def _gap_tile(key: str, gap: Decimal | None, eur_money: Decimal | None) -> list[dict[str, Any]]:
     """A USD-view tile led by the gap (euro return minus dollar return), euros beside it."""
     if gap is None:
@@ -224,9 +238,10 @@ def _gap_tiles(
         _d(payload["kpis"].get("daily_growth_pct")),
     )
     day_gap = eur_day - usd_day if eur_day is not None and usd_day is not None else None
-    eur_today = _d((eur_payload["currency"]["today"].get("effect_eur") or {}).get("net"))
-    usd = currency_effect.strip_figures(session, "USD")
-    eur = currency_effect.strip_figures(session, "EUR")
+    eur_today = effect_today_eur(eur_payload)
+    both = {"EUR": eur_payload, "USD": payload}
+    usd = currency_effect.strip_figures(session, "USD", overview=both)
+    eur = currency_effect.strip_figures(session, "EUR", overview=both)
     life_gap = usd.effect_lifetime_pp
     return [
         *_gap_tile("effect_today", day_gap, eur_today),
@@ -236,7 +251,10 @@ def _gap_tiles(
 
 
 def _investing_tiles(
-    session: Session, payload: dict[str, Any], eur_payload: dict[str, Any]
+    session: Session,
+    payload: dict[str, Any],
+    eur_payload: dict[str, Any],
+    overview: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """The USD view's tiles on the investing perspective (Impact's USD view):
 
@@ -252,7 +270,7 @@ def _investing_tiles(
         return []
     today = exchange_today()
     first = currency_effect.first_ledger_date(session)
-    figures = currency_effect.strip_figures(session, "USD", today=today)
+    figures = currency_effect.strip_figures(session, "USD", today=today, overview=overview)
     out: list[dict[str, Any]] = []
     cur = payload["currency"]["today"]
     spot, prev = _d(cur.get("spot")), _d(cur.get("prev"))
@@ -270,7 +288,7 @@ def _investing_tiles(
         ("effect_this_year", "ytd", figures.effect_year_pp),
         ("effect_lifetime", "all", figures.effect_lifetime_pp),
     ):
-        after, through = currency_effect.range_window(rng, today)
+        after, through = currency_effect.range_window(rng, today, first)
         value = currency_deposits.window_effect(session, after, through, first)
         if value is None:
             continue
@@ -286,6 +304,7 @@ def _effect_tiles(
     ccy: str,
     payload: dict[str, Any],
     eur_payload: dict[str, Any] | None = None,
+    overview: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """7.2 strip tiles: USD effect today, this year, lifetime (day by day), dollar trend.
 
@@ -298,10 +317,10 @@ def _effect_tiles(
 
     out: list[dict[str, Any]] = []
     if ccy == "USD" and eur_payload is not None:
-        investing = _investing_tiles(session, payload, eur_payload)
+        investing = _investing_tiles(session, payload, eur_payload, overview)
         if investing:
             return investing + _trend_tile(session, ccy)
-        figures = currency_effect.strip_figures(session, ccy)
+        figures = currency_effect.strip_figures(session, ccy, overview=overview)
         if not figures.effect_lifetime:
             out.extend(_gap_tiles(session, payload, eur_payload))
             out.extend(_trend_tile(session, ccy))
@@ -311,7 +330,7 @@ def _effect_tiles(
         cur = _d(split.get("currency_move"))
         if cur is not None and cur != 0:
             out.append(_stat("effect_today", cur, "money", currency="USD", kind=_kind(cur)))
-    figures = currency_effect.strip_figures(session, ccy)
+    figures = currency_effect.strip_figures(session, ccy, overview=overview)
     if figures.effect_year is not None:
         extra: dict[str, Any] = {"currency": ccy, "kind": _kind(figures.effect_year)}
         if figures.effect_year_pp is not None:
@@ -348,11 +367,15 @@ def _trend_tile(session: Session, ccy: str) -> list[dict[str, Any]]:
 
 
 def _safe_effect_tiles(
-    session: Session, ccy: str, payload: dict[str, Any], eur_payload: dict[str, Any] | None
+    session: Session,
+    ccy: str,
+    payload: dict[str, Any],
+    eur_payload: dict[str, Any] | None,
+    overview: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> list[Any]:
     """:func:`_effect_tiles`, never failing the strip (the 7.0 tiles still show)."""
     try:
-        return _effect_tiles(session, ccy, payload, eur_payload)
+        return _effect_tiles(session, ccy, payload, eur_payload, overview)
     except Exception:
         log.warning("currency strip: Impact tiles failed", exc_info=True)
         return []
@@ -379,6 +402,6 @@ def build_currency_both(
             "buys": _buys(session, cur["today"], now=now),
             "one_cent": one_cent,
             "stats": _stats(ccy, payload, one_cent)
-            + _safe_effect_tiles(session, ccy, payload, overview.get("EUR")),
+            + _safe_effect_tiles(session, ccy, payload, overview.get("EUR"), overview),
         }
     return out

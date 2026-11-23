@@ -57,6 +57,7 @@ from investment_dashboard.domain import fx_effect_split, fx_trend
 from investment_dashboard.domain.market_hours import exchange_today, is_trading_day
 from investment_dashboard.domain.session_fx import fx_buying_power_split
 from investment_dashboard.readmodels import currency_deposits as deposits_rm
+from investment_dashboard.readmodels import currency_range
 from investment_dashboard.readmodels import fx_attribution_rows as rows_rm
 from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.repositories import instruments_repo, transactions_repo
@@ -179,40 +180,21 @@ def kind_of(value: Decimal) -> str:
     return "neutral"
 
 
-def _minus_months(day: date, months: int) -> date:
-    total = day.year * 12 + (day.month - 1) - months
-    year, month = divmod(total, 12)
-    month += 1
-    for dd in (day.day, 30, 29, 28):
-        try:
-            return date(year, month, dd)
-        except ValueError:
-            continue
-    return date(year, month, 28)  # pragma: no cover - unreachable
+_minus_months = currency_range.minus_months
+last_settled_day = currency_range.last_settled_day
 
 
-def last_settled_day(today: date | None = None) -> date:
-    """The last close the daily parts run through (yesterday, exchange date)."""
-    return (today or exchange_today()) - timedelta(days=1)
+def range_window(range_key: str, today: date, first: date | None = None) -> tuple[date, date]:
+    """``(after, through)``: a range is the daily parts with ``after < on <= through``.
 
-
-def range_window(range_key: str, today: date) -> tuple[date, date]:
-    """``(after, through)``: a range is the daily parts with ``after < on <= through``."""
-    end = last_settled_day(today)
-    if range_key == "all":
-        return date.min, end
-    if range_key == "ytd":
-        return date(today.year - 1, 12, 31), end
-    if range_key.isdigit():
-        year = int(range_key)
-        return date(year - 1, 12, 31), min(date(year, 12, 31), end)
-    if range_key == "1d":
-        return end - timedelta(days=1), end
-    if range_key == "1w":
-        return today - timedelta(days=7), end
-    if range_key in _MONTHS:
-        return _minus_months(today, _MONTHS[range_key]), end
-    raise ValueError(f"unknown range {range_key!r}")
+    The settled part of :func:`currency_range.resolve` (one meaning for the page). 1D
+    has no settled days: it is today's live move alone (see :func:`live_part`).
+    ``all`` without a known first transaction covers the whole lifetime.
+    """
+    if range_key == "all" and first is None:
+        return date.min, last_settled_day(today)
+    w = currency_range.resolve(range_key, today, first)
+    return w.after, w.through
 
 
 def foreign_name(currencies: Iterable[str]) -> str:
@@ -407,12 +389,23 @@ def headline_returns(
             _d(overview["USD"]["kpis"].get("daily_growth_pct")),
             "day",
         )
-    after, through = range_window(range_key, today)
-    return (
-        window_return(lives.get("EUR"), after, through),
-        window_return(lives.get("USD"), after, through),
-        "daily_chain",
-    )
+    after, through = range_window(range_key, today, _first_of(lives))
+    eur = window_return(lives.get("EUR"), after, through)
+    usd = window_return(lives.get("USD"), after, through)
+    if currency_range.resolve(range_key, today, None).live:
+        eur_live = live_part(lives.get("EUR"), overview["EUR"])
+        usd_live = live_part(lives.get("USD"), overview["USD"])
+        if eur_live is not None and usd_live is not None:
+            eur = with_today(eur, _d(overview["EUR"]["kpis"].get("daily_growth_pct")))
+            usd = with_today(usd, _d(overview["USD"]["kpis"].get("daily_growth_pct")))
+    return eur, usd, "daily_chain"
+
+
+def _first_of(lives: Mapping[str, Lifetime | None]) -> date | None:
+    for life in lives.values():
+        if life is not None and life.rows:
+            return life.rows[0].on + timedelta(days=1)
+    return None
 
 
 def currency_share(market: Decimal, currency: Decimal) -> Decimal | None:
@@ -1024,6 +1017,41 @@ def _day_split_effect(payload: Mapping[str, Any]) -> tuple[Decimal, Decimal] | N
     return currency, market
 
 
+def _as_of(payload: Mapping[str, Any]) -> date | None:
+    raw = payload.get("kpis", {}).get("daily_growth_as_of")
+    return date.fromisoformat(str(raw)[:10]) if raw else None
+
+
+def live_part(life: Lifetime | None, payload: Mapping[str, Any]) -> fa.DayParts | None:
+    """Today's live move (the Overview's day split) as one more day part.
+
+    ``None`` when the day it describes is already settled (in ``life``) or unknown.
+    The same split the strip and the Overview show, so "today" is one figure.
+    """
+    day = _day_split_effect(payload)
+    on = _as_of(payload)
+    if day is None or on is None or life is None or not life.parts:
+        return None
+    last = life.parts[-1]
+    if on <= last.on:
+        return None
+    currency, market = day
+    with fa.exact_context():
+        end = last.end + market + currency
+    return fa.DayParts(
+        prev_on=last.on, on=on, start=last.end, end=end, flow=ZERO, market=market, currency=currency
+    )
+
+
+def with_today(ret: Decimal | None, day: Decimal | None) -> Decimal | None:
+    """A settled chain extended by today's live growth (``(1 + r)(1 + d) - 1``)."""
+    if ret is None:
+        return day
+    if day is None:
+        return ret
+    return (ONE + ret) * (ONE + day) - ONE
+
+
 def _one_side(  # noqa: PLR0912, PLR0915
     session: Session,
     ccy: str,
@@ -1040,9 +1068,18 @@ def _one_side(  # noqa: PLR0912, PLR0915
 ) -> dict[str, Any]:
     life = lives.get(ccy)
     costs = costs if ccy == "EUR" else None
-    after, through = range_window(range_key, today)
+    window = currency_range.resolve(range_key, today, first_ledger_date(session))
+    after, through = range_window(range_key, today, window.first)
     idx = life.window(after, through) if life is not None else []
     parts = [life.parts[i] for i in idx] if life is not None else []
+    # One meaning per range: a range that ends now includes today's live move, so the
+    # headline, bridge, months and records all describe the same days (7.3.1).
+    live = live_part(life, payload) if window.live else None
+    if live is not None:
+        parts = [*parts, live]
+    elif range_key == "1d" and life is not None and life.parts:
+        # Nothing moved since the last close (a weekend): 1D is the last session.
+        parts = [life.parts[-1]]
     eur_ret, usd_ret, basis = returns
     effect_pp = eur_ret - usd_ret if eur_ret is not None and usd_ret is not None else None
 
@@ -1053,10 +1090,6 @@ def _one_side(  # noqa: PLR0912, PLR0915
         effect = market = ZERO
     cur = payload["currency"]
     today_block = cur["today"]
-    if range_key == "1d":
-        day = _day_split_effect(payload)
-        if day is not None:
-            effect, market = day
     # Did the rate move this side's book at all? (The USD view of an all-dollar book:
     # never.) Then the money figures are all zero and the gap leads instead.
     moved = _q(effect) != 0 or any(p.currency != 0 for p in parts)
@@ -1319,22 +1352,38 @@ def _gap(lives: Mapping[str, Lifetime | None], after: date, through: date) -> De
     return eur - usd if eur is not None and usd is not None else None
 
 
-def strip_figures(session: Session, ccy: str, *, today: date | None = None) -> StripFigures:
+def strip_figures(
+    session: Session,
+    ccy: str,
+    *,
+    today: date | None = None,
+    overview: Mapping[str, Mapping[str, Any]] | None = None,
+) -> StripFigures:
     """This year's and the lifetime currency effect and return gap for the strip tiles.
 
-    The gaps are the same time-weighted chains as the Impact section's YTD and All.
+    Exactly the Impact section's YTD and All (same days, today's live move included
+    when ``overview`` is given), so the strip and Impact never show two numbers.
     """
     today = today or exchange_today()
     life = _safe_lifetime(session, ccy)
     if life is None or not life.parts:
         return StripFigures(None, None, None)
-    after, through = range_window("ytd", today)
-    ytd = [life.parts[i] for i in life.window(after, through)]
-    year = fa.bridge(ytd).currency if ytd else ZERO
     lives = {c: _safe_lifetime(session, c) for c in ("EUR", "USD")}
-    pp = _gap(lives, after, through)
-    life_pp = _gap(lives, *range_window("all", today))
-    return StripFigures(year, pp, fa.bridge(life.parts).currency, life_pp)
+    first = _first_of(lives)
+    live = live_part(life, overview[ccy]) if overview is not None and ccy in overview else None
+    after, through = range_window("ytd", today, first)
+    ytd = [life.parts[i] for i in life.window(after, through)] + ([live] if live else [])
+    year = fa.bridge(ytd).currency if ytd else ZERO
+    every = [*life.parts, live] if live else life.parts
+    if overview is not None and "EUR" in overview and "USD" in overview:
+        e, u, _ = headline_returns("ytd", today, lives, overview)
+        pp = e - u if e is not None and u is not None else None
+        e, u, _ = headline_returns("all", today, lives, overview)
+        life_pp = e - u if e is not None and u is not None else None
+    else:
+        pp = _gap(lives, after, through)
+        life_pp = _gap(lives, *range_window("all", today, first))
+    return StripFigures(year, pp, fa.bridge(every).currency, life_pp)
 
 
 @cached_read
