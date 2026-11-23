@@ -180,7 +180,9 @@ The owner steers UI work from screenshots, early and often.
 1. **Build, then shoot.** As soon as the change compiles (`npm run typecheck`), commit it
    (a `wip:` commit is fine). Then take Playwright screenshots of the changed views against the
    fixture dev server, at 390 and 1280 px (360 when a phone layout changed). Save them under
-   `.claude/ui-shots/<topic>/` in the session's worktree.
+   `.claude/ui-shots/<topic>/` in the session's worktree. Fixture builds (`--mode fixtures`)
+   never start the welcome tour by themselves, so it cannot cover a shot. Add `?tour=1` to
+   the URL only when the shot is of the tour itself.
 2. **Reject bad shots yourself before anyone sees them.** Look at every shot critically:
    - clipped or overlapping text or chips;
    - uneven gaps or a lone tile on its own row;
