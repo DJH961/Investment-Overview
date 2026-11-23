@@ -736,7 +736,7 @@ export function HoldingsTable({ rows, ccy }: { rows: HoldingEffectDto[]; ccy: st
             <li key={h.instrument_id} className="holding-split__row">
               <span className="holding-split__name">
                 <span className="holding-split__symbol">{h.symbol}</span>
-                {h.name ? <span className="holding-split__long">{h.name}</span> : null}
+                {h.name ? <span className="holding-split__long" data-truncate-ok>{h.name}</span> : null}
               </span>
               <span className="holding-split__bar">
                 <CurrencyBar v={v} max={max} />

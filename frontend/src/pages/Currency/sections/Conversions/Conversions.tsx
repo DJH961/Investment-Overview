@@ -16,6 +16,7 @@ import {
   type FxCostYearDto,
 } from "../../../../lib/queries/fxCosts";
 import { toNum } from "../../../../lib/queries/portfolio";
+import { useIsPhone } from "../../../../lib/useMediaQuery";
 import type { CurrencySectionComponentProps } from "../../sections";
 import "./Conversions.scss";
 
@@ -152,6 +153,7 @@ function CumulativeCard({ d }: { d: FxCostsDto }) {
 }
 
 function YearsCard({ d }: { d: FxCostsDto }) {
+  const phone = useIsPhone();
   const ccy = d.currency;
   const columns: Column<FxCostYearDto>[] = [
     { key: "year", header: "Year", primary: true, cell: (r) => r.year, sortValue: (r) => r.year },
@@ -180,6 +182,38 @@ function YearsCard({ d }: { d: FxCostsDto }) {
       sortValue: (r) => toNum(r.cost_pct),
     },
   ];
+  if (phone) {
+    // One compact line per year, labels once on top: a mini table, no chips.
+    return (
+      <Card title="By year" className="conv-section__years">
+        <table className="conv-section__mini">
+          <caption className="u-sr-only">What converting cost, per year</caption>
+          <thead>
+            <tr className="conv-section__mini-row conv-section__mini-row--head">
+              <th scope="col" className="conv-section__mini-cell">Year</th>
+              <th scope="col" className="conv-section__mini-cell conv-section__mini-cell--num">Converted</th>
+              <th scope="col" className="conv-section__mini-cell conv-section__mini-cell--num">Cost</th>
+              <th scope="col" className="conv-section__mini-cell conv-section__mini-cell--num">%</th>
+            </tr>
+          </thead>
+          <tbody>
+            {d.by_year.map((r) => (
+              <tr key={r.year} className="conv-section__mini-row">
+                <th scope="row" className="conv-section__mini-cell">{r.year}</th>
+                <td className="conv-section__mini-cell conv-section__mini-cell--num">
+                  <Money amount={toNum(r.converted)} currency={ccy} digits={0} />
+                </td>
+                <td className="conv-section__mini-cell conv-section__mini-cell--num">
+                  <Cost value={r.cost} ccy={ccy} />
+                </td>
+                <td className="conv-section__mini-cell conv-section__mini-cell--num">{pctText(r.cost_pct)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+    );
+  }
   return (
     <Card title="By year" flush>
       <DataTable

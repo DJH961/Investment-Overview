@@ -15,6 +15,39 @@
     }
   }
 
+  // Phones: the years as a mini table, one line each, numbers right-aligned.
+  &__mini {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__mini-row {
+    border-bottom: var(--border-width) solid var(--color-border);
+
+    &:last-child {
+      border-bottom: 0;
+    }
+
+    &--head {
+      color: var(--color-muted);
+      font-size: var(--font-size-2xs);
+      font-weight: var(--font-weight-medium);
+    }
+  }
+
+  &__mini-cell {
+    padding: var(--space-2) var(--space-1);
+    font-weight: inherit;
+    text-align: left;
+    white-space: nowrap;
+
+    &--num {
+      text-align: right;
+    }
+  }
+
   // Providers side by side: one column each; a card too narrow for two stacks them.
   &__compare {
     display: grid;

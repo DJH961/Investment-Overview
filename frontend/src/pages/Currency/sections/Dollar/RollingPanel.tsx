@@ -69,7 +69,8 @@ function RollingMini({ s, word, euro }: { s: RollingSeriesDto; word: string | nu
         <span
           className={clsx("dollar-rolling__dot", outside && "dollar-rolling__dot--outside")}
           style={{
-            left: `${(x(t1) / W) * 100}%`,
+            // A fraction of the plot's width; the stylesheet keeps the whole dot inside it.
+            ["--dot-x" as string]: x(t1) / W,
             top: `${(y(last) / H) * 100}%`,
           }}
         />
