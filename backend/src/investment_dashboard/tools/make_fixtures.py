@@ -126,8 +126,13 @@ GET_ENDPOINTS: tuple[str, ...] = (
     "/api/recurring/plans",
     "/api/recurring/estimates",
     "/api/recurring/suggestions",
-    # Fixture mode prefix-matches the query: one answer carries both the conversion and the split.
-    "/api/recurring/setup-plan?eur_amount=250&provider=revolut&buy_total_usd=2750&account_id=1",
+    # The setup flow's defaults, one exact answer per query the wizard sends: the plain run
+    # (monthly conversion -> monthly deposit -> weekly buys) ...
+    "/api/recurring/setup-plan?eur_amount=250&provider=revolut&conversion_unit=months&conversion_every=1&deposit_unit=months&deposit_every=1",
+    "/api/recurring/setup-plan?buy_total_usd=2750&account_id=1&deposit_unit=months&deposit_every=1&buy_unit=weeks&buy_every=1",
+    # ... and mixed cadences (monthly conversion -> deposit every 2 weeks -> weekly buys).
+    "/api/recurring/setup-plan?eur_amount=250&provider=revolut&conversion_unit=months&conversion_every=1&deposit_unit=weeks&deposit_every=2",
+    "/api/recurring/setup-plan?buy_total_usd=134&account_id=1&deposit_unit=weeks&deposit_every=2&buy_unit=weeks&buy_every=1",
     "/api/onboarding",
     "/api/refresh/status",
     "/api/settings",

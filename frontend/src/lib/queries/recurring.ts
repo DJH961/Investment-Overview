@@ -80,14 +80,33 @@ export function useSetupPlan(params: {
   fee?: string;
   total?: string;
   accountId?: number | null;
+  /** The conversion's cadence (step 1): its dollars are spread over the deposit cadence. */
+  conversionCadence?: { unit: string; every: number } | null;
+  /** The deposit's and the buys' cadences: each buy run then invests its share of the deposit. */
+  depositCadence?: { unit: string; every: number } | null;
+  buyCadence?: { unit: string; every: number } | null;
 }) {
   const q = new URLSearchParams();
-  if (params.eur) q.set("eur_amount", params.eur);
-  if (params.provider) q.set("provider", params.provider);
-  if (params.fee) q.set("expected_fee", params.fee);
+  if (params.eur) {
+    q.set("eur_amount", params.eur);
+    if (params.provider) q.set("provider", params.provider);
+    if (params.fee) q.set("expected_fee", params.fee);
+    if (params.conversionCadence && params.depositCadence) {
+      q.set("conversion_unit", params.conversionCadence.unit);
+      q.set("conversion_every", String(params.conversionCadence.every));
+      q.set("deposit_unit", params.depositCadence.unit);
+      q.set("deposit_every", String(params.depositCadence.every));
+    }
+  }
   if (params.total && params.accountId) {
     q.set("buy_total_usd", params.total);
     q.set("account_id", String(params.accountId));
+    if (params.depositCadence && params.buyCadence) {
+      q.set("deposit_unit", params.depositCadence.unit);
+      q.set("deposit_every", String(params.depositCadence.every));
+      q.set("buy_unit", params.buyCadence.unit);
+      q.set("buy_every", String(params.buyCadence.every));
+    }
   }
   const enabled = Boolean(params.eur) || Boolean(params.total && params.accountId);
   return useQuery({

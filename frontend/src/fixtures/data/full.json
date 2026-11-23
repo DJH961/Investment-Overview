@@ -306828,8 +306828,53 @@
    "unit": "months"
   }
  ],
- "GET /api/recurring/setup-plan?eur_amount=250&provider=revolut&buy_total_usd=2750&account_id=1": {
+ "GET /api/recurring/setup-plan?buy_total_usd=134&account_id=1&deposit_unit=weeks&deposit_every=2&buy_unit=weeks&buy_every=1": {
+  "conversion": null,
+  "split": {
+   "allocation_name": null,
+   "deposit_total": "134",
+   "has_allocation_plan": false,
+   "legs": [
+    {
+     "amount": "22",
+     "instrument_id": 2,
+     "symbol": "FAKEB"
+    },
+    {
+     "amount": "45",
+     "instrument_id": 1,
+     "symbol": "FAKEL"
+    }
+   ],
+   "method": "history",
+   "total": "67"
+  }
+ },
+ "GET /api/recurring/setup-plan?buy_total_usd=2750&account_id=1&deposit_unit=months&deposit_every=1&buy_unit=weeks&buy_every=1": {
+  "conversion": null,
+  "split": {
+   "allocation_name": null,
+   "deposit_total": "2750",
+   "has_allocation_plan": false,
+   "legs": [
+    {
+     "amount": "212",
+     "instrument_id": 2,
+     "symbol": "FAKEB"
+    },
+    {
+     "amount": "423",
+     "instrument_id": 1,
+     "symbol": "FAKEL"
+    }
+   ],
+   "method": "history",
+   "total": "635"
+  }
+ },
+ "GET /api/recurring/setup-plan?eur_amount=250&provider=revolut&conversion_unit=months&conversion_every=1&deposit_unit=months&deposit_every=1": {
   "conversion": {
+   "deposit_usd": "290",
    "ecb_rate": "1.16500000",
    "eur": "250",
    "fee_eur": "0",
@@ -306837,24 +306882,19 @@
    "rate": "1.1603393233",
    "usd": "290"
   },
-  "split": {
-   "allocation_name": null,
-   "has_allocation_plan": false,
-   "legs": [
-    {
-     "amount": "917",
-     "instrument_id": 2,
-     "symbol": "FAKEB"
-    },
-    {
-     "amount": "1833",
-     "instrument_id": 1,
-     "symbol": "FAKEL"
-    }
-   ],
-   "method": "history",
-   "total": "2750"
-  }
+  "split": null
+ },
+ "GET /api/recurring/setup-plan?eur_amount=250&provider=revolut&conversion_unit=months&conversion_every=1&deposit_unit=weeks&deposit_every=2": {
+  "conversion": {
+   "deposit_usd": "134",
+   "ecb_rate": "1.16500000",
+   "eur": "250",
+   "fee_eur": "0",
+   "off_pct": "-0.0040005808",
+   "rate": "1.1603393233",
+   "usd": "290"
+  },
+  "split": null
  },
  "GET /api/recurring/suggestions": [
   {

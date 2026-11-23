@@ -187,3 +187,29 @@ def test_next_due_agrees_with_due_dates(c: Cadence, start: date, end: date | Non
         assert first == listed[0]
     elif first is not None:
         assert first > start + timedelta(days=500) or (end is not None and first <= end)
+
+
+def test_per_run_amount_golden() -> None:
+    per = rec.per_run_amount
+    # A monthly 2,750 deposit, spent weekly: 2,750 x 12 / 52.
+    assert per(D("2750"), paid=("months", 1), spent=("weeks", 1)) == D("2750") * 12 / 52
+    assert round(per(D("2750"), paid=("months", 1), spent=("weeks", 1)), 2) == D("634.62")
+    # Spent monthly it is used up in one run; every 2 weeks, 2,750 x 12 / 26.
+    assert per(D("2750"), paid=("months", 1), spent=("months", 1)) == D("2750")
+    assert round(per(D("2750"), paid=("months", 1), spent=("weeks", 2)), 2) == D("1269.23")
+    # Every 2 months paid, monthly spent: half each time.
+    assert per(D("600"), paid=("months", 2), spent=("months", 1)) == D("300")
+
+
+@given(
+    st.sampled_from(["days", "weeks", "months"]),
+    st.integers(1, 12),
+    st.decimals(1, 10000, places=2),
+)
+def test_per_run_amount_uses_up_the_deposit_over_a_year(
+    unit: str, every: int, total: Decimal
+) -> None:
+    run = rec.per_run_amount(total, paid=("months", 1), spent=(unit, every))
+    # A year of buys uses up a year of deposits (exact in rational arithmetic; tiny Decimal rounding).
+    assert abs(run * rec.runs_per_year(unit, every) - total * 12) < D("0.0001")
+    assert rec.per_run_amount(total, paid=(unit, every), spent=(unit, every)) == total
