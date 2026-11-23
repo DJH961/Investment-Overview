@@ -855,12 +855,19 @@ def _seed_conversions(
       pin can reach it (pinned).
     * June: two conversions, two slices.
     * 2026-06-26: converted, not yet deposited ($1,000 left in the pool).
+    * 2026-06-27: $800 converted, $200 kept in the USD account (7.3, not in the pool).
+    * The 180,000 opening deposit is marked "received in USD" (no conversion).
     * The 2023 deposits have no conversion at all (ECB only).
     """
-    from investment_dashboard.models import FxConversion, FxConversionPin
+    from investment_dashboard.models import FxConversion, FxConversionPin, UsdReceivedDeposit
 
     def conv(
-        day: _dt.date, usd: str, provider: str, fees: str | None, note: str | None = None
+        day: _dt.date,
+        usd: str,
+        provider: str,
+        fees: str | None,
+        note: str | None = None,
+        kept: str = "0",
     ) -> Any:
         # About 0.4 % fewer dollars than the reference rate, like a retail spread.
         eur = (D(usd) / (rate_on(day) * D("0.996"))).quantize(D("0.01"))
@@ -871,6 +878,7 @@ def _seed_conversions(
             fees_eur=None if fees is None else D(fees),
             note=note,
             provider=provider,
+            kept_usd=D(kept),
             created_at=_dt.datetime.combine(day, _dt.time(9, 0)),
             updated_at=_dt.datetime.combine(day, _dt.time(9, 0)),
         )
@@ -889,9 +897,23 @@ def _seed_conversions(
     conv(_dt.date(2026, 5, 29), "2000.00", "wise", "2.10")
     conv(_dt.date(2026, 5, 30), "2000.00", "revolut", None)
     conv(_dt.date(2026, 6, 26), "1000.00", "wise", "1.40")
+    # Converted more than was invested: $200 stays in the USD account (not in the pool).
+    conv(
+        _dt.date(2026, 6, 27),
+        "800.00",
+        "wise",
+        "1.10",
+        "Kept $200 for the card",
+        kept="200.00",
+    )
     for day, usd, provider, fees in _history_plan()[1]:
         conv(day, usd, provider, fees)
     session.flush()
+    # The retirement account's opening deposit was dollars received directly.
+    opening = next(r for r in rows if r.kind == "deposit" and r.net_native == D("180000.00"))
+    session.add(
+        UsdReceivedDeposit(deposit_txn_id=opening.id, created_at=_dt.datetime(2026, 6, 1, 9, 0))
+    )
     may_deposit = next(r for r in rows if r.kind == "deposit" and r.date == top_ups["may"])
     session.add(
         FxConversionPin(

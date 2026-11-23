@@ -1,0 +1,111 @@
+@use "../../styles/mixins" as m;
+
+.wise-import {
+  &__upload {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  &__file {
+    @include m.visually-hidden;
+  }
+
+  &__text {
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-sm);
+    overflow-wrap: anywhere;
+  }
+
+  &__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin: 0 0 var(--space-3);
+  }
+
+  &__chip {
+    padding: var(--space-1) var(--space-2);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-xs);
+  }
+
+  &__mapping {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    margin: var(--space-3) 0;
+    padding: var(--space-3);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-md);
+  }
+
+  &__mapping-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+    gap: var(--space-3);
+  }
+
+  &__mapping-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  &__mapping-label {
+    font-size: var(--font-size-xs);
+    color: var(--color-muted);
+  }
+
+  &__check {
+    width: var(--space-5);
+    height: var(--space-5);
+    accent-color: var(--color-accent);
+  }
+
+  &__kept {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 6rem;
+  }
+
+  &__error {
+    margin: 0;
+    color: var(--color-neg);
+    font-size: var(--font-size-xs);
+  }
+
+  &__row--off {
+    opacity: 0.7;
+  }
+
+  &__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: center;
+    gap: var(--space-3);
+    margin-top: var(--space-4);
+  }
+
+  &__done {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0 0 var(--space-3);
+
+    svg {
+      width: var(--space-5);
+      height: var(--space-5);
+      color: var(--color-pos);
+    }
+  }
+
+  &__link {
+    color: var(--color-accent);
+  }
+}

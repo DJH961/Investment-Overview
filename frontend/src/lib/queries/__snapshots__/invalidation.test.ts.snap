@@ -28,6 +28,7 @@ exports[`write -> invalidated keys > fxConversionWrite 1`] = `
   "currency/both",
   "deposits/both",
   "deposits/dividends",
+  "diagnostics/status",
   "fx-conversions",
   "graphs/1d",
   "holdings/both",

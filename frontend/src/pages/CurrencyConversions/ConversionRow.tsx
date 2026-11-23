@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, Wallet } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { Chip } from "../../components/Chip";
@@ -35,6 +35,31 @@ function PaidChips({ c }: { c: FxConversion }) {
   );
 }
 
+/**
+ * Dollars kept outside investing: the received dollars as a track (accent = paid for deposits, plain =
+ * still in the pool, dotted ink = kept in your USD account) and the labelled amount. Never pool.
+ */
+function KeptSplit({ c }: { c: FxConversion }) {
+  const total = Number(c.usd_received);
+  const kept = Number(c.kept_usd);
+  const left = Number(c.remaining_usd);
+  const used = Math.max(0, total - kept - left);
+  const pct = (n: number) => `${total > 0 ? (n / total) * 100 : 0}%`;
+  return (
+    <span className="conv__kept">
+      <span className="conv__split" aria-hidden>
+        <span className="conv__seg conv__seg--used" style={{ width: pct(used) }} />
+        <span className="conv__seg conv__seg--pool" style={{ width: pct(left) }} />
+        <span className="conv__seg conv__seg--kept" style={{ width: pct(kept) }} />
+      </span>
+      <span className="conv__kept-text">
+        <Wallet aria-hidden className="conv__kept-icon" />
+        Kept in your USD account: <Money amount={kept} currency="USD" />
+      </span>
+    </span>
+  );
+}
+
 function Fact({ label, children, title }: { label: string; children: ReactNode; title?: string }) {
   return (
     <div className="conv__fact" title={title}>
@@ -55,6 +80,7 @@ export function ConversionRow({ c, menu, onSettle }: { c: FxConversion; menu: Re
   const fees = c.fees_eur && Number(c.fees_eur) > 0 ? Number(c.fees_eur) : 0;
   const allIn = Number(c.all_in_rate) !== Number(c.rate);
   const cost = c.cost_eur === null || c.cost_eur === undefined ? null : Number(c.cost_eur);
+  const kept = Number(c.kept_usd);
   return (
     <li className="conv" id={`conversion-${c.id}`}>
       <div className="conv__id">
@@ -82,6 +108,7 @@ export function ConversionRow({ c, menu, onSettle }: { c: FxConversion; menu: Re
             </>
           )}
         </span>
+        {kept > 0 && <KeptSplit c={c} />}
       </div>
       <div className="conv__menu">{menu}</div>
 
@@ -140,6 +167,11 @@ export function ConversionRow({ c, menu, onSettle }: { c: FxConversion; menu: Re
             {offPctText(c.off_pct)}
             {cost !== null && <span className="conv__sub">cost <Money amount={cost} currency="EUR" signed /></span>}
           </Fact>
+          {kept > 0 && (
+            <Fact label="Kept in your USD account">
+              <Money amount={kept} currency="USD" />
+            </Fact>
+          )}
           {c.note && <p className="conv__note conv__note--detail">{c.note}</p>}
         </dl>
       )}

@@ -18,7 +18,6 @@ from investment_dashboard.repositories import instruments_repo
 from investment_dashboard.services import (
     diagnostics_service,
     fetch_report,
-    fx_conversion_service,
     maintenance_service,
     provider_status,
     refresh_status,
@@ -54,7 +53,7 @@ _MAX_PER_INSTRUMENT = 5
 _LINKS: dict[str, tuple[str, str]] = {
     "providers": ("Test the providers", "/diagnostics#system"),
     "prices_anomaly": ("Open the price editor", "/diagnostics#market-data"),
-    "ecb_fallback_deposits": ("Record the missing conversion", "/transactions"),
+    "ecb_fallback_deposits": ("Open the Conversions page", "/conversions"),
 }
 
 
@@ -107,29 +106,14 @@ def _iso(value: datetime | None) -> str | None:
 
 def _ecb_fallback_check(session: Session) -> dict[str, Any]:
     """USD deposits that fell back to the ECB rate (conversion pool did not cover them)."""
-    report = fx_conversion_service.pool_report(session)
-    if not report.conversions:
-        return {
-            "id": "ecb_fallback_deposits",
-            "title": "Deposits paid at the ECB rate",
-            "severity": "ok",
-            "count": 0,
-            "detail": "No currency conversions recorded, so deposits use their trade-date rate.",
-            "examples": [],
-        }
-    fallen = [m for m in report.result.deposits if m.is_fallback]
+    item = diagnostics_service.check_unconverted_deposits(session)
     return {
-        "id": "ecb_fallback_deposits",
-        "title": "Deposits paid at the ECB rate",
-        "severity": "info" if fallen else "ok",
-        "count": len(fallen),
-        "detail": (
-            "These USD deposits were not fully covered by recorded conversions; "
-            "the ECB rate was used for the rest."
-            if fallen
-            else "Every USD deposit is covered by a recorded conversion."
-        ),
-        "examples": [f"{m.date.isoformat()} ({m.fallback_usd:f} USD)" for m in fallen[:5]],
+        "id": item.key,
+        "title": item.title,
+        "severity": item.severity,
+        "count": item.count,
+        "detail": item.detail,
+        "examples": list(item.examples),
     }
 
 

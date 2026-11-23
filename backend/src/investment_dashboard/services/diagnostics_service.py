@@ -314,6 +314,49 @@ def _check_frozen_legs(session: Session) -> HealthItem:
 _CASH_DUST = Decimal("0.005")
 
 
+def check_unconverted_deposits(session: Session) -> HealthItem:
+    """Deposits valued at the ECB rate with no conversion (7.3): an *info* note, never a problem.
+
+    The owner always has a few (dollars received directly, old deposits), so this is
+    deliberately quiet: severity is ``info`` or ``ok``, it is not part of
+    :func:`check_health` (so it never raises the badge or the problem count) and
+    deposits marked "Received in USD (no conversion)" are left out. The Data Health
+    read-model shows it and links to the Conversions page.
+    """
+    from investment_dashboard.services import fx_conversion_service  # noqa: PLC0415
+
+    report = fx_conversion_service.pool_report(session)
+    key, title = "ecb_fallback_deposits", "Deposits valued at the ECB rate"
+    if not report.conversions:
+        return HealthItem(
+            key=key,
+            title=title,
+            severity="ok",
+            count=0,
+            detail="No currency conversions recorded, so deposits use their trade-date rate.",
+        )
+    fallen = fx_conversion_service.unconverted_deposits(report)
+    if not fallen:
+        return HealthItem(
+            key=key,
+            title=title,
+            severity="ok",
+            count=0,
+            detail="Every USD deposit is covered by a conversion or marked as received in USD.",
+        )
+    return HealthItem(
+        key=key,
+        title=title,
+        severity="info",
+        count=len(fallen),
+        detail=(
+            f"{len(fallen)} deposits valued at the ECB rate with no conversion. "
+            "Add the conversion, or mark a deposit as received in USD on the Conversions page."
+        ),
+        examples=tuple(f"{m.date.isoformat()} ({m.fallback_usd:f} USD)" for m in fallen[:5]),
+    )
+
+
 def _check_brokerage_cash(session: Session) -> HealthItem:
     """Brokerage accounts whose ledger cash balance is not zero (B-017, check only).
 

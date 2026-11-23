@@ -57,12 +57,14 @@ interface FormState {
   eur: string;
   usd: string;
   fees: string;
+  /** Dollars kept in the USD account, not sent on to the broker ("" = none). */
+  kept: string;
   note: string;
   /** "" = not set. */
   provider: FxProvider | "";
 }
 
-const EMPTY: FormState = { date: "", eur: "", usd: "", fees: "", note: "", provider: "" };
+const EMPTY: FormState = { date: "", eur: "", usd: "", fees: "", kept: "", note: "", provider: "" };
 
 const NO_PROVIDER = "none";
 const PROVIDER_OPTIONS = [
@@ -78,6 +80,7 @@ function fromConversion(c: FxConversion): FormState {
     eur: trimDecimal(c.eur_sent),
     usd: trimDecimal(c.usd_received),
     fees: trimDecimal(c.fees_eur),
+    kept: Number(c.kept_usd) > 0 ? trimDecimal(c.kept_usd) : "",
     note: c.note ?? "",
     provider: c.provider ?? "",
   };
@@ -132,6 +135,11 @@ export function ConversionDialog({ open, onOpenChange, editing, prefill }: Conve
       setError("Fees must be a number, like 2,50 or 2.50.");
       return;
     }
+    const kept = form.kept.trim() === "" ? "0" : toApiDecimal(form.kept);
+    if (kept === null || Number(kept) < 0 || Number(kept) > Number(usd)) {
+      setError("Kept dollars must be between 0 and the USD received.");
+      return;
+    }
     setError(null);
     save.mutate(
       {
@@ -141,6 +149,7 @@ export function ConversionDialog({ open, onOpenChange, editing, prefill }: Conve
           eur_sent: eur,
           usd_received: usd,
           fees_eur: fees,
+          kept_usd: kept,
           note: form.note || null,
           provider: form.provider || null,
           // 7.3 matches EUR→USD only; the server rejects any other pair.
@@ -185,6 +194,9 @@ export function ConversionDialog({ open, onOpenChange, editing, prefill }: Conve
         </Field>
         <Field label="Fees (EUR, optional)">
           {(c) => <Input {...c} inputMode="decimal" value={form.fees} onChange={set("fees")} />}
+        </Field>
+        <Field label="Kept in your USD account (optional)" hint="Dollars you did not send on to the broker.">
+          {(c) => <Input {...c} inputMode="decimal" value={form.kept} onChange={set("kept")} />}
         </Field>
         <Field label="Provider (optional)">
           {(c) => (
@@ -356,7 +368,7 @@ export function CurrencyConversions() {
       (!filters.pool || Number(c.remaining_usd) > 0.005),
   );
   const shownDeposits = deposits.filter(
-    (d) => inPeriod(d.date, filters.period, today) && (!needs || d.status !== "matched"),
+    (d) => inPeriod(d.date, filters.period, today) && (!needs || (d.status !== "matched" && d.status !== "received_usd")),
   );
   const conversionsFiltered = activeCount(filters) > 0;
   const depositsFiltered = filters.period !== PERIOD_ALL || needs;
@@ -481,7 +493,7 @@ export function CurrencyConversions() {
                 key: "ecb",
                 label: "On the ECB rate",
                 tip: "Deposits that use the ECB rate for all or part of their dollars, because no conversion of yours covers them.",
-                value: pool.data ? deposits.filter((d) => d.status !== "matched").length : "–",
+                value: pool.data ? deposits.filter((d) => d.status !== "matched" && d.status !== "received_usd").length : "–",
                 note: pool.data ? `of ${deposits.length} deposits` : undefined,
               },
               ...costStatItems(costs),
@@ -580,7 +592,7 @@ export function CurrencyConversions() {
               folds={folds}
               setFolds={setFolds}
               meta={(rows) => {
-                const attention = rows.filter((d) => d.status !== "matched").length;
+                const attention = rows.filter((d) => d.status !== "matched" && d.status !== "received_usd").length;
                 return (
                   <>
                     {plural(rows.length, "deposit", "deposits")} ·{" "}

@@ -61,6 +61,10 @@ export const CVD_PAIRS: { a: string; b: string; why: string }[] = [
   { a: "--color-lot-long", b: "--color-neg", why: "Long-term badge next to a loss in the Gain column" },
   { a: "--color-lot-soon", b: "--color-pos", why: "Long-term in N d badge next to a gain" },
   { a: "--color-lot-soon", b: "--color-neg", why: "Long-term in N d badge next to a loss" },
+  // Conversions › deposit status chips (7.3): Matched (pos tick) and Partly matched (warn) are
+  // listed above; ECB only, Pinned and "Received in USD" are neutral chips (no hue), told apart
+  // by icon and word, so they add no colour pair. The kept-dollars segment is accent / border /
+  // dotted ink with the amount written out beside it.
   // Holding page › Twin (7.1): twin line (chart-1), dashed fund estimate, NAV dots (chart-3).
   { a: "--chart-estimate", b: "--chart-1", why: "twin chart: fund estimate vs twin line" },
   { a: "--chart-estimate", b: "--chart-3", why: "twin chart: fund estimate vs NAV points" },

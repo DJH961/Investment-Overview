@@ -34,7 +34,7 @@ export const INVALIDATION = {
   // "graphs": a changed ETF twin redraws the 1D line.
   instrumentEdit: ["instruments", "overview", "holdings", "allocations", "analytics", "calculator", "deposits", "transactions", "graphs"],
   /** EUR returns are rebuilt server-side from the conversions; values and ledger rows are untouched. */
-  fxConversionWrite: ["fx-conversions", "overview", "currency", "holdings", "graphs", "periods", "analytics", "calculator", "deposits"],
+  fxConversionWrite: ["fx-conversions", "diagnostics", "overview", "currency", "holdings", "graphs", "periods", "analytics", "calculator", "deposits"],
   /** A recurring plan was added, edited, paused, ended or deleted (est. rows are written by the server's EOD job). */
   recurringPlanWrite: ["recurring", "diagnostics"],
   /** Settling est. rows rewrites ledger rows and conversions (7.3, P14). */

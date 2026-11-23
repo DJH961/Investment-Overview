@@ -33,10 +33,24 @@ class Batch:
     eur_sent: Decimal
     usd_received: Decimal
     fees_eur: Decimal = _ZERO
+    #: Dollars that never go to the broker (kept in the owner's USD account).
+    kept_usd: Decimal = _ZERO
 
     @property
     def eur_cost(self) -> Decimal:
         return self.eur_sent + self.fees_eur
+
+    @property
+    def pool_usd(self) -> Decimal:
+        """Dollars available to investing: received minus kept."""
+        return self.usd_received - self.kept_usd
+
+    @property
+    def pool_eur(self) -> Decimal:
+        """All-in EUR attributed to the investable dollars (pro rata)."""
+        if self.kept_usd == 0:
+            return self.eur_cost
+        return self.eur_cost * self.pool_usd / self.usd_received
 
 
 @dataclass(frozen=True)
@@ -46,6 +60,9 @@ class UsdDeposit:
     id: int
     date: date
     usd: Decimal
+    #: Received in USD directly (no conversion): never takes pool dollars, priced at
+    #: the ECB rate like any uncovered part.
+    no_conversion: bool = False
 
 
 @dataclass(frozen=True)
@@ -150,8 +167,8 @@ def match_deposits(  # noqa: PLR0912, PLR0915 - one linear pass, clearer undivid
     batches = sorted(conversions, key=lambda b: (b.date, b.id))
     index = {b.id: i for i, b in enumerate(batches)}
     dep_by_id = {d.id: d for d in deposits}
-    left_usd = [b.usd_received for b in batches]
-    left_eur = [b.eur_cost for b in batches]
+    left_usd = [b.pool_usd for b in batches]
+    left_eur = [b.pool_eur for b in batches]
 
     # Phase 1: validate and apply pins (deterministic order).
     pinned: dict[int, list[MatchedSlice]] = {}
@@ -169,6 +186,8 @@ def match_deposits(  # noqa: PLR0912, PLR0915 - one linear pass, clearer undivid
         batch = batches[i]
         if pin.usd <= 0:
             rejected.append((pin, "pin amount must be positive"))
+        elif dep.no_conversion:
+            rejected.append((pin, "deposit was received in USD (no conversion)"))
         elif batch.date > dep.date + timedelta(days=PIN_WINDOW_DAYS):
             rejected.append((pin, "conversion is dated more than 7 days after the deposit"))
         elif pinned_dep_usd.get(dep.id, _ZERO) + pin.usd > dep.usd:
@@ -177,9 +196,7 @@ def match_deposits(  # noqa: PLR0912, PLR0915 - one linear pass, clearer undivid
             rejected.append((pin, "conversion is pinned for more than its amount"))
         else:
             eur = (
-                left_eur[i]
-                if pin.usd == left_usd[i]
-                else batch.eur_cost * pin.usd / batch.usd_received
+                left_eur[i] if pin.usd == left_usd[i] else batch.pool_eur * pin.usd / batch.pool_usd
             )
             left_usd[i] -= pin.usd
             left_eur[i] -= eur
@@ -193,13 +210,13 @@ def match_deposits(  # noqa: PLR0912, PLR0915 - one linear pass, clearer undivid
         slices: list[MatchedSlice] = list(pinned.get(dep.id, ()))
         need = dep.usd - sum((s.usd for s in slices), _ZERO)
         for i, batch in enumerate(batches):
-            if need <= 0:
+            if need <= 0 or dep.no_conversion:
                 break
             if batch.date > dep.date or left_usd[i] <= 0:
                 continue
             take = min(need, left_usd[i])
             # exhaust a batch exactly: no rounding residue
-            eur = left_eur[i] if take == left_usd[i] else batch.eur_cost * take / batch.usd_received
+            eur = left_eur[i] if take == left_usd[i] else batch.pool_eur * take / batch.pool_usd
             left_usd[i] -= take
             left_eur[i] -= eur
             need -= take
