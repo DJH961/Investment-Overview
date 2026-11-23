@@ -33,7 +33,7 @@ export function Fold({ open, onToggle, title, meta, children }: FoldProps) {
         </div>
       </header>
       <div id={bodyId} className="card__body card__body--flush" hidden={!open}>
-        {open ? children : null}
+        {open ? <div className="fold__rows">{children}</div> : null}
       </div>
     </section>
   );
