@@ -49,6 +49,19 @@ the offset (`fx_cost_service.conversions_with_fixings`); `apply_import_update` c
 `recurring_service.confirm_estimate`. openapi, api-types and fixtures regenerated.
 Targeted backend tests: 120 passed after the last merge; frontend typecheck clean.
 
+## Screenshot review round 1 (2026-11-23), polish lanes running
+
+Owner: no Impact/"Mixed" changes in 7.3.0 (reverted, d4ad2df2); money-maths inconsistencies go
+to 7.3.1 (`docs/v7_3_1_money_math_issues.md`). Polish branches off feat/v7.3.0, merge when done:
+- `lane/v7.3-conv-folds`: Conversions page: every year foldable (current year too), no month
+  level (year → conversions), consistent vertical spacing so entries never touch.
+- `lane/v7.3-costs-polish`: Currency Conversions section: Best/Worst as one tile (no lone
+  tile on a 2nd row), By-year/provider tables fit without horizontal scroll.
+- `lane/v7.3-recurring-polish`: proper provider/account names and short plan titles, a fixture
+  account with an MMF, price shown at stepped precision, 360/390 checks.
+Then: shots at 360/390/1280 (both themes) of Conversions page, Currency section + rate chart
+markers, Recurring + settle sheet, Transactions est. chip, Wise import card → owner.
+
 ## Impact € vs pp: real inconsistency found (2026-11-23, waiting for the owner's go)
 
 The "Mixed" tag (fix/v7.3-impact-sign, merged) only hides the symptom. Root cause:
