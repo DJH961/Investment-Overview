@@ -63,6 +63,7 @@ export function SetupFlow({ open, onClose }: { open: boolean; onClose: () => voi
           <PlanForm
             key={`${index}-${suggestions ? "s" : "w"}`}
             kind={step.kind}
+            hideKind
             initial={step.initial}
             saveLabel="Add plan"
             skipLabel={index >= steps.length - 1 ? "Skip and finish" : "Skip this step"}

@@ -162,8 +162,18 @@
     gap: var(--space-2);
 
     @media (min-width: 640px) {
-      grid-template-columns: minmax(0, 1fr) auto auto;
+      grid-template-columns: minmax(0, 1fr) auto;
       align-items: end;
+    }
+  }
+
+  &__leg-actions {
+    display: flex;
+    gap: var(--space-2);
+
+    > * {
+      flex: 1 1 0;
+      justify-content: center;
     }
   }
 

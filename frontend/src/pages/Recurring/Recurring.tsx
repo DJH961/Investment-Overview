@@ -190,7 +190,7 @@ export function Recurring() {
                 </Button>
               ))}
             </div>
-            <PlanForm key={adding} kind={adding} onSaved={() => setAdding(null)} />
+            <PlanForm key={adding} kind={adding} hideKind onSaved={() => setAdding(null)} />
           </>
         )}
       </Sheet>

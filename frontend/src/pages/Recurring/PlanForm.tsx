@@ -33,11 +33,19 @@ interface LegDraft {
   value: string;
 }
 
+/** "1000.000000" as typed back: no padding zeros. */
+const plain = (v: string | number | null | undefined): string => (v == null || v === "" ? "" : String(Number(v)));
+
+/** "fidelity" -> "Fidelity", "savings_bank" -> "Savings Bank". */
+const brokerName = (broker: string): string => broker.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
 export interface PlanFormProps {
   kind: PlanKind;
   /** Plan id when editing. */
   id?: number;
   initial?: Partial<RecurringPlanInput>;
+  /** Hide the kind line when the surrounding UI already names it (setup step, kind buttons). */
+  hideKind?: boolean;
   saveLabel?: string;
   skipLabel?: string;
   onSaved: () => void;
@@ -45,7 +53,7 @@ export interface PlanFormProps {
 }
 
 /** One form for the three plan kinds (the setup flow and the edit sheet both use it). */
-export function PlanForm({ kind, id, initial, saveLabel = "Save plan", skipLabel, onSaved, onSkip }: PlanFormProps) {
+export function PlanForm({ kind, id, initial, hideKind, saveLabel = "Save plan", skipLabel, onSaved, onSkip }: PlanFormProps) {
   const accounts = useAccounts();
   const instruments = useInstruments();
   const save = useSavePlan();
@@ -61,15 +69,15 @@ export function PlanForm({ kind, id, initial, saveLabel = "Save plan", skipLabel
       ? (initial?.legs ?? []).map((l) => ({
           instrumentId: String(l.instrument_id),
           mode: l.shares != null ? "shares" : "amount",
-          value: String(l.shares ?? l.amount ?? ""),
+          value: plain(l.shares ?? l.amount),
         }))
       : [{ instrumentId: "", mode: "amount", value: "" }],
   );
-  const [amount, setAmount] = useState(initial?.amount == null ? "" : String(initial.amount));
+  const [amount, setAmount] = useState(plain(initial?.amount));
   const [provider, setProvider] = useState<string>(initial?.provider ?? "revolut");
-  const [fee, setFee] = useState(initial?.expected_fee == null ? "" : String(initial.expected_fee));
+  const [fee, setFee] = useState(plain(initial?.expected_fee));
 
-  const accountOptions = (accounts.data ?? []).map((a) => ({ value: String(a.id), label: `${a.broker} ${a.account_label}` }));
+  const accountOptions = (accounts.data ?? []).map((a) => ({ value: String(a.id), label: `${brokerName(a.broker)} ${a.account_label}` }));
   const instrumentOptions = (instruments.data ?? []).map((i) => ({ value: String(i.id), label: i.symbol }));
 
   const submit = () => {
@@ -115,7 +123,7 @@ export function PlanForm({ kind, id, initial, saveLabel = "Save plan", skipLabel
         submit();
       }}
     >
-      <p className="recurring-page__form-kind">{KIND_LABEL[kind]}</p>
+      {!hideKind && <p className="recurring-page__form-kind">{KIND_LABEL[kind]}</p>}
       {kind === "conversion" && (
         <>
           <Field label="Provider">
@@ -166,24 +174,26 @@ export function PlanForm({ kind, id, initial, saveLabel = "Save plan", skipLabel
                     />
                   )}
                 </Field>
-                <Button
-                  variant="ghost"
-                  className="recurring-page__leg-btn"
-                  onClick={() => setLegs(legs.map((l, j) => (j === i ? { ...l, mode: l.mode === "amount" ? "shares" : "amount" } : l)))}
-                >
-                  {leg.mode === "amount" ? "Use shares" : "Use amount"}
-                </Button>
-                {legs.length > 1 && (
+                <span className="recurring-page__leg-actions">
                   <Button
                     variant="ghost"
                     className="recurring-page__leg-btn"
-                    aria-label={`Remove holding ${i + 1}`}
-                    leftIcon={<Trash2 aria-hidden />}
-                    onClick={() => setLegs(legs.filter((_, j) => j !== i))}
+                    onClick={() => setLegs(legs.map((l, j) => (j === i ? { ...l, mode: l.mode === "amount" ? "shares" : "amount" } : l)))}
                   >
-                    Remove
+                    {leg.mode === "amount" ? "Use shares" : "Use amount"}
                   </Button>
-                )}
+                  {legs.length > 1 && (
+                    <Button
+                      variant="ghost"
+                      className="recurring-page__leg-btn"
+                      aria-label={`Remove holding ${i + 1}`}
+                      leftIcon={<Trash2 aria-hidden />}
+                      onClick={() => setLegs(legs.filter((_, j) => j !== i))}
+                    >
+                      Remove
+                    </Button>
+                  )}
+                </span>
               </div>
             </div>
           ))}
