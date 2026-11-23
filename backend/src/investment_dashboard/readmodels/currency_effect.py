@@ -119,10 +119,11 @@ ALL_GAP_EXPLAINER = (
 )
 #: When the money effect and the gap in points point different ways (lead ``effect``).
 MISMATCH_NOTE = (
-    "The money figure and the gap in points point different ways here. The money figure "
-    "adds up what each day's rate move did to what you held that day. The returns weigh "
-    "each stretch of time by how much you had invested then, so large deposits or "
-    "withdrawals while the rate moved can tip the gap the other way."
+    "Mixed: the money figure and the gap in points point different ways. The money "
+    "figure adds up what each day's rate move did to what you held that day. The "
+    "returns weigh each stretch of time by how much you had invested then, so your "
+    "timing (large deposits or withdrawals while the rate moved) can tip the gap the "
+    "other way."
 )
 
 
@@ -139,6 +140,17 @@ def mismatch_note(effect: Decimal, effect_pp: Decimal | None) -> str | None:
     if money == 0 or pp == 0 or (money > 0) == (pp > 0):
         return None
     return MISMATCH_NOTE
+
+
+def headline_kind(effect: Decimal, effect_pp: Decimal | None) -> str:
+    """The headline word: ``mixed`` when the money figure and the gap print opposite signs.
+
+    Otherwise the money figure's own kind, so the word never contradicts the figure
+    printed next to it.
+    """
+    if mismatch_note(effect, effect_pp) is not None:
+        return "mixed"
+    return kind_of(effect)
 
 
 # -- small helpers ---------------------------------------------------------------------
@@ -1035,7 +1047,9 @@ def _one_side(  # noqa: PLR0912, PLR0915
         "effect": _m(effect),
         "market": _m(market),
         "currency_share": _f(currency_share(market, effect)) if moved else None,
-        "kind": kind_of(effect) if lead == "effect" else kind_of(effect_pp or ZERO),
+        "kind": headline_kind(effect, effect_pp)
+        if lead == "effect"
+        else kind_of(effect_pp or ZERO),
         "lead": lead,
         "return_basis": basis,
         "note": mismatch_note(effect, effect_pp) if lead == "effect" else None,

@@ -4336,7 +4336,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "tailwind" | "headwind" | "neutral";
+            kind: "tailwind" | "headwind" | "neutral" | "mixed";
             /**
              * Lead
              * @default effect

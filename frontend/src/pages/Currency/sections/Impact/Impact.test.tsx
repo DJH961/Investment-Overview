@@ -51,6 +51,19 @@ describe("Impact, EUR view", () => {
   });
 });
 
+describe("Impact, EUR view: money and points disagree", () => {
+  it("reads Mixed, never Tailwind, beside a gap that prints the opposite sign", () => {
+    const eur: CurrencyEffectDto = {
+      ...noChart(all.EUR),
+      headline: { ...all.EUR.headline, effect: "2931", effect_pp: "-0.042", kind: "mixed", note: "Mixed: the money figure and the gap point different ways." },
+    };
+    mount(<ImpactHero data={eur} range="all" />);
+    expect(screen.getByText("Mixed")).toBeInTheDocument();
+    expect(screen.queryByText("Tailwind")).not.toBeInTheDocument();
+    expect(screen.getByText(/Euro return [\d.]+ pp lower than the dollar return/)).toBeInTheDocument();
+  });
+});
+
 describe("Impact, USD view: the investing perspective", () => {
   const usd = all.USD;
 
