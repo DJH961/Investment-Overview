@@ -106,17 +106,19 @@ export function ConversionRow({ c, menu, onSettle }: { c: FxConversion; menu: Re
     <li className="conv" id={`conversion-${c.id}`}>
       <div className="conv__id">
         <span className="conv__date">{formatDate(c.date)}</span>
-        {c.provider && (
-          <Chip size="sm" outline>
-            {providerLabel(c.provider)}
-          </Chip>
-        )}
-        {c.is_estimate && onSettle && <EstChip onOpen={onSettle} />}
-        {note && (
-          <span className="conv__note conv__note--wide" title={note} data-truncate-ok>
-            {note}
-          </span>
-        )}
+        <div className="conv__tags">
+          {c.provider && (
+            <Chip size="sm" outline>
+              {providerLabel(c.provider)}
+            </Chip>
+          )}
+          {c.is_estimate && onSettle && <EstChip onOpen={onSettle} />}
+          {note && (
+            <span className="conv__note conv__note--wide" title={note} data-truncate-ok>
+              {note}
+            </span>
+          )}
+        </div>
       </div>
       <div className="conv__hero">
         <Money amount={Number(c.usd_received)} currency="USD" className="conv__usd" />
@@ -155,11 +157,23 @@ export function ConversionRow({ c, menu, onSettle }: { c: FxConversion; menu: Re
           onClick={() => setOpen((o) => !o)}
         >
           <span className="conv__brief-text">
-            <Money amount={Number(c.eur_sent)} currency="EUR" />
+            <span className="conv__nobreak">
+              <Money amount={Number(c.eur_sent)} currency="EUR" />
+            </span>
             {" · "}
-            {formatNumber(Number(c.rate), 4)}
-            {c.off_pct !== null && ` · ${offPctText(c.off_pct)}`}
-            {cost !== null && ` · cost ${formatMoney(cost, "EUR", { signed: true })}`}
+            <span className="conv__nobreak">{formatNumber(Number(c.rate), 4)}</span>
+            {c.off_pct !== null && (
+              <>
+                {" · "}
+                <span className="conv__nobreak">{offPctText(c.off_pct)}</span>
+              </>
+            )}
+            {cost !== null && (
+              <>
+                {" · "}
+                <span className="conv__nobreak">cost {formatMoney(cost, "EUR", { signed: true })}</span>
+              </>
+            )}
           </span>
           {open ? <ChevronDown aria-hidden className="conv__chevron" /> : <ChevronRight aria-hidden className="conv__chevron" />}
         </button>
