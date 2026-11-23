@@ -107,3 +107,44 @@ def test_tick_then_warm_makes_overview_both_a_cache_hit(
 
     assert api_client.get("/api/overview/both").status_code == 200
     assert calls["n"] == after_warm  # served from the warmed cache
+
+
+def test_warm_only_rebuilds_reads_a_client_used_and_the_tick_dropped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    built: list[str] = []
+
+    @read_cache.cached_read
+    def page_a(session: object = None) -> str:
+        built.append("a")
+        return "a"
+
+    @read_cache.cached_read
+    def page_b(session: object = None) -> str:
+        built.append("b")
+        return "b"
+
+    def warm_a(session: object) -> None:
+        page_a(session=session)
+
+    def warm_b(session: object) -> None:
+        page_b(session=session)
+
+    monkeypatch.setattr(read_cache, "_warmers", [warm_a, warm_b])
+    monkeypatch.setattr(read_cache, "_warmer_keys", {})
+    monkeypatch.setattr(read_cache, "_touched", set())
+    monkeypatch.setattr(read_cache, "_cleared", set())
+
+    read_cache.warm()  # first run: every warmer runs once and its keys are learnt
+    assert built == ["a", "b"]
+    page_a()  # a client reads page A (a cache hit)
+    built.clear()
+
+    read_cache.invalidate(read_cache.PRICES)  # a tick
+    read_cache.warm()
+    assert built == ["a"]  # page B is not open anywhere: not rebuilt
+
+    built.clear()
+    read_cache.invalidate(read_cache.PRICES)  # nobody read the warmed A since
+    read_cache.warm()
+    assert built == []

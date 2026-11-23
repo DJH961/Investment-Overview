@@ -33,7 +33,9 @@ def test_refresh_prices_backfills_leading_gap(session: Session) -> None:
 
     captured: dict[str, date] = {}
 
-    def fake_fetch(symbols: list[str], start: date, end: date) -> dict[str, dict[date, Decimal]]:
+    def fake_fetch(
+        symbols: list[str], start: date, end: date, **_k: object
+    ) -> dict[str, dict[date, Decimal]]:
         captured["start"] = start
         return {"FOO": {date(2024, 1, 2): Decimal("9")}}
 
@@ -57,7 +59,9 @@ def test_refresh_prices_forward_only_without_gap(session: Session) -> None:
 
     captured: dict[str, date] = {}
 
-    def fake_fetch(symbols: list[str], start: date, end: date) -> dict[str, dict[date, Decimal]]:
+    def fake_fetch(
+        symbols: list[str], start: date, end: date, **_k: object
+    ) -> dict[str, dict[date, Decimal]]:
         captured["start"] = start
         return {}
 
@@ -90,7 +94,9 @@ def test_refresh_prices_repulls_today_for_already_current_holding(session: Sessi
 
     captured: dict[str, object] = {}
 
-    def fake_fetch(symbols: list[str], start: date, end: date) -> dict[str, dict[date, Decimal]]:
+    def fake_fetch(
+        symbols: list[str], start: date, end: date, **_k: object
+    ) -> dict[str, dict[date, Decimal]]:
         captured["start"] = start
         captured["end"] = end
         captured["symbols"] = list(symbols)
@@ -133,7 +139,9 @@ def test_refresh_prices_anchors_to_settled_close_when_market_closed(session: Ses
 
     captured: dict[str, date] = {}
 
-    def fake_fetch(symbols: list[str], start: date, end: date) -> dict[str, dict[date, Decimal]]:
+    def fake_fetch(
+        symbols: list[str], start: date, end: date, **_k: object
+    ) -> dict[str, dict[date, Decimal]]:
         captured["start"] = start
         captured["end"] = end
         return {"VTI": {settled: Decimal("106")}}  # a corrected settled close
@@ -172,7 +180,9 @@ def test_refresh_prices_nav_anchors_to_settled_not_today_intraday(session: Sessi
 
     captured: dict[str, date] = {}
 
-    def fake_fetch(symbols: list[str], start: date, end: date) -> dict[str, dict[date, Decimal]]:
+    def fake_fetch(
+        symbols: list[str], start: date, end: date, **_k: object
+    ) -> dict[str, dict[date, Decimal]]:
         captured["start"] = start
         captured["end"] = end
         return {"VSMPX": {settled: Decimal("111")}}

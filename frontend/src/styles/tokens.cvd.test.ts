@@ -92,6 +92,11 @@ export const CVD_PAIRS: { a: string; b: string; why: string }[] = [
   { a: "--chart-3", b: "--chart-1", why: "constant-currency chart: band hatch vs actual value line" },
   { a: "--chart-3", b: "--color-fg", why: "constant-currency chart: band hatch vs frozen-rate line" },
   { a: "--chart-1", b: "--color-fg", why: "constant-currency chart: actual value vs frozen-rate line" },
+  // Top bar (7.3.1): the ink pulse ring of a scheduled update sits right beside the
+  // Health & Repair badge (ok pos / warn / error neg icon).
+  { a: "--color-fg", b: "--color-pos", why: "TopBar: update pulse ring vs health badge OK" },
+  { a: "--color-fg", b: "--color-warn", why: "TopBar: update pulse ring vs health badge warning" },
+  { a: "--color-fg", b: "--color-neg", why: "TopBar: update pulse ring vs health badge problem" },
 ];
 
 /** Charts with 3+ untoned series (n2..n4) are rare; they get the lower bar plus dashes. */

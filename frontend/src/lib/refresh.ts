@@ -1,10 +1,9 @@
-import { useIsFetching, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 import { useToast } from "../components/Toast";
 import { ApiError, api } from "./api";
 import type { components } from "./api-types";
-import { markStaleAndRefetch } from "./queries/invalidation";
-import { useReadActivity, type ReadActivity } from "./updateActivity";
+import { markStale, markStaleAndRefetch, scheduleRefetch } from "./queries/invalidation";
 
 type RefreshStatusDto = components["schemas"]["RefreshStatus"];
 
@@ -25,6 +24,11 @@ export interface RefreshState {
   pricesLive: boolean | null;
   /** From the latest tick: when the newest stock/ETF price was struck (ISO). */
   priceMarketAt: string | null;
+  /**
+   * Counts the automatic updates that landed (a tick, or an auto run with no tick after
+   * it). Each new value plays the top bar's one-turn "landed" cue once.
+   */
+  landed: number;
 }
 
 export const IDLE_REFRESH: RefreshState = {
@@ -38,6 +42,7 @@ export const IDLE_REFRESH: RefreshState = {
   lastUpdateAt: null,
   pricesLive: null,
   priceMarketAt: null,
+  landed: 0,
 };
 
 let state: RefreshState = IDLE_REFRESH;
@@ -56,8 +61,44 @@ export function setRefreshState(patch: Partial<RefreshState>): void {
 
 /** Test helper: back to idle. */
 export function resetRefreshState(): void {
+  if (autoRefetchTimer) clearTimeout(autoRefetchTimer);
+  autoRefetchTimer = undefined;
   state = IDLE_REFRESH;
   listeners.forEach((l) => l());
+}
+
+/**
+ * An automatic run's reports refetch waits for the tick that follows it (the scheduler
+ * publishes `refresh_finished`, then `tick` with the new totals), so a minute brings ONE
+ * wave of refetches, not two. If no tick comes within this delay the refetch runs anyway.
+ */
+export const AUTO_REFETCH_WAIT_MS = 8000;
+let autoRefetchTimer: ReturnType<typeof setTimeout> | undefined;
+
+function landed(): void {
+  setRefreshState({ landed: state.landed + 1 });
+}
+
+function deferAutoRefetch(queryClient: QueryClient): void {
+  // Stale now (inactive pages refetch when opened); the active ones refetch with the tick.
+  markStale(queryClient, "refresh");
+  if (autoRefetchTimer) clearTimeout(autoRefetchTimer);
+  autoRefetchTimer = setTimeout(() => {
+    autoRefetchTimer = undefined;
+    scheduleRefetch(queryClient, "refresh");
+    landed();
+  }, AUTO_REFETCH_WAIT_MS);
+}
+
+/**
+ * A tick arrived: whether an automatic run's refetch was waiting for it. The caller then
+ * refetches the wider "refresh" set in the tick's single wave.
+ */
+export function takeDeferredAutoRefetch(): boolean {
+  if (!autoRefetchTimer) return false;
+  clearTimeout(autoRefetchTimer);
+  autoRefetchTimer = undefined;
+  return true;
 }
 
 export function useRefreshState(): RefreshState {
@@ -108,6 +149,7 @@ export function applyRefreshEvent(queryClient: QueryClient, ev: Record<string, u
       return true;
     case "refresh_finished": {
       const last = str(ev.last_update_at);
+      const explicit = state.explicit;
       setRefreshState({
         running: false,
         explicit: false,
@@ -117,7 +159,9 @@ export function applyRefreshEvent(queryClient: QueryClient, ev: Record<string, u
         label: null,
         ...(last ? { lastUpdateAt: last } : {}),
       });
-      invalidateReports(queryClient);
+      // The owner's own refresh shows its result at once; an automatic one waits for its tick.
+      if (explicit) invalidateReports(queryClient);
+      else deferAutoRefetch(queryClient);
       return true;
     }
     case "tick":
@@ -129,6 +173,8 @@ export function applyRefreshEvent(queryClient: QueryClient, ev: Record<string, u
         ...(typeof ev.prices_live === "boolean" ? { pricesLive: ev.prices_live } : {}),
         ...(str(ev.price_market_at) ? { priceMarketAt: str(ev.price_market_at) } : {}),
       });
+      // A tick with news lands visibly (one turn of the icon); an FX-only update just moves the stamp.
+      if (ev.type === "tick" && ev.unchanged !== true) landed();
       return false; // ticks also drive the live query invalidation
     }
     default:
@@ -194,33 +240,20 @@ export function useServerRefresh(): { start: () => void; state: RefreshState } {
 
 /**
  * How loudly the app reports an update. "loud": the owner asked (refresh button,
- * pull-to-refresh) or a page they just opened is loading: progress bar, status chip,
- * spinning icon. "quiet": the app is updating by itself (a tick, a scheduled pull, a
- * background refetch): only the refresh icon spins and "Updating…" shows beside it.
+ * pull-to-refresh) or a history download has progress to show: progress bar, status
+ * chip, the icon spinning the whole time. "quiet": the server is updating by itself
+ * (a scheduled pull): the icon stays still with a soft pulse ring, and when it lands
+ * it turns once (`RefreshState.landed`). Background refetches of the pages' own data
+ * are not an update at all: they leave the bar idle.
  */
 export type UpdateMode = "idle" | "quiet" | "loud";
 
-export function deriveUpdateMode(input: {
-  refresh: Pick<RefreshState, "running" | "explicit" | "historical">;
-  /** A page's own query is fetching (it also publishes this to the shell). */
-  pageRefreshing: boolean;
-  /** `background`: app-started reads (`foreground` is unused here: a first load stays quiet too). */
-  activity: ReadActivity;
-  /** Every query in flight, with or without a cached copy. */
-  fetching?: number;
-}): UpdateMode {
-  const { refresh, pageRefreshing, activity, fetching = 0 } = input;
+export function deriveUpdateMode(refresh: Pick<RefreshState, "running" | "explicit" | "historical">): UpdateMode {
+  if (!refresh.running) return "idle";
   // A historic download has real progress to show, so it keeps the bar even when nobody clicked.
-  if (refresh.running) return refresh.explicit || refresh.historical ? "loud" : "quiet";
-  // Everything else (a tick, a cache restore, a stale refetch after login, a first load whose
-  // skeletons already say "loading") only spins the icon: never the disabled button or the bar.
-  if (activity.background > 0 || fetching > 0 || pageRefreshing) return "quiet";
-  return "idle";
+  return refresh.explicit || refresh.historical ? "loud" : "quiet";
 }
 
-export function useUpdateMode(pageRefreshing: boolean): UpdateMode {
-  const refresh = useRefreshState();
-  const reads = useReadActivity();
-  const fetching = useIsFetching({ predicate: (q) => q.queryKey[0] !== "auth" });
-  return deriveUpdateMode({ refresh, pageRefreshing, activity: { background: reads.background, foreground: 0 }, fetching });
+export function useUpdateMode(): UpdateMode {
+  return deriveUpdateMode(useRefreshState());
 }

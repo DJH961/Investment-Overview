@@ -579,6 +579,28 @@ def test_refresh_twin_prices_captures_the_settled_close_after_the_bell(
     assert rows.get(datetime(2024, 6, 3, 20, 0)) == D("105")
 
 
+def test_twin_closes_request_is_the_call_refresh_twin_prices_makes(session: Session) -> None:
+    """The tick starts this download early, so the plan must match the real call."""
+    _seed(session, official_nav=None)
+    app_config_service.set_value(session, f"{iss._TWIN_YEAR_PREFIX}TWN", "1")
+    session.flush()
+    request = iss.twin_closes_request(session, now=DURING)
+    assert request == (["TWN"], FRI, MON + timedelta(days=1))
+    calls: list[tuple[list[str], date, date]] = []
+
+    def fetcher(symbols: list[str], start: date, end: date) -> dict[str, dict[date, Decimal]]:
+        calls.append((list(symbols), start, end))
+        return {"TWN": {FRI: D("100"), MON: D("101")}}
+
+    iss.refresh_twin_prices(session, now=DURING, fetcher=fetcher)
+    assert calls[0] == request
+
+
+def test_twin_closes_request_is_none_without_twins(session: Session) -> None:
+    _seed(session, official_nav=None, twin=None)
+    assert iss.twin_closes_request(session, now=DURING) is None
+
+
 def test_year_backfill_runs_once_per_twin_and_stores_session_closes(session: Session) -> None:
     _seed(session, official_nav=None)
     iss._year_attempts.clear()

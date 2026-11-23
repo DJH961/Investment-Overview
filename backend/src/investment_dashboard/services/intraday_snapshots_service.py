@@ -807,7 +807,9 @@ def session_close_utc(now: datetime | None = None) -> datetime:
     return close.astimezone(UTC).replace(tzinfo=None)
 
 
-def record_if_market_open(*, now: datetime | None = None) -> bool:  # noqa: PLR0911
+def record_if_market_open(  # noqa: PLR0911
+    *, now: datetime | None = None, positions: list[Position] | None = None
+) -> bool:
     """Append one intraday market-component sample when the US market is open.
 
     Stores only the EUR value of the intraday-priced holdings (stocks/ETFs); the
@@ -827,6 +829,9 @@ def record_if_market_open(*, now: datetime | None = None) -> bool:  # noqa: PLR0
     that holding's current-session price is recovered. Opens its own sessions (it
     runs from the background refresh thread) and never raises — a capture failure
     must never break a price refresh.
+
+    ``positions`` lets the refresh tick hand over the holdings it already computed
+    after this tick's prices landed (they must be that fresh), saving a recompute.
     """
     now = now or datetime.now(UTC)
     if not is_us_market_open(now):
@@ -851,7 +856,8 @@ def record_if_market_open(*, now: datetime | None = None) -> bool:  # noqa: PLR0
     captured_at = _to_naive_utc(now)
     try:
         with ledger_session_scope() as session:
-            positions = positions_service.compute_positions(session)
+            if positions is None:
+                positions = positions_service.compute_positions(session)
             # Guard against a partly-loaded portfolio (e.g. the user just opened
             # the app and not every price/FX rate has arrived): a sample that
             # silently omits a still-loading holding would punch a spurious
@@ -1583,6 +1589,16 @@ def _session_is_covered(session: Session, session_date: date, now: datetime) -> 
     # or wider means data is missing mid-session (or the curve is only at the
     # legacy coarse cadence), so re-pull to fill / densify it.
     return _max_gap_seconds([open_utc, *times]) < RECONSTRUCT_MAX_GAP_SECONDS
+
+
+def day_graph_covered(session: Session, *, now: datetime | None = None) -> bool:
+    """Whether the last session's "1 Day" samples adequately cover it so far (read-only).
+
+    The cheap check the refresh tick uses to skip :func:`backfill_graphs` while
+    the live captures keep the curve whole (see :func:`_session_is_covered`).
+    """
+    now = now or datetime.now(UTC)
+    return _session_is_covered(session, last_session_date(now), now)
 
 
 def _max_gap_seconds(times: list[datetime]) -> float:
@@ -4130,55 +4146,19 @@ def _maybe_prune_twin_prices(session: Session, *, now: datetime) -> None:
     app_config_service.set_value(session, _TWIN_PRUNE_KEY, today.isoformat())
 
 
-def refresh_twin_prices(
-    session: Session,
-    *,
-    now: datetime | None = None,
-    fetcher: object | None = None,
-    intraday_fetcher: object | None = None,
-    range_fetcher: object | None = None,
-) -> int:
-    """Fetch and store the twins' prices for the current / last session.
+def _twin_closes_wanted(
+    twins: list[str], stored: dict[str, dict[datetime, Decimal]], now: datetime
+) -> list[str]:
+    """The twins whose daily closes :func:`refresh_twin_prices` must fetch now.
 
-    While the market is open: one daily-closes call for all twins gives the
-    previous close and the price now. Once it shuts, the first refresh of the
-    new "closed" state makes one more daily-closes call to capture each twin's
-    TRUE settled close for the session that just ended (a genuine post-bell
-    print, not the last pre-close sample the live capture above was left
-    with) — the same "once after the bell" guarantee
-    :func:`prices_service.refresh_prices` already gives a directly-held
-    holding. A session without intraday twin rows yet (twin just set, a
-    restart) is backfilled once from 5-minute bars, also after the close; the
-    earlier sessions of the 1W window are backfilled likewise
-    (:func:`backfill_week_twin_prices`). Returns rows written. ``fetcher`` /
-    ``intraday_fetcher`` / ``range_fetcher`` replace the yfinance calls in tests.
-    A no-op (no network) without twins.
+    While the market is open: every twin (the price now). Once it shuts: only the
+    twins still missing the previous close or this session's TRUE close.
     """
-    from investment_dashboard.adapters import yfinance_client  # noqa: PLC0415
-    from investment_dashboard.db import cache_read_session, cache_write_session  # noqa: PLC0415
-    from investment_dashboard.repositories import symbol_prices_repo  # noqa: PLC0415
-    from investment_dashboard.services import positions_service  # noqa: PLC0415
-
-    now = now or datetime.now(UTC)
-    # Unconditional: must still run with no twins held (otherwise removing the
-    # last one strands its rows forever), and is cheap to call every tick since
-    # it self-limits to once per exchange day.
-    _maybe_prune_twin_prices(session, now=now)
-    twins = twin_symbols(positions_service.compute_positions(session))
-    if not twins:
-        return 0
     session_date = last_session_date(now)
     prev_date = previous_trading_session(session_date)
     prev_close_at = _session_close_utc(prev_date)
-    close_at = _session_close_utc(session_date)
     true_close_at = _session_actual_close_utc(session_date)
     market_open = is_us_market_open(now)
-    with cache_read_session(session) as cache:
-        stored = symbol_prices_repo.prices_in_range(
-            cache, twins, _session_start_utc(prev_date), close_at
-        )
-    written = 0
-    fetch_closes = fetcher or yfinance_client.fetch_closes
     missing_prev = [
         s for s in twins if _latest_at_or_before(stored.get(s, {}), prev_close_at) is None
     ]
@@ -4202,8 +4182,102 @@ def refresh_twin_prices(
             if not any(t >= true_close_at for t in stored.get(s, {}) if t > prev_close_at)
         ]
     )
-    if market_open or missing_prev or missing_close:
-        wanted = twins if market_open else sorted(set(missing_prev) | set(missing_close))
+    if market_open:
+        return list(twins)
+    return sorted(set(missing_prev) | set(missing_close))
+
+
+def _stored_twin_rows(
+    session: Session, twins: list[str], now: datetime
+) -> dict[str, dict[datetime, Decimal]]:
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+    from investment_dashboard.repositories import symbol_prices_repo  # noqa: PLC0415
+
+    session_date = last_session_date(now)
+    prev_date = previous_trading_session(session_date)
+    with cache_read_session(session) as cache:
+        return symbol_prices_repo.prices_in_range(
+            cache, twins, _session_start_utc(prev_date), _session_close_utc(session_date)
+        )
+
+
+def twin_closes_request(
+    session: Session,
+    *,
+    now: datetime | None = None,
+    positions: list[Position] | None = None,
+) -> tuple[list[str], date, date] | None:
+    """``(symbols, start, end)`` of the daily-closes call :func:`refresh_twin_prices` will make.
+
+    ``None`` when it makes none. Lets the refresh tick start that download while
+    the holdings' own prices are still in flight (network only; the rows are
+    written later by :func:`refresh_twin_prices` on the tick's thread). Reads only.
+    """
+    from investment_dashboard.services import positions_service  # noqa: PLC0415
+
+    now = now or datetime.now(UTC)
+    held = positions if positions is not None else positions_service.compute_positions(session)
+    twins = twin_symbols(held)
+    if not twins:
+        return None
+    wanted = _twin_closes_wanted(twins, _stored_twin_rows(session, twins, now), now)
+    if not wanted:
+        return None
+    session_date = last_session_date(now)
+    return wanted, previous_trading_session(session_date), session_date + timedelta(days=1)
+
+
+def refresh_twin_prices(
+    session: Session,
+    *,
+    now: datetime | None = None,
+    fetcher: object | None = None,
+    intraday_fetcher: object | None = None,
+    range_fetcher: object | None = None,
+    positions: list[Position] | None = None,
+) -> int:
+    """Fetch and store the twins' prices for the current / last session.
+
+    While the market is open: one daily-closes call for all twins gives the
+    previous close and the price now. Once it shuts, the first refresh of the
+    new "closed" state makes one more daily-closes call to capture each twin's
+    TRUE settled close for the session that just ended (a genuine post-bell
+    print, not the last pre-close sample the live capture above was left
+    with) — the same "once after the bell" guarantee
+    :func:`prices_service.refresh_prices` already gives a directly-held
+    holding. A session without intraday twin rows yet (twin just set, a
+    restart) is backfilled once from 5-minute bars, also after the close; the
+    earlier sessions of the 1W window are backfilled likewise
+    (:func:`backfill_week_twin_prices`). Returns rows written. ``fetcher`` /
+    ``intraday_fetcher`` / ``range_fetcher`` replace the yfinance calls in tests.
+    ``positions`` (the tick's own, already computed) saves a recomputation.
+    A no-op (no network) without twins.
+    """
+    from investment_dashboard.adapters import yfinance_client  # noqa: PLC0415
+    from investment_dashboard.db import cache_write_session  # noqa: PLC0415
+    from investment_dashboard.repositories import symbol_prices_repo  # noqa: PLC0415
+    from investment_dashboard.services import positions_service  # noqa: PLC0415
+
+    now = now or datetime.now(UTC)
+    # Unconditional: must still run with no twins held (otherwise removing the
+    # last one strands its rows forever), and is cheap to call every tick since
+    # it self-limits to once per exchange day.
+    _maybe_prune_twin_prices(session, now=now)
+    held = positions if positions is not None else positions_service.compute_positions(session)
+    twins = twin_symbols(held)
+    if not twins:
+        return 0
+    session_date = last_session_date(now)
+    prev_date = previous_trading_session(session_date)
+    prev_close_at = _session_close_utc(prev_date)
+    close_at = _session_close_utc(session_date)
+    true_close_at = _session_actual_close_utc(session_date)
+    market_open = is_us_market_open(now)
+    stored = _stored_twin_rows(session, twins, now)
+    written = 0
+    fetch_closes = fetcher or yfinance_client.fetch_closes
+    wanted = _twin_closes_wanted(twins, stored, now)
+    if wanted:
         closes = fetch_closes(wanted, prev_date, session_date + timedelta(days=1))  # type: ignore[operator]
         with cache_write_session(session) as cache:
             written += _store_twin_closes(
@@ -4250,13 +4324,22 @@ def refresh_twin_prices(
     return written
 
 
-def record_twin_prices(*, now: datetime | None = None) -> int:
-    """:func:`refresh_twin_prices` in its own session, for the refresh tick. Never raises."""
+def record_twin_prices(
+    *,
+    now: datetime | None = None,
+    positions: list[Position] | None = None,
+    fetcher: object | None = None,
+) -> int:
+    """:func:`refresh_twin_prices` in its own session, for the refresh tick. Never raises.
+
+    ``positions`` and ``fetcher`` (e.g. a download the tick already started) pass
+    straight through.
+    """
     from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
 
     try:
         with ledger_session_scope() as session:
-            return refresh_twin_prices(session, now=now)
+            return refresh_twin_prices(session, now=now, positions=positions, fetcher=fetcher)
     except Exception:  # pragma: no cover - defensive: twin prices are best-effort
         log.warning("twin price capture failed", exc_info=True)
         return 0

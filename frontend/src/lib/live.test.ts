@@ -87,6 +87,23 @@ describe("startLive", () => {
     stop();
   });
 
+  it("an automatic run and its tick refetch in ONE wave (the wider report set)", async () => {
+    const refetch = vi.spyOn(qc, "refetchQueries").mockResolvedValue();
+    const stop = startLive(qc);
+    const es = FakeEventSource.instances[0]!;
+    es.onopen?.();
+    es.emit({ type: "refresh_started", source: "Scheduled live refresh" });
+    es.emit({ type: "refresh_finished", source: "Scheduled live refresh", updated: true });
+    es.emit({ type: "tick", last_update_at: "2026-11-23T15:31:00Z" });
+    expect(getRefreshState().landed).toBe(1);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(refetch).toHaveBeenCalledTimes(1);
+    // The wave covers the full report set (analytics is not a tick root on its own).
+    const filters = refetch.mock.calls[0]![0] as unknown as { predicate: (q: { queryKey: unknown[] }) => boolean };
+    expect(filters.predicate({ queryKey: ["analytics", "EUR"] })).toBe(true);
+    stop();
+  });
+
   it("invalidates only the reloaded graph range and notifies listeners", () => {
     qc.setQueryData(["graphs", "1d", "EUR"], 1);
     qc.setQueryData(["graphs", "1w", "EUR"], 1);

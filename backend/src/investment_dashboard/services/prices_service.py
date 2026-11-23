@@ -294,8 +294,9 @@ def refresh_prices(  # noqa: PLR0915 - one cohesive pull round, narrated start t
             end,
             detail=f"market_open={market_open}, settled={settled}",
         )
+        bar_times: dict[str, datetime] = {}
         try:
-            closes_by_symbol = fetch_closes(symbols_to_fetch, start, end)
+            closes_by_symbol = fetch_closes(symbols_to_fetch, start, end, market_times=bar_times)
         except YFinanceError as exc:
             round_.provider_failed("yfinance", f"{exc}; continuing with stale prices")
             return result
@@ -308,7 +309,9 @@ def refresh_prices(  # noqa: PLR0915 - one cohesive pull round, narrated start t
         # live tick does: without it a manual re-pull (Fix -> Update prices) left
         # the "prices as of" time where it was, so it looked as if nothing updated.
         try:
-            market_times = fetch_market_times(symbols_to_fetch) if closes_by_symbol else {}
+            market_times = (
+                fetch_market_times(symbols_to_fetch, known=bar_times) if closes_by_symbol else {}
+            )
         except Exception:  # pragma: no cover - defensive: never break the refresh
             log.debug("market-time capture failed; continuing without it", exc_info=True)
             market_times = {}
@@ -817,6 +820,9 @@ def refresh_due_prices(  # noqa: PLR0912, PLR0915 - one cohesive pull round, nar
             fetch_end,
             detail=f"{len(due)} due",
         )
+        # The chart answers carry each price's market time: collected here so only
+        # symbols without one cost a separate quote request below.
+        bar_times: dict[str, datetime] = {}
         try:
             closes_by_symbol = fetch_closes(
                 symbols_to_fetch,
@@ -824,6 +830,7 @@ def refresh_due_prices(  # noqa: PLR0912, PLR0915 - one cohesive pull round, nar
                 fetch_end,
                 # NAV funds publish hours after the close: empty is "waiting", not a fault.
                 expected_gaps={fetch_sym[i.id] for i in due if i.asset_class in _NAV_ASSET_CLASSES},
+                market_times=bar_times,
             )
         except YFinanceError as exc:
             # A hard yfinance failure no longer ends the cycle: fall through with
@@ -841,7 +848,9 @@ def refresh_due_prices(  # noqa: PLR0912, PLR0915 - one cohesive pull round, nar
         # our fetch instant. Isolated so a quote-timing failure never disturbs the
         # price refresh itself.
         try:
-            market_times = fetch_market_times(symbols_to_fetch) if closes_by_symbol else {}
+            market_times = (
+                fetch_market_times(symbols_to_fetch, known=bar_times) if closes_by_symbol else {}
+            )
         except Exception:  # pragma: no cover - defensive: never break the refresh
             log.debug("market-time capture failed; continuing without it", exc_info=True)
             market_times = {}
