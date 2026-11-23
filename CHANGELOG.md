@@ -55,7 +55,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Values, graphs and FIFO matching include them at once. One quiet reminder per plan
   (Transactions, Recurring, Data Health) says what to do; settle by typing in the quick-settle
   sheet (steppers on the last stored decimal, linked fields, one Save, next draft) or, later,
-  by importing the file. Migration 0027 (also adds `import_batches.update_images` and
+  by importing the file. One buy plan can buy several holdings at once (a leg each, with its own
+  core-fund draw per buy); the quick-settle sheet puts Total and Shares first and derives the
+  price. Migration 0027 (also adds `import_batches.update_images` and
   `updated_count` for the import-update undo).
 - **Wise statement import (conversions):** a "Wise statement" card on the Import page reads
   a Wise CSV/TSV and previews EUR to USD conversions, not transactions. Both statement shapes

@@ -1,19 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   allInRate,
+  derivePrice,
   effectiveDp,
   sigDecimals,
   formatDec,
   holdDelay,
   parseDec,
-  relinkBuy,
   relinkConversion,
   splitAtStep,
   stepDecimal,
   toDp,
 } from "./settleMath";
-
-const P = { priceDp: 4, quantityDp: 4, moneyDp: 2 };
 
 describe("decimal text", () => {
   it("parses and formats without floats", () => {
@@ -56,34 +54,31 @@ describe("splitAtStep", () => {
   });
 });
 
-describe("relinkBuy (golden: $500 at 250.00, settled at 249.90 for $499.80)", () => {
-  const draft = { price: "250.0000", quantity: "2.0000", total: "500.00" };
-  it("keeps the plan's fixed amount and moves the quantity with the price", () => {
-    expect(relinkBuy("price", { ...draft, price: "249.9000" }, "total", P)).toEqual({
-      price: "249.9000",
-      quantity: "2.0008",
-      total: "500.00",
-    });
+describe("derivePrice (golden: $500 for 2 shares, settled at $499.80 for 2.0000)", () => {
+  it("is total divided by shares, at the stepped precision", () => {
+    expect(derivePrice("500.00", "2.0000", 4)).toBe("250.0000");
+    expect(derivePrice("499.80", "2.0000", 4)).toBe("249.9000");
+    expect(derivePrice("500.00", "2.0008", 4)).toBe("249.9000");
+    expect(derivePrice("200.00", "0.7695", 4)).toBe("259.9090");
   });
-  it("a typed total follows at the same price", () => {
-    expect(relinkBuy("total", { ...draft, price: "249.9000", total: "499.80" }, "total", P)).toEqual({
-      price: "249.9000",
-      quantity: "2.0000",
-      total: "499.80",
-    });
+  it("rounds half away from zero and tolerates a long quotient", () => {
+    expect(derivePrice("10.00", "3", 4)).toBe("3.3333");
+    expect(derivePrice("10.00", "6", 4)).toBe("1.6667");
+    expect(derivePrice("1.00", "8", 2)).toBe("0.13");
   });
-  it("an edited quantity re-derives the price from the fixed amount", () => {
-    expect(relinkBuy("quantity", { ...draft, quantity: "2.0008" }, "total", P).price).toBe("249.9000");
+  it("gives nothing for a missing or zero share count", () => {
+    expect(derivePrice("500", "", 4)).toBe("");
+    expect(derivePrice("500", "0", 4)).toBe("");
+    expect(derivePrice("", "2", 4)).toBe("");
   });
-  it("a shares plan keeps the quantity and moves the total", () => {
-    expect(relinkBuy("price", { price: "249.9000", quantity: "2.0000", total: "500.00" }, "quantity", P)).toEqual({
-      price: "249.9000",
-      quantity: "2.0000",
-      total: "499.80",
-    });
-  });
-  it("leaves things alone while a field is not a number", () => {
-    expect(relinkBuy("price", { ...draft, price: "" }, "total", P)).toEqual({ ...draft, price: "" });
+  it("stepping total or shares never touches the other, only the derived price follows", () => {
+    const shares = "2.0000";
+    const before = derivePrice("500.00", shares, 4);
+    const total = stepDecimal("500.00", 2, -1);
+    expect(total).toBe("499.99");
+    expect(derivePrice(total, shares, 4)).toBe("249.9950");
+    expect(before).toBe("250.0000");
+    expect(derivePrice("500.00", stepDecimal(shares, 4, 1), 4)).toBe("249.9875");
   });
 });
 

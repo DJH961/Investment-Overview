@@ -497,6 +497,7 @@ def seed_full(session: Any) -> None:
         session, symbol="VMFXX", name="Fake Settlement Fund", asset_class="mutual_fund"
     )
     prices_repo.upsert_closes(session, inst["VMFXX"].id, {d: D("1") for d in days})
+    instrument_overrides_repo.set_category(session, inst["VMFXX"].id, "Bonds")
 
     # The default market benchmark (not held), so "Vs market", beta and alpha have a
     # series to compare with: it follows the world fund with its own noise and a lower
@@ -807,7 +808,6 @@ def _seed_recurring(
                 estimate_due_date=due,
                 estimate_leg_id=leg.id,
                 is_estimate=est,
-                description="est. (recurring plan)" if est else None,
                 external_id=tag,
             )
             # The core-fund draw, in the shape a broker import gives a real buy.
@@ -830,7 +830,6 @@ def _seed_recurring(
                 eur_sent=D("1000.00"),
                 usd_received=(D("1000") * rate).quantize(D("0.01")),
                 fees_eur=D("2.50"),
-                note="est. (recurring plan)",
                 provider="wise",
                 estimate_plan_id=conv_plan.id,
                 estimate_due_date=due,

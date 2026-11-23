@@ -65,7 +65,6 @@ CLOSE_PATIENCE_DAYS = 10
 #: Days an ECB fixing may lag before a weekday due date falls back to the last fixing.
 FIXING_PATIENCE_DAYS = 4
 _WEEKDAYS = 5
-_EST_NOTE = "est. (recurring plan)"
 
 
 class RecurringError(ValidationError):
@@ -329,7 +328,6 @@ def _generate_buy_leg(
             price=close,
             total=total,
             fees=Decimal(0),
-            description=_EST_NOTE,
         ),
     )
     repo.mark_estimate(result.transaction, plan.id, due, leg.id)
@@ -434,7 +432,6 @@ def _generate_deposit(session: Session, plan: RecurringPlan, due: date, today: d
             date=due,
             kind="deposit",
             total=plan.amount,
-            description=_EST_NOTE,
             route_money_market=True,
         ),
     )
@@ -475,7 +472,6 @@ def _generate_conversion(
         eur_sent=plan.amount,
         usd_received=usd.quantize(Decimal("0.000001")),
         fees_eur=fee,
-        note=_EST_NOTE,
         provider=plan.provider,
     )
     repo.mark_estimate(row, plan.id, due)

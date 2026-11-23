@@ -4,6 +4,8 @@
 * ``transactions`` and ``fx_conversions`` each gain ``estimate_plan_id`` (FK, SET NULL),
   ``estimate_due_date`` and ``is_estimate`` (NOT NULL, default false), with
   UNIQUE(``estimate_plan_id``, ``estimate_due_date``): one generated row per plan and due date.
+* ``recurring_plan_legs``: the holdings a buy plan buys together; ``transactions`` also gets
+  ``estimate_leg_id`` (default 0) so the unique key allows one est. buy per leg.
 
 Idempotent: columns / the table are added only when absent and dropped on downgrade
 only when present (restores the 0026 schema).

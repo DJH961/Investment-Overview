@@ -1,8 +1,7 @@
 import { ClipboardCheck, Upload } from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router";
 import { useEstimates, useSettle, type EstimateRow } from "../../lib/queries/recurring";
-import { Button } from "../Button";
+import { Button, LinkButton } from "../Button";
 import { SettleSheet } from "../SettleSheet";
 import { useToast } from "../Toast";
 import "./ReminderCard.scss";
@@ -24,7 +23,7 @@ export function ReminderCard() {
   return (
     <section className="reminder-card" aria-label="Estimated rows to settle">
       <h2 className="reminder-card__title">
-        <ClipboardCheck aria-hidden /> {data.count} estimated {data.count === 1 ? "row" : "rows"} to settle
+        <ClipboardCheck aria-hidden /> {data.count} to settle: estimated entries from your plans
       </h2>
       <ul className="reminder-card__list">
         {data.groups.map((g) => {
@@ -33,17 +32,20 @@ export function ReminderCard() {
             <li key={`${g.plan_id}-${g.kind}`} className="reminder-card__line">
               <span className="reminder-card__message">{g.message}</span>
               <span className="reminder-card__actions">
-                <Button size="sm" variant="primary" onClick={() => setQueue(rows)}>
+                <Button className="reminder-card__btn" variant="primary" fullWidth onClick={() => setQueue(rows)}>
                   Settle
                 </Button>
-                {g.input === "import" && (
-                  <Link to="/import" className="reminder-card__link">
-                    <Upload aria-hidden /> Import file
-                  </Link>
+                {g.input === "import" ? (
+                  <LinkButton className="reminder-card__btn" to="/import" fullWidth leftIcon={<Upload aria-hidden />}>
+                    Import file
+                  </LinkButton>
+                ) : (
+                  <span className="reminder-card__btn-slot" aria-hidden />
                 )}
                 <Button
-                  size="sm"
+                  className="reminder-card__btn"
                   variant="ghost"
+                  fullWidth
                   loading={settle.isPending}
                   onClick={() =>
                     settle.mutate(

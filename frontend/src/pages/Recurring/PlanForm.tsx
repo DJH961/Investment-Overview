@@ -1,3 +1,4 @@
+import { Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "../../components/Button";
 import { Field } from "../../components/Field";
@@ -26,6 +27,12 @@ const PROVIDER_OPTIONS = [
   { value: "other", label: "Other" },
 ];
 
+interface LegDraft {
+  instrumentId: string;
+  mode: "amount" | "shares";
+  value: string;
+}
+
 export interface PlanFormProps {
   kind: PlanKind;
   /** Plan id when editing. */
@@ -49,9 +56,16 @@ export function PlanForm({ kind, id, initial, saveLabel = "Save plan", skipLabel
   const [start, setStart] = useState(initial?.start_date ?? new Date().toISOString().slice(0, 10));
   const [end, setEnd] = useState(initial?.end_date ?? "");
   const [accountId, setAccountId] = useState(initial?.account_id == null ? "" : String(initial.account_id));
-  const [instrumentId, setInstrumentId] = useState(initial?.instrument_id == null ? "" : String(initial.instrument_id));
+  const [legs, setLegs] = useState<LegDraft[]>(() =>
+    (initial?.legs ?? []).length > 0
+      ? (initial?.legs ?? []).map((l) => ({
+          instrumentId: String(l.instrument_id),
+          mode: l.shares != null ? "shares" : "amount",
+          value: String(l.shares ?? l.amount ?? ""),
+        }))
+      : [{ instrumentId: "", mode: "amount", value: "" }],
+  );
   const [amount, setAmount] = useState(initial?.amount == null ? "" : String(initial.amount));
-  const [shares, setShares] = useState(initial?.shares == null ? "" : String(initial.shares));
   const [provider, setProvider] = useState<string>(initial?.provider ?? "revolut");
   const [fee, setFee] = useState(initial?.expected_fee == null ? "" : String(initial.expected_fee));
 
@@ -67,9 +81,17 @@ export function PlanForm({ kind, id, initial, saveLabel = "Save plan", skipLabel
       start_date: start,
       end_date: end || null,
       account_id: kind === "conversion" ? null : Number(accountId) || null,
-      instrument_id: kind === "buy" ? Number(instrumentId) || null : null,
-      amount: amount === "" ? null : amount,
-      shares: kind === "buy" && shares !== "" ? shares : null,
+      amount: kind === "buy" || amount === "" ? null : amount,
+      legs:
+        kind === "buy"
+          ? legs
+              .filter((l) => l.instrumentId !== "" || l.value !== "")
+              .map((l) => ({
+                instrument_id: Number(l.instrumentId),
+                amount: l.mode === "amount" ? l.value : null,
+                shares: l.mode === "shares" ? l.value : null,
+              }))
+          : [],
       provider: kind === "conversion" ? (provider as RecurringPlanInput["provider"]) : null,
       expected_fee: kind === "conversion" && fee !== "" ? fee : null,
     };
@@ -118,37 +140,62 @@ export function PlanForm({ kind, id, initial, saveLabel = "Save plan", skipLabel
         </Field>
       )}
       {kind === "buy" && (
-        <>
-          <Field label="Instrument">
-            {(c) => <Select id={c.id} options={instrumentOptions} value={instrumentId} onValueChange={setInstrumentId} placeholder="Choose an instrument" />}
-          </Field>
-          <Field label="Amount per buy" hint="Either an amount, or a number of shares.">
-            {(c) => (
-              <Input
-                id={c.id}
-                inputMode="decimal"
-                value={amount}
-                onChange={(e) => {
-                  setAmount(e.target.value);
-                  if (e.target.value) setShares("");
-                }}
-              />
-            )}
-          </Field>
-          <Field label="Or shares per buy">
-            {(c) => (
-              <Input
-                id={c.id}
-                inputMode="decimal"
-                value={shares}
-                onChange={(e) => {
-                  setShares(e.target.value);
-                  if (e.target.value) setAmount("");
-                }}
-              />
-            )}
-          </Field>
-        </>
+        <fieldset className="recurring-page__legs">
+          <legend className="recurring-page__legs-title">Holdings bought each time</legend>
+          {legs.map((leg, i) => (
+            <div key={i} className="recurring-page__leg">
+              <Field label={`Holding ${i + 1}`}>
+                {(c) => (
+                  <Select
+                    id={c.id}
+                    options={instrumentOptions}
+                    value={leg.instrumentId}
+                    onValueChange={(v) => setLegs(legs.map((l, j) => (j === i ? { ...l, instrumentId: v } : l)))}
+                    placeholder="Choose an instrument"
+                  />
+                )}
+              </Field>
+              <div className="recurring-page__leg-amount">
+                <Field label={leg.mode === "amount" ? "Amount ($)" : "Shares"}>
+                  {(c) => (
+                    <Input
+                      id={c.id}
+                      inputMode="decimal"
+                      value={leg.value}
+                      onChange={(e) => setLegs(legs.map((l, j) => (j === i ? { ...l, value: e.target.value } : l)))}
+                    />
+                  )}
+                </Field>
+                <Button
+                  variant="ghost"
+                  className="recurring-page__leg-btn"
+                  onClick={() => setLegs(legs.map((l, j) => (j === i ? { ...l, mode: l.mode === "amount" ? "shares" : "amount" } : l)))}
+                >
+                  {leg.mode === "amount" ? "Use shares" : "Use amount"}
+                </Button>
+                {legs.length > 1 && (
+                  <Button
+                    variant="ghost"
+                    className="recurring-page__leg-btn"
+                    aria-label={`Remove holding ${i + 1}`}
+                    leftIcon={<Trash2 aria-hidden />}
+                    onClick={() => setLegs(legs.filter((_, j) => j !== i))}
+                  >
+                    Remove
+                  </Button>
+                )}
+              </div>
+            </div>
+          ))}
+          <Button
+            variant="secondary"
+            className="recurring-page__leg-btn"
+            leftIcon={<Plus aria-hidden />}
+            onClick={() => setLegs([...legs, { instrumentId: "", mode: "amount", value: "" }])}
+          >
+            Add a holding
+          </Button>
+        </fieldset>
       )}
       <div className="recurring-page__form-row">
         <Field label="Every">

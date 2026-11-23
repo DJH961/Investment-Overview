@@ -1,4 +1,8 @@
+@use "../../styles/mixins" as m;
+
 .reminder-card {
+  --reminder-actions-w: 13rem;
+
   display: grid;
   gap: var(--space-3);
   padding: var(--space-4);
@@ -28,37 +32,44 @@
     list-style: none;
   }
 
+  // Message on the left; the three actions in one fixed-width column on the right, so
+  // Settle / Import file / Accept line up across lines whatever the sentence length.
   &__line {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--reminder-actions-w);
     align-items: center;
-    justify-content: space-between;
     gap: var(--space-2) var(--space-4);
   }
 
   &__message {
-    flex: 1 1 16rem;
     min-width: 0;
   }
 
   &__actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-2);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-1);
   }
 
-  &__link {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
+  &__btn,
+  &__btn-slot {
     min-height: var(--tap-min);
-    color: var(--color-accent);
-    font-size: var(--font-size-sm);
+  }
 
-    svg {
-      width: var(--space-4);
-      height: var(--space-4);
+  // Keeps the rows of the action column the same on every line (no Import for conversions).
+  &__btn-slot {
+    visibility: hidden;
+  }
+
+  // Phones: the message on top, the actions stacked full width underneath (same column
+  // for every line).
+  @include m.phone {
+    &__line {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    &__btn-slot {
+      display: none;
     }
   }
 }

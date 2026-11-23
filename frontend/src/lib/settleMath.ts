@@ -114,54 +114,20 @@ function mul(a: Dec, b: Dec, dp: number): Dec {
   return { n: rescale(a.n * b.n, a.s + b.s, dp), s: dp };
 }
 
-// ---- a buy: price <-> quantity <-> total ----------------------------------
-
-export type BuyField = "price" | "quantity" | "total";
-
-export interface BuyValues {
-  price: string;
-  quantity: string;
-  total: string;
-}
-
-export interface BuyPrecision {
-  priceDp: number;
-  quantityDp: number;
-  /** Money places (cents): 2. */
-  moneyDp: number;
-}
+// ---- a buy: total and shares are the accurate figures, price follows ----------
 
 /**
- * Recompute the other buy figures after `edited` changed. `anchor` is the figure that stays
- * fixed while another one moves (the plan's fixed amount: `"total"` for an amount plan,
- * `"quantity"` for a shares plan). When the anchor itself is edited, the price stays and
- * the remaining figure follows it.
+ * The price per share a buy implies: `total / quantity`, rounded to `priceDp`. The amount
+ * taken from the account (total) and the shares received are what the broker reports
+ * exactly; its quoted price often does not multiply out, so the price is derived from the
+ * two and never drives them. `""` when either figure is not a positive number.
  */
-export function relinkBuy(
-  edited: BuyField,
-  values: BuyValues,
-  anchor: "total" | "quantity",
-  p: BuyPrecision,
-): BuyValues {
-  const price = parseDec(values.price);
-  const quantity = parseDec(values.quantity);
-  const total = parseDec(values.total);
-  const out = { ...values };
-  const setQty = (d: Dec | null) => d && (out.quantity = formatDec(d, p.quantityDp));
-  const setPrice = (d: Dec | null) => d && (out.price = formatDec(d, p.priceDp));
-  const setTotal = (d: Dec | null) => d && (out.total = formatDec(d, p.moneyDp));
-  if (edited === "price") {
-    if (anchor === "total") total && price && setQty(div(total, price, p.quantityDp));
-    else quantity && price && setTotal(mul(quantity, price, p.moneyDp));
-  } else if (edited === "quantity") {
-    if (anchor === "total") total && quantity && setPrice(div(total, quantity, p.priceDp));
-    else quantity && price && setTotal(mul(quantity, price, p.moneyDp));
-  } else if (anchor === "total") {
-    total && price && setQty(div(total, price, p.quantityDp));
-  } else {
-    total && quantity && setPrice(div(total, quantity, p.priceDp));
-  }
-  return out;
+export function derivePrice(total: string, quantity: string, priceDp: number): string {
+  const t = parseDec(total);
+  const q = parseDec(quantity);
+  if (!t || !q || q.n <= 0n) return "";
+  const price = div(t, q, priceDp);
+  return price ? formatDec(price, priceDp) : "";
 }
 
 // ---- a conversion: USD received <-> rate (EUR sent fixed from the plan) ----

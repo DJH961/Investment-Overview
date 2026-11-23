@@ -4,14 +4,12 @@ import { formatDate, formatMoney } from "../../lib/format";
 import { useSettle, type EstimateRow, type SettleRowBody } from "../../lib/queries/recurring";
 import {
   allInRate,
+  derivePrice,
   effectiveDp,
   MONEY_DP,
   RATE_DP,
-  relinkBuy,
   relinkConversion,
   toDp,
-  type BuyField,
-  type BuyValues,
 } from "../../lib/settleMath";
 import { Button } from "../Button";
 import { Sheet } from "../Sheet";
@@ -26,7 +24,12 @@ export interface SettleSheetProps {
 }
 
 interface Draft {
-  buy: BuyValues;
+  total: string;
+  quantity: string;
+  /** A typed price that replaces the derived one (it never drives total or shares). */
+  priceOverride: string | null;
+  /** Total or shares were nudged: the price shown is derived from them. */
+  touched: boolean;
   received: string;
   rate: string;
   fee: string;
@@ -41,13 +44,12 @@ function dpsOf(row: EstimateRow): { priceDp: number; qtyDp: number } {
 }
 
 function draftOf(row: EstimateRow): Draft {
-  const { priceDp, qtyDp } = dpsOf(row);
+  const { qtyDp } = dpsOf(row);
   return {
-    buy: {
-      price: row.price ? toDp(row.price, priceDp) : "",
-      quantity: row.quantity ? toDp(row.quantity, qtyDp) : "",
-      total: row.total ? toDp(row.total, MONEY_DP) : "",
-    },
+    total: row.total ? toDp(row.total, MONEY_DP) : "",
+    quantity: row.quantity ? toDp(row.quantity, qtyDp) : "",
+    priceOverride: null,
+    touched: false,
     received: row.received ? toDp(row.received, MONEY_DP) : "",
     rate: row.sent && row.received ? relinkConversion("received", { received: row.received, rate: "" }, row.sent).rate : "",
     fee: toDp(row.fees ?? "0", MONEY_DP),
@@ -62,10 +64,11 @@ function titleOf(row: EstimateRow): string {
 }
 
 /**
- * Quick-settle: one sheet that already holds the draft's figures. Every figure has − / +
- * steppers on its last stored decimal; linked figures follow (buy: price, quantity, total
- * around the plan's fixed amount; conversion: USD received and the rate around the EUR
- * sent). One Save confirms the row (a buy's core-fund leg follows on the server) and moves
+ * Quick-settle: one sheet that already holds the draft's figures. For a buy the two figures
+ * the broker reports exactly, the total taken from the account and the shares received, are
+ * the big steppers; the price per share is derived (total / shares) and shown smaller, with
+ * an "Edit" to override it. For a conversion, USD received and the rate move around the EUR
+ * sent. One Save confirms the row (a buy's core-fund leg follows on the server) and moves on
  * to the next draft, or closes after the last.
  */
 export function SettleSheet({ rows, onClose }: SettleSheetProps) {
@@ -73,6 +76,7 @@ export function SettleSheet({ rows, onClose }: SettleSheetProps) {
   const [index, setIndex] = useState(0);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [mult, setMult] = useState<1 | 10>(1);
+  const [editingPrice, setEditingPrice] = useState(false);
   const settle = useSettle();
   const { toast } = useToast();
 
@@ -82,6 +86,7 @@ export function SettleSheet({ rows, onClose }: SettleSheetProps) {
     setIndex(0);
     setDrafts({});
     setMult(1);
+    setEditingPrice(false);
   }, [signature]);
 
   const row = rows[Math.min(index, Math.max(rows.length - 1, 0))];
@@ -96,8 +101,9 @@ export function SettleSheet({ rows, onClose }: SettleSheetProps) {
   const isBuy = row.row_type === "transaction";
   const dps = dpsOf(row);
   const set = (next: Draft) => setDrafts((d) => ({ ...d, [key]: next }));
-  const edit = (field: BuyField, value: string) =>
-    set({ ...draft, buy: relinkBuy(field, { ...draft.buy, [field]: value }, "total", { priceDp: dps.priceDp, quantityDp: dps.qtyDp, moneyDp: MONEY_DP }) });
+  const derived = derivePrice(draft.total, draft.quantity, dps.priceDp);
+  const originalPrice = row.price ? toDp(row.price, dps.priceDp) : "";
+  const price = draft.priceOverride ?? (draft.touched ? derived : originalPrice);
   const editReceived = (received: string) =>
     set({ ...draft, received, rate: relinkConversion("received", { received, rate: draft.rate }, row.sent ?? "0").rate });
   const editRate = (rate: string) =>
@@ -106,8 +112,9 @@ export function SettleSheet({ rows, onClose }: SettleSheetProps) {
   const body = (): SettleRowBody => {
     const base = { row_type: row.row_type, id: row.id } as SettleRowBody;
     if (isBuy) {
-      const changed = (Object.keys(draft.buy) as BuyField[]).some((k) => draft.buy[k] !== original.buy[k]);
-      return changed ? { ...base, price: draft.buy.price, quantity: draft.buy.quantity, total: draft.buy.total } : base;
+      const changed = draft.total !== original.total || draft.quantity !== original.quantity || draft.priceOverride !== null;
+      // Net is the total; the stored price is the derived (or overridden) one.
+      return changed ? { ...base, price: price || undefined, quantity: draft.quantity, total: draft.total } : base;
     }
     const changed = draft.received !== original.received || draft.fee !== original.fee;
     return changed ? { ...base, received: draft.received, fees: draft.fee } : base;
@@ -121,6 +128,7 @@ export function SettleSheet({ rows, onClose }: SettleSheetProps) {
       {
         onSuccess: () => {
           toast({ title: "Settled", tone: "success" });
+          setEditingPrice(false);
           if (last) onClose();
           else setIndex(index + 1);
         },
@@ -139,7 +147,7 @@ export function SettleSheet({ rows, onClose }: SettleSheetProps) {
         </p>
         <p className="settle-sheet__note">
           {isBuy
-            ? "Estimated at that day's close. Nudge each figure to what your broker shows."
+            ? "Estimated at that day's close. Set the total and the shares to what your broker shows."
             : `${formatMoney(Number(row.sent ?? 0), "EUR")} sent, from your plan. Type what you received.`}
         </p>
         <button
@@ -152,9 +160,47 @@ export function SettleSheet({ rows, onClose }: SettleSheetProps) {
         </button>
         {isBuy ? (
           <div className="settle-sheet__fields">
-            <Stepper label="Price" value={draft.buy.price} dp={dps.priceDp} mult={mult} onChange={(v) => edit("price", v)} />
-            <Stepper label="Quantity" value={draft.buy.quantity} dp={dps.qtyDp} mult={mult} onChange={(v) => edit("quantity", v)} />
-            <Stepper label="Total" value={draft.buy.total} dp={MONEY_DP} mult={mult} onChange={(v) => edit("total", v)} />
+            <Stepper label="Total" value={draft.total} dp={MONEY_DP} mult={mult} onChange={(v) => set({ ...draft, total: v, touched: true })} />
+            <Stepper
+              label="Shares"
+              value={draft.quantity}
+              dp={dps.qtyDp}
+              mult={mult}
+              onChange={(v) => set({ ...draft, quantity: v, touched: true })}
+            />
+            <div className="settle-sheet__price">
+              {editingPrice ? (
+                <>
+                  <Stepper
+                    label="Price per share (typed)"
+                    value={price}
+                    dp={dps.priceDp}
+                    mult={mult}
+                    onChange={(v) => set({ ...draft, priceOverride: v })}
+                  />
+                  <Button
+                    className="settle-sheet__small"
+                    variant="ghost"
+                    onClick={() => {
+                      set({ ...draft, priceOverride: null });
+                      setEditingPrice(false);
+                    }}
+                  >
+                    Use total ÷ shares
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <span className="settle-sheet__price-text">
+                    Price per share <strong className="money">{price || "–"}</strong>
+                    <span className="settle-sheet__price-hint">{draft.touched ? " (total ÷ shares)" : ""}</span>
+                  </span>
+                  <Button className="settle-sheet__small" variant="ghost" onClick={() => setEditingPrice(true)}>
+                    Edit
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
         ) : (
           <div className="settle-sheet__fields">

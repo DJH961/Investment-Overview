@@ -46,9 +46,17 @@ afterEach(() => vi.unstubAllGlobals());
 describe("Recurring", () => {
   it("shows short titles, proper provider and account names, and no needless .00", async () => {
     const plans = [
-      plan({}),
-      plan({ id: 2, kind: "conversion", amount: "1000.000000", provider: "wise", account: null, symbol: null, anchor: 28 }),
-      plan({ id: 3, kind: "buy", amount: "12.500000", unit: "weeks", anchor: 0 }),
+      plan({ legs: [{ id: 1, instrument_id: 2, symbol: "FAKEL", amount: "200.000000", shares: null }] }),
+      plan({ id: 2, kind: "conversion", amount: "1000.000000", provider: "wise", account: null, legs: [], anchor: 28 }),
+      plan({
+        id: 3,
+        unit: "weeks",
+        anchor: 0,
+        legs: [
+          { id: 2, instrument_id: 2, symbol: "FAKEL", amount: "12.500000", shares: null },
+          { id: 3, instrument_id: 3, symbol: "FAKEB", amount: null, shares: "1.5000" },
+        ],
+      }),
     ];
     vi.stubGlobal(
       "fetch",
@@ -59,9 +67,9 @@ describe("Recurring", () => {
       ),
     );
     wrap(<Recurring />);
-    expect(await screen.findByText("$200 of FAKEL · every month on the 25th")).toBeInTheDocument();
+    expect(await screen.findByText("$200 FAKEL · every month on the 25th")).toBeInTheDocument();
     expect(screen.getByText("€1,000 via Wise · every month on the 28th")).toBeInTheDocument();
-    expect(screen.getByText("$12.50 of FAKEL · every week on monday")).toBeInTheDocument();
+    expect(screen.getByText("$12.50 FAKEL + 1.5 sh FAKEB · every week on monday")).toBeInTheDocument();
     expect(screen.getAllByText(/^Fidelity Main Brokerage/)[0]).toBeInTheDocument();
   });
 });
@@ -86,21 +94,37 @@ const buyDraft: EstimateRow = {
 };
 
 describe("SettleSheet", () => {
-  it("shows the price at the precision the stepper moves and saves in one tap", async () => {
+  it("steps total and shares, derives the price, and saves in one tap", async () => {
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) =>
       new Response(JSON.stringify(init?.method === "POST" ? { settled: 1, remaining: 0 } : {}), { status: 200 }),
     );
     vi.stubGlobal("fetch", fetchMock);
     const onClose = vi.fn();
     wrap(<SettleSheet rows={[buyDraft]} onClose={onClose} />);
-    // 259.903400 is padding: the last shown digit (the 4th decimal) is the one that moves.
-    const price = await screen.findByRole("button", { name: /Price: 259\.9034\. Tap to type/ });
-    expect(price).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /Price: increase by 0\.0001/ }));
+    // The draft's own price, at the precision the stepper moves (259.903400 is padding).
+    expect(await screen.findByText("259.9034")).toBeInTheDocument();
+    // Total and shares are the big steppers; stepping the total never changes the shares.
+    await userEvent.click(screen.getByRole("button", { name: /Total: decrease by 0\.01/ }));
+    expect(screen.getByRole("button", { name: /Shares: 0\.7695/ })).toBeInTheDocument();
+    expect(screen.getByText("259.8960")).toBeInTheDocument(); // 199.99 / 0.7695
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     const post = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
     const body = JSON.parse(String(post?.[1]?.body));
-    expect(body.rows[0]).toMatchObject({ row_type: "transaction", id: 9, price: "259.9035", total: "200.00" });
+    expect(body.rows[0]).toMatchObject({ row_type: "transaction", id: 9, price: "259.8960", quantity: "0.7695", total: "199.99" });
+  });
+
+  it("lets a typed price override the derived one without moving total or shares", async () => {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) =>
+      new Response(JSON.stringify(init?.method === "POST" ? { settled: 1, remaining: 0 } : {}), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    wrap(<SettleSheet rows={[buyDraft]} onClose={() => undefined} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    await userEvent.click(screen.getByRole("button", { name: /Price per share \(typed\): increase by 0\.0001/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init?.method === "POST")).toBe(true));
+    const post = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
+    expect(JSON.parse(String(post?.[1]?.body)).rows[0]).toMatchObject({ price: "259.9035", quantity: "0.7695", total: "200.00" });
   });
 });

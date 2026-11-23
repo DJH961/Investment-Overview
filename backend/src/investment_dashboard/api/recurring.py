@@ -154,7 +154,7 @@ def suggestions(session: SessionDep) -> list[SuggestionOut]:
 def estimates(session: SessionDep) -> EstimatesOut:
     rows = service.estimate_views(session)
     return EstimatesOut(
-        count=len(rows),
+        count=service.estimate_count(session),
         groups=[
             ReminderGroupOut(
                 plan_id=g.plan_id,

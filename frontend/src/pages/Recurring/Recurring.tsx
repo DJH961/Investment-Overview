@@ -50,8 +50,9 @@ function titleText(p: RecurringPlan): string {
     return `${shortMoney(p.amount, "EUR")} via ${PROVIDER_NAME[p.provider ?? "revolut"]} · ${every}`;
   }
   if (p.kind === "deposit") return `${shortMoney(p.amount, "USD")} deposit · ${every}`;
-  const what = p.shares ? `${Number(p.shares)} shares` : shortMoney(p.amount, "USD");
-  return `${what} of ${p.symbol ?? "a fund"} · ${every}`;
+  const parts = p.legs.map((l) => `${l.shares ? `${Number(l.shares)} sh` : shortMoney(l.amount, "USD")} ${l.symbol}`);
+  const what = parts.length <= 2 ? parts.join(" + ") : `${parts.length} holdings`;
+  return `${what} · ${every}`;
 }
 
 const STATUS = {
@@ -109,8 +110,13 @@ export function Recurring() {
                 <div className="recurring-page__plan-text">
                   <strong className="recurring-page__plan-title">{titleText(p)}</strong>
                   {p.account && (
-                    <span className="recurring-page__plan-account" title={p.account}>
+                    <span className="recurring-page__plan-account" data-truncate-ok title={p.account}>
                       {p.account}
+                    </span>
+                  )}
+                  {p.kind === "buy" && p.legs.length > 2 && (
+                    <span className="recurring-page__plan-account" data-truncate-ok title={p.legs.map((l) => l.symbol).join(", ")}>
+                      {p.legs.map((l) => l.symbol).join(", ")}
                     </span>
                   )}
                   <span className="recurring-page__plan-sub">
@@ -123,7 +129,7 @@ export function Recurring() {
                   </span>
                   {p.note && <span className="recurring-page__plan-note">{p.note}</span>}
                 </div>
-                <Chip size="sm" tone={st.tone} icon={st.icon}>
+                <Chip className="recurring-page__plan-status" size="sm" tone={st.tone} icon={st.icon}>
                   {st.label}
                 </Chip>
               </div>
@@ -204,9 +210,8 @@ export function Recurring() {
               start_date: editing.start_date,
               end_date: editing.end_date,
               account_id: editing.account_id,
-              instrument_id: editing.instrument_id,
               amount: editing.amount,
-              shares: editing.shares,
+              legs: editing.legs.map((l) => ({ instrument_id: l.instrument_id, amount: l.amount, shares: l.shares })),
               provider: editing.provider,
               expected_fee: editing.expected_fee,
             }}
