@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   allInRate,
+  effectiveDp,
+  sigDecimals,
   formatDec,
   holdDelay,
   parseDec,
@@ -93,6 +95,17 @@ describe("relinkConversion (EUR sent fixed from the plan)", () => {
   it("shows the all-in rate with the fee", () => {
     expect(allInRate("500", "2.50", "598.50")).toBe("1.1910");
     expect(allInRate("500", "", "")).toBe("");
+  });
+});
+
+describe("the precision a stepper moves", () => {
+  it("drops padding zeros so the moving digit is the last one shown", () => {
+    expect(sigDecimals("259.903400")).toBe(4);
+    expect(sigDecimals("250.000000")).toBe(0);
+    expect(effectiveDp("259.903400", 6)).toBe(4);
+    expect(effectiveDp("250.000000", 6)).toBe(2);
+    expect(effectiveDp("259.9034567", 4)).toBe(4);
+    expect(effectiveDp("2.5", 6)).toBe(2);
   });
 });
 

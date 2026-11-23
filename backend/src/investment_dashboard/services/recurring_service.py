@@ -47,7 +47,7 @@ from investment_dashboard.services import (
 )
 
 if TYPE_CHECKING:
-    from investment_dashboard.models import FxConversion, RecurringPlan, Transaction
+    from investment_dashboard.models import Account, FxConversion, RecurringPlan, Transaction
 
 KINDS = frozenset({"buy", "deposit", "conversion"})
 #: Conversion plans default to Revolut (the owner's automation).
@@ -105,6 +105,11 @@ class GenerationReport:
     created: int = 0
     pending: int = 0
     plans: list[int] = field(default_factory=list)
+
+
+def account_name(account: Account) -> str:
+    """ "Fidelity Main Brokerage": the broker key made readable, then the account label."""
+    return f"{account.broker.replace('_', ' ').title()} {account.account_label}"
 
 
 def _log(action: str, plan_id: int, kind: str) -> None:
@@ -706,19 +711,17 @@ def suggest_routine(  # noqa: PLR0912 - three independent collectors, narrated i
                 recurrence_suggest.Observation(t.date, abs(t.gross_native))
             )
 
-    def account_name(account_id: int) -> str:
+    def name_of(account_id: int) -> str:
         if account_id not in names:
             a = accounts_repo.get_account(session, account_id)
-            names[account_id] = f"{a.broker} {a.account_label}" if a else ""
+            names[account_id] = account_name(a) if a else ""
         return names[account_id]
 
     out: list[Suggestion] = []
     for account_id, obs in deposits.items():
         s = recurrence_suggest.suggest_cadence(obs)
         if s is not None:
-            out.append(
-                Suggestion("deposit", s, account_id=account_id, account=account_name(account_id))
-            )
+            out.append(Suggestion("deposit", s, account_id=account_id, account=name_of(account_id)))
     for (account_id, instrument_id), obs in buys.items():
         s = recurrence_suggest.suggest_cadence(obs)
         if s is not None:
@@ -727,7 +730,7 @@ def suggest_routine(  # noqa: PLR0912 - three independent collectors, narrated i
                     "buy",
                     s,
                     account_id=account_id,
-                    account=account_name(account_id),
+                    account=name_of(account_id),
                     instrument_id=instrument_id,
                     symbol=symbols[instrument_id],
                 )
@@ -813,7 +816,7 @@ def plan_view(session: Session, plan: RecurringPlan, *, today: date | None = Non
     return PlanView(
         plan=plan,
         status=status,
-        account=f"{account.broker} {account.account_label}" if account else None,
+        account=account_name(account) if account else None,
         symbol=instrument.symbol if instrument else None,
         next_due=nxt,
         note=(
@@ -840,7 +843,7 @@ def estimate_views(session: Session) -> list[EstimateView]:
                 plan_id=t.estimate_plan_id,
                 due_date=t.estimate_due_date,
                 date=t.date,
-                label=f"{account.broker} {account.account_label}" if account else "",
+                label=account_name(account) if account else "",
                 symbol=instrument.symbol if instrument else None,
                 currency=account.native_currency if account else None,
                 price=t.price_native,

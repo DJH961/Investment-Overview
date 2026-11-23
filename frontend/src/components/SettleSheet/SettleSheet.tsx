@@ -4,6 +4,7 @@ import { formatDate, formatMoney } from "../../lib/format";
 import { useSettle, type EstimateRow, type SettleRowBody } from "../../lib/queries/recurring";
 import {
   allInRate,
+  effectiveDp,
   MONEY_DP,
   RATE_DP,
   relinkBuy,
@@ -31,9 +32,16 @@ interface Draft {
   fee: string;
 }
 
+/** What the steppers move: the ledger's precision, without the padding zeros of a long draft. */
+function dpsOf(row: EstimateRow): { priceDp: number; qtyDp: number } {
+  return {
+    priceDp: effectiveDp(row.price ?? "", row.price_dp),
+    qtyDp: effectiveDp(row.quantity ?? "", row.quantity_dp),
+  };
+}
+
 function draftOf(row: EstimateRow): Draft {
-  const priceDp = row.price_dp;
-  const qtyDp = row.quantity_dp;
+  const { priceDp, qtyDp } = dpsOf(row);
   return {
     buy: {
       price: row.price ? toDp(row.price, priceDp) : "",
@@ -86,9 +94,10 @@ export function SettleSheet({ rows, onClose }: SettleSheetProps) {
   }
 
   const isBuy = row.row_type === "transaction";
+  const dps = dpsOf(row);
   const set = (next: Draft) => setDrafts((d) => ({ ...d, [key]: next }));
   const edit = (field: BuyField, value: string) =>
-    set({ ...draft, buy: relinkBuy(field, { ...draft.buy, [field]: value }, "total", { priceDp: row.price_dp, quantityDp: row.quantity_dp, moneyDp: MONEY_DP }) });
+    set({ ...draft, buy: relinkBuy(field, { ...draft.buy, [field]: value }, "total", { priceDp: dps.priceDp, quantityDp: dps.qtyDp, moneyDp: MONEY_DP }) });
   const editReceived = (received: string) =>
     set({ ...draft, received, rate: relinkConversion("received", { received, rate: draft.rate }, row.sent ?? "0").rate });
   const editRate = (rate: string) =>
@@ -143,8 +152,8 @@ export function SettleSheet({ rows, onClose }: SettleSheetProps) {
         </button>
         {isBuy ? (
           <div className="settle-sheet__fields">
-            <Stepper label="Price" value={draft.buy.price} dp={row.price_dp} mult={mult} onChange={(v) => edit("price", v)} />
-            <Stepper label="Quantity" value={draft.buy.quantity} dp={row.quantity_dp} mult={mult} onChange={(v) => edit("quantity", v)} />
+            <Stepper label="Price" value={draft.buy.price} dp={dps.priceDp} mult={mult} onChange={(v) => edit("price", v)} />
+            <Stepper label="Quantity" value={draft.buy.quantity} dp={dps.qtyDp} mult={mult} onChange={(v) => edit("quantity", v)} />
             <Stepper label="Total" value={draft.buy.total} dp={MONEY_DP} mult={mult} onChange={(v) => edit("total", v)} />
           </div>
         ) : (

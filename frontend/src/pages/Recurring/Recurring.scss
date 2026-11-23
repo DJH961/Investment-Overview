@@ -53,6 +53,14 @@
     overflow-wrap: anywhere;
   }
 
+  // The account is a quiet second line: one line, ellipsis for long names.
+  &__plan-account {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__plan-account,
   &__plan-sub,
   &__plan-note {
     color: var(--color-muted);

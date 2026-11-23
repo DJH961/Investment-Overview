@@ -491,6 +491,13 @@ def seed_full(session: Any) -> None:
         walks[sym] = _walk(rng, series_days, start, end, vol)
         prices_repo.upsert_closes(session, inst[sym].id, walks[sym])
 
+    # The brokerage account's core (settlement) fund: constant $1.00 NAV, so a recurring buy
+    # shows its est. money-market draw. The retirement account has none (the plan note shows).
+    inst["VMFXX"] = instruments_repo.get_or_create(
+        session, symbol="VMFXX", name="Fake Settlement Fund", asset_class="mutual_fund"
+    )
+    prices_repo.upsert_closes(session, inst["VMFXX"].id, {d: D("1") for d in days})
+
     # The default market benchmark (not held), so "Vs market", beta and alpha have a
     # series to compare with: it follows the world fund with its own noise and a lower
     # level, like a real index ETF would. Its own generator keeps the draws above unchanged.
@@ -587,6 +594,7 @@ def seed_full(session: Any) -> None:
     d0 = _dt.date(2023, 3, 1)
     add(brokerage, d0, "deposit", "900000.00")
     add(retirement, d0, "deposit", "180000.00")
+    buy(brokerage, "VMFXX", d0 + _dt.timedelta(days=1), "5000")
     buy(brokerage, "FAKEL", _dt.date(2023, 3, 2), "4000")
     buy(brokerage, "FAKEL", _dt.date(2024, 1, 16), "250.5")
     buy(brokerage, "FAKEB", _dt.date(2023, 3, 6), "1500")
@@ -640,7 +648,9 @@ def seed_full(session: Any) -> None:
     add(brokerage, top_ups["apr"], "deposit", "3000.00")
     add(brokerage, top_ups["may"], "deposit", "2500.00")
     add(brokerage, top_ups["jun"], "deposit", "4000.00")
-    _seed_recurring(session, rows, add, brokerage, inst["FAKEL"], px, rate_on)
+    _seed_recurring(
+        session, rows, add, brokerage, inst["FAKEL"], inst["VMFXX"], retirement, px, rate_on
+    )
     for day, usd in _history_plan()[0]:
         add(brokerage, day, "deposit", usd)
     session.add_all(rows)
@@ -675,6 +685,8 @@ def _seed_recurring(
     add: Callable[..., None],
     account: Any,
     instrument: Any,
+    fund: Any,
+    no_fund_account: Any,
     px: Callable[[str, _dt.date], Decimal],
     rate_on: Callable[[_dt.date], Decimal],
 ) -> None:
@@ -723,7 +735,7 @@ def _seed_recurring(
         start_date=_dt.date(2026, 3, 2),
         generated_through=today - _dt.timedelta(days=1),
         paused=True,
-        account_id=account.id,
+        account_id=no_fund_account.id,
         instrument_id=instrument.id,
         shares=D("1.5"),
         created_at=_dt.datetime(2026, 3, 1, 9, 0),
@@ -774,6 +786,19 @@ def _seed_recurring(
             estimate_due_date=due,
             is_estimate=est,
             description="est. (recurring plan)" if est else None,
+            external_id=f"manual:plan-{due.isoformat()}",
+        )
+        # The core-fund draw, in the shape a broker import gives a real buy.
+        add(
+            account,
+            day,
+            "sell",
+            "200.00",
+            instrument_id=fund.id,
+            quantity=D("-200"),
+            price_native=D("1"),
+            is_estimate=est,
+            external_id=f"manual:plan-{due.isoformat()}:vmfxx",
         )
     for due in (_dt.date(2026, 6, 28),):  # a Sunday: the Friday fixing applies
         rate = rate_on(due) * D("0.996")

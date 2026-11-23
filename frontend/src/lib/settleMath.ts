@@ -57,6 +57,27 @@ export function toDp(value: string, dp: number): string {
   return d ? formatDec(d, dp) : "";
 }
 
+/** Decimals a figure really needs: "259.903400" is 4 (trailing zeros are padding). */
+export function sigDecimals(value: string): number {
+  const d = parseDec(value);
+  if (!d) return 0;
+  let n = d.n < 0n ? -d.n : d.n;
+  let s = d.s;
+  while (s > 0 && n % 10n === 0n) {
+    n /= 10n;
+    s -= 1;
+  }
+  return s;
+}
+
+/**
+ * The precision a stepper moves for this figure: what the draft needs (at least `floor`
+ * places), never finer than the ledger holds, so the digit that moves is the last one shown.
+ */
+export function effectiveDp(value: string, ledgerDp: number, floor = 2): number {
+  return Math.min(ledgerDp, Math.max(sigDecimals(value), floor));
+}
+
 /**
  * One step on the last stored decimal: `dir` is +1 or -1, `mult` 1 or 10 (the "×10"
  * toggle). Never goes below zero. A value that is not a number starts from zero.
