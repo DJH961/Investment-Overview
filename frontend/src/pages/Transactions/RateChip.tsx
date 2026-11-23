@@ -7,7 +7,7 @@ import { formatDate, formatMoney, formatNumber } from "../../lib/format";
 import type { DepositMatch, FxConversion } from "../../lib/queries/manage";
 import { providerLabel, rateChipLabel } from "../CurrencyConversions/matching";
 
-/** Tap target on a USD deposit row: which rate paid for it. Icon plus word, never colour alone. */
+/** Tap target on a USD deposit row: which rate paid for it. Icon plus word, never color alone. */
 export function RateChip({ match, onOpen }: { match: DepositMatch; onOpen: (m: DepositMatch) => void }) {
   const label = rateChipLabel(match.status);
   return (

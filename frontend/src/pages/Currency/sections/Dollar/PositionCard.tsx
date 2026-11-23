@@ -225,7 +225,7 @@ function WeekColumns({ pts, extremes }: { pts: { t: number; v: number }[]; extre
     return e.x < 12 ? "start" : e.x > 88 ? "end" : "middle";
   };
   // A label is about a quarter of the plot wide. It sits above the tallest column under
-  // it (its own span), joined to its point by a thin leader, so neighbours never cover it.
+  // it (its own span), joined to its point by a thin leader, so neighbors never cover it.
   const LABEL_SPAN = 26;
   const lift = (e: (typeof placed)[number]) => {
     const a = anchor(e);
@@ -247,7 +247,7 @@ function WeekColumns({ pts, extremes }: { pts: { t: number; v: number }[]; extre
               key={p.t}
               className={clsx("next-cols__col", i === pts.length - 1 && "next-cols__col--today", i === 0 && "next-cols__col--then")}
               style={{ height: `${h(p.v)}%` }}
-              title={`${formatDate(new Date(p.t).toISOString().slice(0, 10))}: US$${Math.round(p.v)}`}
+              title={`${formatDate(new Date(p.t).toISOString().slice(0, 10))}: $${Math.round(p.v)}`}
             />
           ))}
         </ol>

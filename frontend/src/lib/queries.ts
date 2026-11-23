@@ -106,7 +106,7 @@ export function flushPersist(): void {
   try {
     void storagePersister.persistClient(client);
   } catch {
-    /* quota or blocked storage: the cache is only an optimisation */
+    /* quota or blocked storage: the cache is only an optimization */
   }
 }
 

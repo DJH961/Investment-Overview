@@ -27,7 +27,7 @@ export function activeCount(f: ConversionFilters): number {
   return [f.period !== PERIOD_ALL, f.provider !== "all", f.pool].filter(Boolean).length;
 }
 
-/** A pill that switches a filter on or off; the check mark carries the state, not only the colour. */
+/** A pill that switches a filter on or off; the check mark carries the state, not only the color. */
 export function ToggleChip({
   pressed,
   onPressedChange,

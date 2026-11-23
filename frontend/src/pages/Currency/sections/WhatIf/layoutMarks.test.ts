@@ -13,7 +13,7 @@ describe("layoutMarks", () => {
     expect(out.map((p) => p.lane)).toEqual([0, 0]);
   });
 
-  it("puts a label that holds a neighbour's tick on a deeper row", () => {
+  it("puts a label that holds a neighbor's tick on a deeper row", () => {
     const out = layoutMarks(
       [
         { x: 100, w: 120 },

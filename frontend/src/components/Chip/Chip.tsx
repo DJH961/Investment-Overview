@@ -5,7 +5,7 @@ import "./Chip.scss";
 export type ChipTone = "neutral" | "accent" | "pos" | "neg" | "warn" | "estimate";
 
 export interface ChipProps extends HTMLAttributes<HTMLSpanElement> {
-  /** Leading icon (lucide, `aria-hidden`). Status chips always carry one or a word: never colour alone. */
+  /** Leading icon (lucide, `aria-hidden`). Status chips always carry one or a word: never color alone. */
   icon?: ReactNode;
   tone?: ChipTone;
   size?: "sm" | "md";

@@ -176,7 +176,7 @@ export function HoldingKpis({ row, ccy }: { row: HoldingRowDto; ccy: ReportingCu
   return (
     <div className="holding-page__kpis">
       <KpiTile
-        label="Unrealised gain"
+        label="Unrealized gain"
         value={<Money amount={toNum(row.capital_gain)} currency={ccy} signed colored />}
         hint={
           <>
@@ -198,7 +198,7 @@ export function HoldingKpis({ row, ccy }: { row: HoldingRowDto; ccy: ReportingCu
         label="XIRR"
         value={<Percent ratio={toNum(row.xirr)} signed colored />}
         hint="a year, money-weighted"
-        tooltip="The holding's annualised return, weighting each buy and sell by when it happened."
+        tooltip="The holding's annualized return, weighting each buy and sell by when it happened."
       />
       <KpiTile
         label="Today"

@@ -12,7 +12,7 @@ function Fire({ tone }: { tone: "success" | "error" | "neutral" }) {
 }
 
 describe("Toast", () => {
-  it("carries a tone icon (not colour alone) and can be dismissed", () => {
+  it("carries a tone icon (not color alone) and can be dismissed", () => {
     const { container } = render(
       <ToastProvider>
         <Fire tone="error" />

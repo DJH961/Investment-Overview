@@ -51,7 +51,7 @@ function describeError(err: unknown, mode: "password" | "passkey"): string {
     if (err.status === 401) return mode === "password" ? "Wrong password. Please try again." : "Passkey was not accepted.";
     return `The server returned an error (${err.status}). Please try again.`;
   }
-  if (isPasskeyCancel(err)) return "Passkey sign-in was cancelled.";
+  if (isPasskeyCancel(err)) return "Passkey sign-in was canceled.";
   if (isNetworkError(err) || err instanceof TypeError || (typeof navigator !== "undefined" && navigator.onLine === false)) {
     return "You appear to be offline. Check your connection and try again.";
   }

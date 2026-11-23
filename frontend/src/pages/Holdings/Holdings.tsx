@@ -311,7 +311,7 @@ export function Holdings() {
       {
         // Kept on desktop but quiet (no emphasis): total return is the headline.
         key: "gain",
-        header: "Unrealised gain",
+        header: "Unrealized gain",
         group: "Return",
         align: "right",
         phone: "hide",

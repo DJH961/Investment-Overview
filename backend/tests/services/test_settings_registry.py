@@ -105,7 +105,9 @@ def test_regional_formats_are_independent_and_default_to_auto() -> None:
     from investment_dashboard.services.settings_registry import DEFS
 
     by_key = {d.key: d for d in DEFS}
-    assert by_key["display.date_format"].default == "auto"
+    assert by_key["display.date_format"].default == "DD MMM YYYY"
+    assert by_key["display.locale"].default == "en-US"
+    assert "en-GB" not in by_key["display.locale"].choices
     assert by_key["display.number_format"].default == "auto"
     assert by_key["clock_format"].default == "auto"
     assert "YYYY-MM-DD" in (by_key["display.date_format"].choices or ())

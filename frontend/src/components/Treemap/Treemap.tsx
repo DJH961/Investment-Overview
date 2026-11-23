@@ -8,11 +8,11 @@ export interface TreemapItem {
   label: string;
   /** Area weight (typically market value); must be > 0 to be drawn. */
   value: number;
-  /** Optional colour tone, e.g. by return sign. */
+  /** Optional color tone, e.g. by return sign. */
   tone?: "pos" | "neg" | "neutral";
   /** Secondary text shown under the label when it fits. */
   detail?: string;
-  /** Fixed series colour 1-6 (`--chart-n`) shown as a stripe on the tile: the same thing keeps the same colour elsewhere (asset classes). */
+  /** Fixed series color 1-6 (`--chart-n`) shown as a stripe on the tile: the same thing keeps the same color elsewhere (asset classes). */
   accent?: number;
 }
 

@@ -8,7 +8,7 @@ const slices = [
   { id: "c", label: "Cash", actual: 0.1 },
 ];
 
-describe("AllocationBar non-colour cues", () => {
+describe("AllocationBar non-color cues", () => {
   it("prints the share in wide segments, hatches every second one", () => {
     const { container } = render(<AllocationBar slices={slices} />);
     expect(screen.getByTestId("segment-a")).toHaveTextContent("60%");

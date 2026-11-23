@@ -9,7 +9,7 @@ export interface MoneyProps {
   currency: string;
   /** Always show +/- sign. */
   signed?: boolean;
-  /** Colour by sign (gain/loss tokens). */
+  /** Color by sign (gain/loss tokens). */
   colored?: boolean;
   compact?: boolean;
   digits?: number;

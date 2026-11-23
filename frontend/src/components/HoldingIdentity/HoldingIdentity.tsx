@@ -24,7 +24,7 @@ export interface HoldingPillsProps {
  * The one set of status pills a holding carries everywhere (Overview list, phone
  * list, desktop table): warnings first (they wrap to a second line, never clip),
  * then live, CASH / NAV, the estimate cue, the up-to-date tick and the mover badge.
- * Every pill is a word, so no status depends on colour.
+ * Every pill is a word, so no status depends on color.
  */
 export function HoldingPills({ row, live = false, badge, tick = null, est }: HoldingPillsProps) {
   const showEst = est ?? Boolean(row.twin?.pending);
@@ -57,7 +57,7 @@ export function HoldingPills({ row, live = false, badge, tick = null, est }: Hol
 
 /**
  * The muted "≈ VOO +0.42%" line under a NAV fund while its twin estimates the day.
- * The "≈" and the sign carry the meaning; colour does not.
+ * The "≈" and the sign carry the meaning; color does not.
  */
 export function HoldingTwinLine({ row, className }: { row: HoldingRowDto; className?: string }) {
   const twin = row.twin;

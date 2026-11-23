@@ -36,7 +36,7 @@ const base = {
 };
 const opts = { live: "connected" as const, refresh: IDLE_REFRESH, timeZone: "UTC", now: NOW };
 
-afterEach(() => setFormatPrefs({ locale: "en-GB", timeZone: undefined, hour12: undefined }));
+afterEach(() => setFormatPrefs({ locale: "en-US", timeZone: undefined, hour12: undefined }));
 
 describe("stamps", () => {
   const o = { timeZone: "UTC", now: NOW };
@@ -46,7 +46,7 @@ describe("stamps", () => {
     expect(formatStamp("2026-11-01T09:10:00Z", { ...o, weekdays: true })).toBe("Sun 09:10");
     expect(formatStamp("2026-10-29T22:00:00Z", o)).toBe("Thu 22:00");
     expect(formatStamp("2026-10-12T22:00:00Z", o)).toBe("Mon 12 Oct");
-    expect(formatStamp("2025-10-13T22:00:00Z", o)).toBe("Mon, 13 Oct 2025");
+    expect(formatStamp("2025-10-13T22:00:00Z", o)).toBe("Mon 13 Oct 2025");
   });
   it("summarises calendar dates without a clock", () => {
     expect(formatStamp("2026-11-02", o)).toBe("today");

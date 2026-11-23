@@ -21,7 +21,7 @@ export interface ValueSeriesFormats {
 
 /**
  * The plotted series: identical points and scale in normal and hide mode, so the
- * curve shape, y-range, trend colour and baseline never change. Hide mode only
+ * curve shape, y-range, trend color and baseline never change. Hide mode only
  * swaps the label formatters (axis, tooltip) for "% from range start".
  */
 export function buildValueSeries(

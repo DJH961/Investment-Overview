@@ -61,6 +61,15 @@ _TIME_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 _TRUE = frozenset({"1", "true", "yes", "on"})
 _FALSE = frozenset({"0", "false", "no", "off"})
 _MAX_STRING = 512
+#: Retired enum choices that read (and write) as their replacement, so an old stored
+#: value never fails validation. The UK regional preset is gone: en-GB means en-US.
+_ENUM_ALIASES: dict[tuple[str, str], str] = {
+    ("display.locale", "en-GB"): "en-US",
+    # Numeric month-first / day-first and "auto" dates are gone: the month-name default.
+    ("display.date_format", "auto"): "DD MMM YYYY",
+    ("display.date_format", "MM/DD/YYYY"): "DD MMM YYYY",
+    ("display.date_format", "DD/MM/YYYY"): "DD MMM YYYY",
+}
 _MAX_LIST = 100
 
 
@@ -162,6 +171,8 @@ def _coerce_value(defn: SettingDef, raw: object) -> Typed:  # noqa: PLR0911, PLR
         return number
     if t is SettingType.ENUM:
         value = str(raw).strip() if isinstance(raw, str | int) else None
+        if value is not None:
+            value = _ENUM_ALIASES.get((key, value), value)
         if value is None or value not in defn.choices:
             raise SettingError(f"{key}: must be one of {', '.join(defn.choices)}")
         return value

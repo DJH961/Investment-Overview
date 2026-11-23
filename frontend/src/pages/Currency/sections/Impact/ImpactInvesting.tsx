@@ -36,7 +36,7 @@ export function investingView(data: CurrencyEffectDto): CurrencyEffectDto {
 
 /**
  * A currency effect as a bar from a centre line, on one scale shared by every row:
- * right of the line it helped, left it cost (the side and the sign carry it, not colour
+ * right of the line it helped, left it cost (the side and the sign carry it, not color
  * alone), in the gold hatch used for the currency effect across the page.
  */
 export function CurrencyBar({ v, max }: { v: number | null; max: number }) {

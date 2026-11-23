@@ -409,12 +409,12 @@ export function OverviewHoldings({ currency, movers }: OverviewHoldingsProps) {
       data-testid="holdings-night"
       title={
         nightRow.market_open
-          ? "☾ Night: last night's currency move for every US$ holding, in today's Total"
-          : "☾ Night: tonight's currency move for every US$ holding, beside the Total, not in it"
+          ? "☾ Night: last night's currency move for every $ holding, in today's Total"
+          : "☾ Night: tonight's currency move for every $ holding, beside the Total, not in it"
       }
     >
       <Moon className="overview-holdings__night-icon" aria-hidden />
-      <span className="overview-holdings__night-label">Night, all US$</span>
+      <span className="overview-holdings__night-label">Night, all $</span>
       <Percent ratio={toNum(nightRow.day_overnight_pct ?? null)} signed colored />
       <InfoTip label="day and night" content={<DaySplitLegend />} />
     </span>

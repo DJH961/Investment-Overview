@@ -138,7 +138,7 @@ let onUnauthorized: UnauthorizedHandler = () => {
   }
 };
 
-/** Override the 401 behaviour (the app installs a client-side redirect). */
+/** Override the 401 behavior (the app installs a client-side redirect). */
 export function setUnauthorizedHandler(handler: UnauthorizedHandler): void {
   onUnauthorized = handler;
 }
