@@ -26,7 +26,7 @@ function PaidChips({ c }: { c: FxConversion }) {
     <span className="conv__chips">
       {n === 0 ? (
         <>
-          <span className="conv__paid-label">Not used yet:</span>
+          <span className="conv__paid-label">Not used yet ·</span>
           <span className="conv__paid-date conv__paid-date--pool">In the pool</span>
         </>
       ) : (
