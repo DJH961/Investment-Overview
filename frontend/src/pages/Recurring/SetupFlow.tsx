@@ -17,7 +17,7 @@ function initialOf(s: PlanSuggestion): Partial<RecurringPlanInput> {
     anchor: s.anchor,
     amount: s.amount,
     account_id: s.account_id,
-    instrument_id: s.instrument_id,
+    legs: (s.legs ?? []).map((l) => ({ instrument_id: l.instrument_id, amount: l.amount })),
     provider: s.provider,
   };
 }
@@ -40,7 +40,7 @@ export function SetupFlow({ open, onClose }: { open: boolean; onClose: () => voi
       { kind: "conversion", title: "Your EUR to USD conversion", initial: conv && initialOf(conv), note: note(conv) },
       { kind: "deposit", title: "Your monthly deposit", initial: dep && initialOf(dep), note: note(dep) },
       ...(buys.length > 0
-        ? buys.map((b): Step => ({ kind: "buy", title: `Buys of ${b.symbol ?? "a fund"}`, initial: initialOf(b), note: note(b) }))
+        ? buys.map((b): Step => ({ kind: "buy", title: `Buys of ${(b.legs ?? []).map((l) => l.symbol).join(", ")}`, initial: initialOf(b), note: note(b) }))
         : [{ kind: "buy", title: "Your regular buys" } as Step]),
     ];
   }, [suggestions]);
@@ -63,6 +63,7 @@ export function SetupFlow({ open, onClose }: { open: boolean; onClose: () => voi
           <PlanForm
             key={`${index}-${suggestions ? "s" : "w"}`}
             kind={step.kind}
+            hideKind
             initial={step.initial}
             saveLabel="Add plan"
             skipLabel={index >= steps.length - 1 ? "Skip and finish" : "Skip this step"}

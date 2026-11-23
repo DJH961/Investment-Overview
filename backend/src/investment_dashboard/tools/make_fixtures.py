@@ -491,6 +491,14 @@ def seed_full(session: Any) -> None:
         walks[sym] = _walk(rng, series_days, start, end, vol)
         prices_repo.upsert_closes(session, inst[sym].id, walks[sym])
 
+    # The brokerage account's core (settlement) fund: constant $1.00 NAV, so a recurring buy
+    # shows its est. money-market draw. The retirement account has none (the plan note shows).
+    inst["VMFXX"] = instruments_repo.get_or_create(
+        session, symbol="VMFXX", name="Fake Settlement Fund", asset_class="mutual_fund"
+    )
+    prices_repo.upsert_closes(session, inst["VMFXX"].id, {d: D("1") for d in days})
+    instrument_overrides_repo.set_category(session, inst["VMFXX"].id, "Bonds")
+
     # The default market benchmark (not held), so "Vs market", beta and alpha have a
     # series to compare with: it follows the world fund with its own noise and a lower
     # level, like a real index ETF would. Its own generator keeps the draws above unchanged.
@@ -587,6 +595,7 @@ def seed_full(session: Any) -> None:
     d0 = _dt.date(2023, 3, 1)
     add(brokerage, d0, "deposit", "900000.00")
     add(retirement, d0, "deposit", "180000.00")
+    buy(brokerage, "VMFXX", d0 + _dt.timedelta(days=1), "5000")
     buy(brokerage, "FAKEL", _dt.date(2023, 3, 2), "4000")
     buy(brokerage, "FAKEL", _dt.date(2024, 1, 16), "250.5")
     buy(brokerage, "FAKEB", _dt.date(2023, 3, 6), "1500")
@@ -640,7 +649,18 @@ def seed_full(session: Any) -> None:
     add(brokerage, top_ups["apr"], "deposit", "3000.00")
     add(brokerage, top_ups["may"], "deposit", "2500.00")
     add(brokerage, top_ups["jun"], "deposit", "4000.00")
-    _seed_recurring(session, rows, add, brokerage, inst["FAKEL"], px, rate_on)
+    _seed_recurring(
+        session,
+        rows,
+        add,
+        brokerage,
+        inst["FAKEL"],
+        inst["VMFXX"],
+        inst["FAKEB"],
+        retirement,
+        px,
+        rate_on,
+    )
     for day, usd in _history_plan()[0]:
         add(brokerage, day, "deposit", usd)
     session.add_all(rows)
@@ -675,6 +695,9 @@ def _seed_recurring(
     add: Callable[..., None],
     account: Any,
     instrument: Any,
+    fund: Any,
+    second: Any,
+    no_fund_account: Any,
     px: Callable[[str, _dt.date], Decimal],
     rate_on: Callable[[_dt.date], Decimal],
 ) -> None:
@@ -688,7 +711,7 @@ def _seed_recurring(
     * A paused weekly buy plan with no rows, and an ended conversion plan.
     """
     from investment_dashboard.domain import recurrence
-    from investment_dashboard.models import FxConversion, RecurringPlan
+    from investment_dashboard.models import FxConversion, RecurringPlan, RecurringPlanLeg
 
     today = FROZEN_NOW.date()
     buy_plan = RecurringPlan(
@@ -699,8 +722,6 @@ def _seed_recurring(
         start_date=_dt.date(2026, 4, 25),
         generated_through=_dt.date(2026, 6, 25),
         account_id=account.id,
-        instrument_id=instrument.id,
-        amount=D("200"),
         created_at=_dt.datetime(2026, 4, 20, 9, 0),
     )
     conv_plan = RecurringPlan(
@@ -723,9 +744,7 @@ def _seed_recurring(
         start_date=_dt.date(2026, 3, 2),
         generated_through=today - _dt.timedelta(days=1),
         paused=True,
-        account_id=account.id,
-        instrument_id=instrument.id,
-        shares=D("1.5"),
+        account_id=no_fund_account.id,
         created_at=_dt.datetime(2026, 3, 1, 9, 0),
     )
     ended = RecurringPlan(
@@ -752,29 +771,57 @@ def _seed_recurring(
     )
     session.add_all([buy_plan, conv_plan, paused, ended, deposit_plan])
     session.flush()
+    # One automatic investment buying two holdings at once (a leg each), per due date.
+    legs = [
+        RecurringPlanLeg(
+            plan_id=buy_plan.id, instrument_id=instrument.id, amount=D("200"), position=0
+        ),
+        RecurringPlanLeg(plan_id=buy_plan.id, instrument_id=second.id, amount=D("100"), position=1),
+        RecurringPlanLeg(
+            plan_id=paused.id, instrument_id=instrument.id, shares=D("1.5"), position=0
+        ),
+    ]
+    session.add_all(legs)
+    session.flush()
     for due, est in (
         (_dt.date(2026, 4, 25), False),
         (_dt.date(2026, 5, 25), True),
         (_dt.date(2026, 6, 25), True),
     ):
         day = recurrence.roll_to_session(due)
-        price = px(instrument.symbol, day)
-        qty = (D("200") / price).quantize(D("0.00000001"))
-        add(
-            account,
-            day,
-            "buy",
-            "-200.00",
-            instrument_id=instrument.id,
-            quantity=qty,
-            price_native=price,
-            gross_native=D("200.00"),
-            fees_native=D("0"),
-            estimate_plan_id=buy_plan.id,
-            estimate_due_date=due,
-            is_estimate=est,
-            description="est. (recurring plan)" if est else None,
-        )
+        for leg, holding in ((legs[0], instrument), (legs[1], second)):
+            amount = leg.amount
+            price = px(holding.symbol, day)
+            qty = (amount / price).quantize(D("0.0001"))
+            tag = f"manual:plan-{due.isoformat()}-{holding.symbol}"
+            add(
+                account,
+                day,
+                "buy",
+                f"-{amount:.2f}",
+                instrument_id=holding.id,
+                quantity=qty,
+                price_native=price,
+                gross_native=amount,
+                fees_native=D("0"),
+                estimate_plan_id=buy_plan.id,
+                estimate_due_date=due,
+                estimate_leg_id=leg.id,
+                is_estimate=est,
+                external_id=tag,
+            )
+            # The core-fund draw, in the shape a broker import gives a real buy.
+            add(
+                account,
+                day,
+                "sell",
+                f"{amount:.2f}",
+                instrument_id=fund.id,
+                quantity=-amount,
+                price_native=D("1"),
+                is_estimate=est,
+                external_id=f"{tag}:vmfxx",
+            )
     for due in (_dt.date(2026, 6, 28),):  # a Sunday: the Friday fixing applies
         rate = rate_on(due) * D("0.996")
         session.add(
@@ -783,7 +830,6 @@ def _seed_recurring(
                 eur_sent=D("1000.00"),
                 usd_received=(D("1000") * rate).quantize(D("0.01")),
                 fees_eur=D("2.50"),
-                note="est. (recurring plan)",
                 provider="wise",
                 estimate_plan_id=conv_plan.id,
                 estimate_due_date=due,

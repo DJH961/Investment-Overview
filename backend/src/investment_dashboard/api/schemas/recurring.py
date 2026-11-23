@@ -17,6 +17,20 @@ PlanStatus = Literal["active", "paused", "ended"]
 RowType = Literal["transaction", "fx_conversion"]
 
 
+class LegIn(ApiModel):
+    instrument_id: int
+    amount: Decimal | None = Field(default=None, gt=0, description="Native amount per run.")
+    shares: Decimal | None = Field(default=None, gt=0, description="Or shares per run.")
+
+
+class LegOut(ApiModel):
+    id: int
+    instrument_id: int
+    symbol: str
+    amount: DecStr | None
+    shares: DecStr | None
+
+
 class PlanIn(ApiModel):
     kind: PlanKind
     unit: Unit
@@ -28,11 +42,13 @@ class PlanIn(ApiModel):
     start_date: date_type
     end_date: date_type | None = None
     account_id: int | None = Field(default=None, description="Buy plans.")
-    instrument_id: int | None = Field(default=None, description="Buy plans.")
     amount: Decimal | None = Field(
-        default=None, gt=0, description="Buy: native amount per run; conversion: EUR sent."
+        default=None, gt=0, description="Deposit: USD per run; conversion: EUR sent."
     )
-    shares: Decimal | None = Field(default=None, gt=0, description="Buy plans, instead of amount.")
+    legs: list[LegIn] = Field(
+        default_factory=list,
+        description="Buy plans: the holdings bought together on every due date (same account).",
+    )
     provider: Provider | None = Field(default=None, description="Conversion plans.")
     expected_fee: Decimal | None = Field(
         default=None,
@@ -56,10 +72,8 @@ class PlanOut(ApiModel):
     paused: bool
     account_id: int | None
     account: str | None
-    instrument_id: int | None
-    symbol: str | None
+    legs: list[LegOut]
     amount: DecStr | None
-    shares: DecStr | None
     provider: Provider | None
     expected_fee: DecStr | None
     next_due: str | None = Field(description="Next due date still to be handled; null if none.")
@@ -88,6 +102,18 @@ class EstimateOut(ApiModel):
         default=4, description="Decimals the ledger holds for this price (what a stepper moves)."
     )
     quantity_dp: int = Field(default=4, description="Same for the quantity.")
+    eur_rate: DecStr | None = Field(
+        default=None,
+        description=(
+            "USD per EUR to value this buy's dollars in EUR: the all-in rate of the plan's "
+            "own latest conversion on or before the due date, else the latest real "
+            "conversion, else today's settled ECB fixing. Null for non-USD rows."
+        ),
+    )
+    eur_rate_source: Literal["conversion", "ecb"] | None = None
+    eur_rate_date: str | None = Field(
+        default=None, description="Date of the conversion (or of the ECB fixing) the rate is from."
+    )
 
 
 class ReminderGroupOut(ApiModel):
@@ -95,9 +121,12 @@ class ReminderGroupOut(ApiModel):
     kind: Literal["buy", "conversion"]
     count: int
     input: Literal["type", "import"] = Field(
-        description="What settles them: type the figures (conversions) or import the file (buys)."
+        description="'import' when a file import can settle them (buys, Wise); 'type' otherwise."
     )
-    message: str = Field(description="One plain sentence for this plan; never one per row.")
+    message: str = Field(description="One short line for this plan; never one per row.")
+    provider: Provider | None = Field(
+        default=None, description="Conversion groups: the provider (Wise has a statement import)."
+    )
 
 
 class EstimatesOut(ApiModel):
@@ -111,6 +140,12 @@ class EstimatesOut(ApiModel):
     groups: list[ReminderGroupOut] = Field(description="The reminder, one line per plan.")
 
 
+class SuggestedLegOut(ApiModel):
+    instrument_id: int
+    symbol: str
+    amount: DecStr
+
+
 class SuggestionOut(ApiModel):
     kind: PlanKind
     unit: Unit
@@ -120,9 +155,8 @@ class SuggestionOut(ApiModel):
     occurrences: int = Field(description="How many past rows the suggestion is based on.")
     account_id: int | None = None
     account: str | None = None
-    instrument_id: int | None = None
-    symbol: str | None = None
     provider: Provider | None = None
+    legs: list[SuggestedLegOut] = Field(default_factory=list, description="Buy plans.")
 
 
 class SettleRowIn(ApiModel):

@@ -49,7 +49,10 @@ class Transaction(Base):
         CheckConstraint(f"kind IN ({_KIND_VALUES})", name="ck_transactions_kind"),
         CheckConstraint(f"source IN ({_SOURCE_VALUES})", name="ck_transactions_source"),
         UniqueConstraint(
-            "estimate_plan_id", "estimate_due_date", name="uq_transactions_estimate_plan_due"
+            "estimate_plan_id",
+            "estimate_due_date",
+            "estimate_leg_id",
+            name="uq_transactions_estimate_plan_due",
         ),
         Index("ix_transactions_date", "date"),
         Index("ix_transactions_instrument_id", "instrument_id"),
@@ -102,6 +105,11 @@ class Transaction(Base):
         ForeignKey("recurring_plans.id", ondelete="SET NULL")
     )
     estimate_due_date: Mapped[date | None] = mapped_column(Date)
+    #: The buy plan leg an est. buy came from (0 for any other row), so one due date can
+    #: hold several buys; a plain integer, not a FK, so history survives a leg edit.
+    estimate_leg_id: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0"), default=0
+    )
     is_estimate: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("0"), default=False
     )

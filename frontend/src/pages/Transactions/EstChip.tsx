@@ -28,7 +28,10 @@ export function useEstimateQueue(rowType: EstimateRow["row_type"] = "transaction
       const rows = (data?.rows ?? []).filter((r) => r.row_type === rowType);
       const tapped = rows.find((r) => r.id === id);
       if (!tapped) return;
-      const rest = rows.filter((r) => r.id !== id && r.plan_id === tapped.plan_id);
+      // The tapped row, then the rest of its due date (a plan's other holdings), then its other dates.
+      const rest = rows
+        .filter((r) => r.id !== id && r.plan_id === tapped.plan_id)
+        .sort((a, b) => Number(b.due_date === tapped.due_date) - Number(a.due_date === tapped.due_date));
       setQueue([tapped, ...rest]);
     },
     close: () => setQueue([]),

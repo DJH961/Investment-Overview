@@ -35,11 +35,20 @@ export function cadenceText(p: Pick<RecurringPlan, "unit" | "every" | "anchor">)
   return head;
 }
 
-function amountText(p: RecurringPlan): string {
-  if (p.kind === "conversion") return `${formatMoney(Number(p.amount), "EUR")} via ${p.provider ?? "revolut"}`;
-  if (p.kind === "deposit") return `${formatMoney(Number(p.amount), "USD")} into ${p.account ?? "an account"}`;
-  const what = p.shares ? `${Number(p.shares)} shares` : formatMoney(Number(p.amount), "USD");
-  return `${what} of ${p.symbol ?? "a fund"} in ${p.account ?? "an account"}`;
+/** "$200", "€1,000", "$12.50": no needless ".00". */
+function shortMoney(amount: string | null, currency: "USD" | "EUR"): string {
+  const n = Number(amount);
+  return formatMoney(n, currency, { narrow: true, digits: Number.isInteger(n) ? 0 : 2 });
+}
+
+const PROVIDER_NAME: Record<string, string> = { wise: "Wise", revolut: "Revolut", other: "another provider" };
+
+/** The title: what is bought, converted or deposited (the cadence is the muted line below). */
+function titleText(p: RecurringPlan): string {
+  if (p.kind === "conversion") return `${shortMoney(p.amount, "EUR")} via ${PROVIDER_NAME[p.provider ?? "revolut"]}`;
+  if (p.kind === "deposit") return `${shortMoney(p.amount, "USD")} deposit`;
+  const parts = p.legs.map((l) => `${l.shares ? `${Number(l.shares)} sh` : shortMoney(l.amount, "USD")} ${l.symbol}`);
+  return parts.length <= 2 ? parts.join(" + ") : `${parts.length} holdings`;
 }
 
 const STATUS = {
@@ -95,15 +104,29 @@ export function Recurring() {
                   <Icon aria-hidden />
                 </span>
                 <div className="recurring-page__plan-text">
-                  <strong className="recurring-page__plan-title">{amountText(p)}</strong>
+                  <span className="recurring-page__plan-title">{titleText(p)}</span>
                   <span className="recurring-page__plan-sub">
-                    {cadenceText(p)}
-                    {p.next_due ? ` · next ${formatDate(p.next_due)}` : ""}
-                    {p.end_date ? ` · until ${formatDate(p.end_date)}` : ""}
+                    {[
+                      cadenceText(p),
+                      p.next_due ? `Next ${formatDate(p.next_due)}` : null,
+                      p.end_date ? `until ${formatDate(p.end_date)}` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </span>
+                  {p.account && (
+                    <span className="recurring-page__plan-account" data-truncate-ok title={p.account}>
+                      {p.account}
+                    </span>
+                  )}
+                  {p.kind === "buy" && p.legs.length > 2 && (
+                    <span className="recurring-page__plan-account" data-truncate-ok title={p.legs.map((l) => l.symbol).join(", ")}>
+                      {p.legs.map((l) => l.symbol).join(", ")}
+                    </span>
+                  )}
                   {p.note && <span className="recurring-page__plan-note">{p.note}</span>}
                 </div>
-                <Chip size="sm" tone={st.tone} icon={st.icon}>
+                <Chip className="recurring-page__plan-status" size="sm" tone={st.tone} icon={st.icon}>
                   {st.label}
                 </Chip>
               </div>
@@ -167,7 +190,7 @@ export function Recurring() {
                 </Button>
               ))}
             </div>
-            <PlanForm key={adding} kind={adding} onSaved={() => setAdding(null)} />
+            <PlanForm key={adding} kind={adding} hideKind onSaved={() => setAdding(null)} />
           </>
         )}
       </Sheet>
@@ -184,9 +207,8 @@ export function Recurring() {
               start_date: editing.start_date,
               end_date: editing.end_date,
               account_id: editing.account_id,
-              instrument_id: editing.instrument_id,
               amount: editing.amount,
-              shares: editing.shares,
+              legs: editing.legs.map((l) => ({ instrument_id: l.instrument_id, amount: l.amount, shares: l.shares })),
               provider: editing.provider,
               expected_fee: editing.expected_fee,
             }}

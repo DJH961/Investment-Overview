@@ -49,20 +49,59 @@
     min-width: 0;
   }
 
+  // The standard card-title type: sentence case, medium weight; the rest is muted meta.
   &__plan-title {
     overflow-wrap: anywhere;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-fg);
   }
 
+  // The account is a quiet second line: one line, ellipsis for long names.
+  &__plan-account {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__plan-account,
   &__plan-sub,
   &__plan-note {
     color: var(--color-muted);
     font-size: var(--font-size-sm);
   }
 
+  // The status never shrinks or truncates (icon + word stay whole).
+  &__plan-status {
+    flex: none;
+  }
+
+  // Edit / Pause / End / Delete on one line, even at 360 px: compact buttons share the row.
   &__plan-actions {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: var(--space-1);
+    margin-left: calc(var(--space-7) + var(--space-3));
+
+    > * {
+      flex: 0 1 auto;
+      min-width: 0;
+      padding-inline: var(--space-2);
+      white-space: nowrap;
+    }
+
+    @media (max-width: 480px) {
+      margin-left: 0;
+
+      > * {
+        min-height: var(--tap-min);
+        flex: 1 1 0;
+        justify-content: center;
+        gap: var(--space-1);
+        padding-inline: var(--space-1);
+        font-size: var(--font-size-xs);
+      }
+    }
   }
 
   &__kinds {
@@ -93,6 +132,53 @@
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
     gap: var(--space-3);
+  }
+
+  &__legs {
+    display: grid;
+    gap: var(--space-3);
+    margin: 0;
+    padding: var(--space-3);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-md);
+  }
+
+  &__legs-title {
+    padding: 0 var(--space-2);
+    color: var(--color-muted);
+    font-size: var(--font-size-sm);
+  }
+
+  &__leg {
+    display: grid;
+    gap: var(--space-2);
+    padding-bottom: var(--space-3);
+    border-bottom: var(--border-width) solid var(--color-border);
+  }
+
+  &__leg-amount {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-2);
+
+    @media (min-width: 640px) {
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: end;
+    }
+  }
+
+  &__leg-actions {
+    display: flex;
+    gap: var(--space-2);
+
+    > * {
+      flex: 1 1 0;
+      justify-content: center;
+    }
+  }
+
+  &__leg-btn {
+    min-height: var(--tap-min);
   }
 
   &__form-actions {

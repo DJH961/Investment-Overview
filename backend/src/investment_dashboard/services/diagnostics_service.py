@@ -630,10 +630,11 @@ def _check_import_age(session: Session, *, today: date | None = None) -> HealthI
 def _check_estimated_rows(session: Session) -> HealthItem:
     """One quiet prompt for recurring-plan est. rows still to settle (7.3, P14)."""
     from investment_dashboard.repositories import recurring_repo  # noqa: PLC0415
+    from investment_dashboard.services import recurring_service  # noqa: PLC0415
 
     txns = recurring_repo.list_estimate_transactions(session)
     convs = recurring_repo.list_estimate_conversions(session)
-    count = len(txns) + len(convs)
+    count = recurring_service.estimate_count(session)  # a plan's due date is one item
     lines = [f"Buy on {t.date.isoformat()}" for t in txns[:3]] + [
         f"Conversion on {c.date.isoformat()}" for c in convs[:3]
     ]

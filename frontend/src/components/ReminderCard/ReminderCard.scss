@@ -1,3 +1,5 @@
+@use "../../styles/mixins" as m;
+
 .reminder-card {
   display: grid;
   gap: var(--space-3);
@@ -28,37 +30,44 @@
     list-style: none;
   }
 
+  // One row per plan: the short message on the left, Import file then Settle on the right.
   &__line {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: var(--space-2) var(--space-4);
   }
 
   &__message {
-    flex: 1 1 16rem;
+    flex: 1 1 auto;
     min-width: 0;
+    overflow-wrap: anywhere;
   }
 
   &__actions {
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
+    flex: none;
     gap: var(--space-2);
   }
 
-  &__link {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-    min-height: var(--tap-min);
-    color: var(--color-accent);
-    font-size: var(--font-size-sm);
+  &__btn {
+    min-height: var(--control-height);
+  }
 
-    svg {
-      width: var(--space-4);
-      height: var(--space-4);
+  // Phones: the message on top, the actions stacked full width underneath, Import first.
+  @include m.phone {
+    &__line {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    &__actions {
+      flex-direction: column;
+    }
+
+    &__btn {
+      justify-content: center;
+      min-height: var(--tap-min);
     }
   }
 }

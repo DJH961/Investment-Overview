@@ -26,7 +26,16 @@ def _world(session: Session) -> tuple[Account, Instrument]:
     return acct, inst
 
 
-def _buy_plan(session: Session, acct: Account, inst: Instrument, **kw: object) -> int:
+def _buy_plan(
+    session: Session,
+    acct: Account,
+    inst: Instrument,
+    *,
+    amount: Decimal | None = Decimal(20),
+    shares: Decimal | None = None,
+    legs: tuple[svc.LegInput, ...] | None = None,
+    **kw: object,
+) -> int:
     data = svc.PlanInput(
         **{
             "kind": "buy",
@@ -35,8 +44,7 @@ def _buy_plan(session: Session, acct: Account, inst: Instrument, **kw: object) -
             "anchor": 15,
             "start_date": date(2026, 1, 1),
             "account_id": acct.id,
-            "instrument_id": inst.id,
-            "amount": D("20"),
+            "legs": legs or (svc.LegInput(inst.id, amount, shares),),
             **kw,
         }  # type: ignore[arg-type]
     )
@@ -414,11 +422,9 @@ def test_reminder_is_one_line_per_plan_and_says_what_to_do(session: Session) -> 
     svc.generate_due_estimates(session, today=date(2026, 1, 21), settled=date(2026, 1, 21))
     groups = {g.kind: g for g in svc.reminder_groups(session)}
     assert (groups["buy"].count, groups["buy"].input) == (3, "import")
-    assert groups["buy"].message.startswith("Weekly buys (Vanguard): 3 to settle")
-    assert "import your Vanguard file, or type them" in groups["buy"].message.lower() or (
-        "Import your Vanguard file, or type them" in groups["buy"].message
-    )
-    assert groups["conversion"].message == "Revolut conversion, 20 Jan: type what you received"
+    assert groups["buy"].message == "Weekly buys (Vanguard) · 3 due dates"
+    assert groups["conversion"].message == "Revolut conversion · 20 Jan"
+    assert (groups["conversion"].input, groups["conversion"].provider) == ("type", "revolut")
     assert svc.estimate_count(session) == 4
 
 
@@ -485,8 +491,55 @@ def test_suggestions_read_the_recent_ledger(session: Session) -> None:
     found = {s.kind: s for s in svc.suggest_routine(session, today=date(2026, 11, 30))}
     assert (found["deposit"].cadence.unit, found["deposit"].cadence.anchor) == ("months", 5)
     assert found["deposit"].cadence.amount == D("2500")
-    assert (found["buy"].cadence.unit, found["buy"].symbol) == ("weeks", "VOO")
+    assert (found["buy"].cadence.unit, [leg.symbol for leg in found["buy"].legs]) == (
+        "weeks",
+        ["VOO"],
+    )
     assert svc.list_plans(session) == []  # suggestions never create plans
+
+
+def test_est_buy_carries_the_rate_of_the_dollars_own_conversion(session: Session) -> None:
+    from investment_dashboard.services import fx_conversion_service as fxs
+
+    acct, inst = _world(session)
+    _buy_plan(session, acct, inst)
+    prices_service.store_closes(session, inst.id, {date(2026, 1, 15): D("100")}, source="test")
+    svc.generate_due_estimates(session, today=date(2026, 1, 20), settled=date(2026, 1, 20))
+    # No conversion at all: today's settled ECB fixing (none stored here: no rate).
+    (view,) = svc.estimate_views(session)
+    assert view.eur_rate is None
+    _fx(session, {date.today(): "1.20"})
+    assert svc.estimate_views(session)[0].eur_rate_source == "ecb"
+    # A real conversion on or before the due date: its all-in rate (1089 / (1000 + 11)).
+    fxs.create_conversion(
+        session, on=date(2026, 1, 5), eur_sent=D("1000"), usd_received=D("1100"), fees_eur=D("100")
+    )
+    (view,) = svc.estimate_views(session)
+    assert (view.eur_rate_source, view.eur_rate_date) == ("conversion", date(2026, 1, 5))
+    assert view.eur_rate == D("1")  # 1100 / (1000 + 100)
+    # The plan's own conversion (est. or confirmed) wins over a real one that is later.
+    plan_id = svc.create_plan(
+        session,
+        svc.PlanInput(
+            kind="conversion",
+            unit="months",
+            every=1,
+            anchor=10,
+            start_date=date(2026, 1, 1),
+            end_date=date(2026, 1, 31),
+            amount=D("500"),
+            provider="wise",
+            expected_fee=D("0"),
+        ),
+    ).id
+    _fx(session, {date(2026, 1, 9): "1.10"})
+    svc.generate_due_estimates(session, today=date(2026, 1, 12), settled=date(2026, 1, 12))
+    assert svc.get_plan(session, plan_id).generated_through == date(2026, 1, 10)
+    fxs.create_conversion(
+        session, on=date(2026, 1, 14), eur_sent=D("1000"), usd_received=D("1500"), fees_eur=D("0")
+    )
+    buy = next(v for v in svc.estimate_views(session) if v.row_type == "transaction")
+    assert (buy.eur_rate_source, buy.eur_rate_date) == ("conversion", date(2026, 1, 10))
 
 
 def test_data_health_reports_one_quiet_item(session: Session) -> None:
@@ -501,3 +554,91 @@ def test_data_health_reports_one_quiet_item(session: Session) -> None:
     svc.settle(session, due_date=date(2026, 1, 15))
     svc.settle(session, due_date=date(2026, 2, 15))
     assert diagnostics_service._check_estimated_rows(session).severity == "ok"
+
+
+def test_one_plan_buys_several_holdings_per_due_date(session: Session) -> None:
+    acct, inst = _world(session)
+    other = Instrument(symbol="BND", name="Bonds", asset_class="etf", native_currency="USD")
+    fund = Instrument(
+        symbol="VMFXX", name="Money Market", asset_class="mutual_fund", native_currency="USD"
+    )
+    session.add_all([other, fund])
+    session.flush()
+    session.add(
+        Transaction(
+            account_id=acct.id,
+            date=date(2025, 12, 1),
+            kind="buy",
+            instrument_id=fund.id,
+            quantity=D("1"),
+            price_native=D("1"),
+            net_native=D("-1"),
+            source="manual",
+        )
+    )
+    _buy_plan(
+        session,
+        acct,
+        inst,
+        unit="weeks",
+        anchor=0,
+        legs=(svc.LegInput(inst.id, D("100")), svc.LegInput(other.id, None, D("2"))),
+    )
+    prices_service.store_closes(
+        session, inst.id, {date(2026, 1, 5): D("50"), date(2026, 1, 12): D("50")}, source="test"
+    )
+    prices_service.store_closes(session, other.id, {date(2026, 1, 5): D("10")}, source="test")
+    # BND has no close on the 12th yet: the 5th is complete, the 12th waits (VOO's leg is written).
+    report = svc.generate_due_estimates(session, today=date(2026, 1, 13), settled=date(2026, 1, 13))
+    assert (report.created, report.pending) == (3, 1)
+    rows = [t for t in _estimates(session) if t.estimate_plan_id is not None]
+    assert sorted((t.date, t.instrument_id) for t in rows) == sorted(
+        [(date(2026, 1, 5), inst.id), (date(2026, 1, 5), other.id), (date(2026, 1, 12), inst.id)]
+    )
+    assert len({t.estimate_leg_id for t in rows}) == 2  # one leg id per holding
+    # One core-fund draw per buy, like the import; two items to settle (one per due date).
+    legs = [t for t in _estimates(session) if t.instrument_id == fund.id]
+    assert len(legs) == 3
+    assert svc.estimate_count(session) == 2
+    prices_service.store_closes(session, other.id, {date(2026, 1, 12): D("11")}, source="test")
+    assert (
+        svc.generate_due_estimates(
+            session, today=date(2026, 1, 13), settled=date(2026, 1, 13)
+        ).created
+        == 1
+    )
+    assert svc.generate_due_estimates(session, today=date(2026, 1, 13)).created == 0
+    (g,) = svc.reminder_groups(session)
+    assert g.count == 2
+    assert g.message == "Weekly buys (Vanguard) · 2 due dates, 4 buys"
+
+
+def test_same_rhythm_buys_are_suggested_as_one_multi_leg_plan(session: Session) -> None:
+    acct, inst = _world(session)
+    other = Instrument(symbol="BND", name="Bonds", asset_class="etf", native_currency="USD")
+    session.add(other)
+    session.flush()
+    for i in range(4):
+        for ins, amt in ((inst, "100"), (other, "50")):
+            session.add(
+                Transaction(
+                    account_id=acct.id,
+                    date=date(2026, 11, 2) + timedelta(weeks=i),
+                    kind="buy",
+                    instrument_id=ins.id,
+                    quantity=D("1"),
+                    price_native=D(amt),
+                    gross_native=D(amt),
+                    net_native=-D(amt),
+                    source="import_generic",
+                )
+            )
+    session.flush()
+    (found,) = [
+        s for s in svc.suggest_routine(session, today=date(2026, 11, 30)) if s.kind == "buy"
+    ]
+    assert sorted((leg.symbol, leg.amount) for leg in found.legs) == [
+        ("BND", D("50")),
+        ("VOO", D("100")),
+    ]
+    assert (found.cadence.unit, found.cadence.anchor) == ("weeks", 0)

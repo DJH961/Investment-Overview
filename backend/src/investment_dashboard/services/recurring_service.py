@@ -40,6 +40,7 @@ from investment_dashboard.repositories import recurring_repo as repo
 from investment_dashboard.services import (
     fx_conversion_service,
     fx_cost_service,
+    fx_service,
     manual_entry,
     prices_service,
     transaction_edit_service,
@@ -47,7 +48,13 @@ from investment_dashboard.services import (
 )
 
 if TYPE_CHECKING:
-    from investment_dashboard.models import FxConversion, RecurringPlan, Transaction
+    from investment_dashboard.models import (
+        Account,
+        FxConversion,
+        RecurringPlan,
+        RecurringPlanLeg,
+        Transaction,
+    )
 
 KINDS = frozenset({"buy", "deposit", "conversion"})
 #: Conversion plans default to Revolut (the owner's automation).
@@ -59,7 +66,6 @@ CLOSE_PATIENCE_DAYS = 10
 #: Days an ECB fixing may lag before a weekday due date falls back to the last fixing.
 FIXING_PATIENCE_DAYS = 4
 _WEEKDAYS = 5
-_EST_NOTE = "est. (recurring plan)"
 
 
 class RecurringError(ValidationError):
@@ -71,6 +77,15 @@ class PlanNotFoundError(NotFoundError):
 
 
 @dataclass(frozen=True)
+class LegInput:
+    """One holding of a buy plan: an amount or a number of shares, never both."""
+
+    instrument_id: int
+    amount: Decimal | None = None
+    shares: Decimal | None = None
+
+
+@dataclass(frozen=True)
 class PlanInput:
     kind: str
     unit: str
@@ -79,9 +94,9 @@ class PlanInput:
     anchor: int | None = None
     end_date: date | None = None
     account_id: int | None = None
-    instrument_id: int | None = None
+    #: Deposit: USD per run; conversion: EUR sent per run (buy plans use ``legs``).
     amount: Decimal | None = None
-    shares: Decimal | None = None
+    legs: tuple[LegInput, ...] = ()
     provider: str | None = None
     expected_fee: Decimal | None = None
 
@@ -107,6 +122,11 @@ class GenerationReport:
     plans: list[int] = field(default_factory=list)
 
 
+def account_name(account: Account) -> str:
+    """ "Fidelity Main Brokerage": the broker key made readable, then the account label."""
+    return f"{account.broker.replace('_', ' ').title()} {account.account_label}"
+
+
 def _log(action: str, plan_id: int, kind: str) -> None:
     """One ``changes.log`` line per plan edit: id and kind, never amounts."""
     activity("changes").info("recurring plan %s: id=%s kind=%s", action, plan_id, kind)
@@ -127,20 +147,26 @@ def _validate(session: Session, data: PlanInput) -> None:  # noqa: PLR0912 - one
         raise RecurringError("the end date is before the start date")
     if data.amount is not None and data.amount <= 0:
         raise RecurringError("amount must be positive")
-    if data.shares is not None and data.shares <= 0:
-        raise RecurringError("shares must be positive")
     if data.expected_fee is not None and data.expected_fee < 0:
         raise RecurringError("expected fee must not be negative")
     if data.kind == "buy":
         if data.account_id is None or accounts_repo.get_account(session, data.account_id) is None:
             raise RecurringError("a buy plan needs an account")
-        if (
-            data.instrument_id is None
-            or instruments_repo.get_instrument(session, data.instrument_id) is None
-        ):
-            raise RecurringError("a buy plan needs an instrument")
-        if (data.amount is None) == (data.shares is None):
-            raise RecurringError("a buy plan needs an amount or shares, not both")
+        if not data.legs:
+            raise RecurringError("a buy plan needs at least one holding")
+        seen: set[int] = set()
+        for leg in data.legs:
+            if instruments_repo.get_instrument(session, leg.instrument_id) is None:
+                raise RecurringError("a buy plan needs an instrument for every holding")
+            if leg.instrument_id in seen:
+                raise RecurringError("a holding appears twice in the plan")
+            seen.add(leg.instrument_id)
+            if (leg.amount is None) == (leg.shares is None):
+                raise RecurringError("each holding needs an amount or shares, not both")
+            if (leg.amount is not None and leg.amount <= 0) or (
+                leg.shares is not None and leg.shares <= 0
+            ):
+                raise RecurringError("amounts and shares must be positive")
     elif data.kind == "deposit":
         if data.account_id is None or accounts_repo.get_account(session, data.account_id) is None:
             raise RecurringError("a deposit plan needs an account")
@@ -164,9 +190,7 @@ def _fields(data: PlanInput) -> dict[str, object]:
         "start_date": data.start_date,
         "end_date": data.end_date,
         "account_id": None if conv else data.account_id,
-        "instrument_id": data.instrument_id if buy else None,
-        "amount": data.amount,
-        "shares": data.shares if buy else None,
+        "amount": None if buy else data.amount,
         "provider": (data.provider or DEFAULT_PROVIDER) if conv else None,
         "expected_fee": data.expected_fee if conv else None,
     }
@@ -195,6 +219,15 @@ def create_plan(session: Session, data: PlanInput) -> RecurringPlan:
     if data.kind == "conversion" and data.expected_fee is None:
         fields["expected_fee"] = last_fee_for_provider(session, str(fields["provider"]))
     plan = repo.add_plan(session, **fields)
+    if data.kind == "buy":
+        repo.replace_legs(
+            session,
+            plan.id,
+            [
+                {"instrument_id": leg.instrument_id, "amount": leg.amount, "shares": leg.shares}
+                for leg in data.legs
+            ],
+        )
     _log("created", plan.id, plan.kind)
     return plan
 
@@ -205,6 +238,15 @@ def update_plan(session: Session, plan_id: int, data: PlanInput) -> RecurringPla
         raise RecurringError("a plan's kind cannot change")
     _validate(session, data)
     repo.update_plan(session, plan, **_fields(data))
+    if data.kind == "buy":
+        repo.replace_legs(
+            session,
+            plan.id,
+            [
+                {"instrument_id": leg.instrument_id, "amount": leg.amount, "shares": leg.shares}
+                for leg in data.legs
+            ],
+        )
     _log("updated", plan.id, plan.kind)
     return plan
 
@@ -257,24 +299,25 @@ def next_due(plan: RecurringPlan, *, today: date | None = None) -> date | None:
 # --------------------------------------------------------------------- generation
 
 
-def _generate_buy(session: Session, plan: RecurringPlan, due: date, settled: date) -> bool | None:
-    """Write the est. buy for ``due``. ``None`` = its close is not settled yet."""
+def _generate_buy_leg(
+    session: Session, plan: RecurringPlan, leg: RecurringPlanLeg, due: date, settled: date
+) -> bool | None:
+    """Write the est. buy of one leg for ``due``. ``None`` = its close is not settled yet."""
     assert plan.account_id is not None
-    assert plan.instrument_id is not None
     day = recurrence.roll_to_session(due)
     if day > settled:
         return None
-    closes = prices_service.closes_for_instrument(session, plan.instrument_id)
+    closes = prices_service.closes_for_instrument(session, leg.instrument_id)
     close = closes.get(day)
     if close is None:
         if day > settled - timedelta(days=CLOSE_PATIENCE_DAYS):
             return None
-        close = prices_service.close_as_of(session, plan.instrument_id, day)
+        close = prices_service.close_as_of(session, leg.instrument_id, day)
         if close is None:
             return None
-    instrument = instruments_repo.get_instrument(session, plan.instrument_id)
+    instrument = instruments_repo.get_instrument(session, leg.instrument_id)
     assert instrument is not None
-    qty, total = recurrence.buy_figures(close=close, amount=plan.amount, shares=plan.shares)
+    qty, total = recurrence.buy_figures(close=close, amount=leg.amount, shares=leg.shares)
     result = transaction_edit_service.create(
         session,
         transaction_edit_service.TransactionInput(
@@ -286,15 +329,35 @@ def _generate_buy(session: Session, plan: RecurringPlan, due: date, settled: dat
             price=close,
             total=total,
             fees=Decimal(0),
-            description=_EST_NOTE,
         ),
     )
-    repo.mark_estimate(result.transaction, plan.id, due)
-    leg = _write_settlement_leg(session, result.transaction)
-    if leg is not None:
-        leg.is_estimate = True  # follows its buy: confirmed with it, never counted on its own
+    repo.mark_estimate(result.transaction, plan.id, due, leg.id)
+    # One core-fund draw per buy, like the Vanguard import's paired leg (P15 updates each).
+    fund_leg = _write_settlement_leg(session, result.transaction)
+    if fund_leg is not None:
+        fund_leg.is_estimate = True  # follows its buy: confirmed with it, never counted alone
     session.flush()
     return True
+
+
+def _generate_buy_due(
+    session: Session, plan: RecurringPlan, due: date, settled: date
+) -> tuple[int, bool]:
+    """Write every missing leg of ``due``: ``(rows written, some leg still waits for its close)``.
+
+    Legs already written are skipped, so a due date that was only half possible is
+    completed on a later run.
+    """
+    written = 0
+    pending = False
+    for leg in repo.list_legs(session, plan.id):
+        if repo.estimate_exists(session, plan.id, due, leg.id):
+            continue
+        if _generate_buy_leg(session, plan, leg, due, settled) is None:
+            pending = True
+        else:
+            written += 1
+    return written, pending
 
 
 def has_settlement_fund(session: Session, account_id: int) -> bool:
@@ -370,7 +433,6 @@ def _generate_deposit(session: Session, plan: RecurringPlan, due: date, today: d
             date=due,
             kind="deposit",
             total=plan.amount,
-            description=_EST_NOTE,
             route_money_market=True,
         ),
     )
@@ -411,7 +473,6 @@ def _generate_conversion(
         eur_sent=plan.amount,
         usd_received=usd.quantize(Decimal("0.000001")),
         fees_eur=fee,
-        note=_EST_NOTE,
         provider=plan.provider,
     )
     repo.mark_estimate(row, plan.id, due)
@@ -445,16 +506,22 @@ def generate_due_estimates(
         handled: date | None = None
         made = 0
         for due in dues:
+            if plan.kind == "buy":
+                wrote, waiting = _generate_buy_due(session, plan, due, settled)
+                made += wrote
+                if waiting:
+                    report.pending += 1
+                    break
+                handled = due
+                continue
             if repo.estimate_exists(session, plan.id, due):
                 handled = due
                 continue
-            if plan.kind == "buy":
-                wrote = _generate_buy(session, plan, due, settled)
-            elif plan.kind == "deposit":
-                wrote = _generate_deposit(session, plan, due, today)
+            if plan.kind == "deposit":
+                done = _generate_deposit(session, plan, due, today)
             else:
-                wrote = _generate_conversion(session, plan, due, today)
-            if wrote is None:
+                done = _generate_conversion(session, plan, due, today)
+            if done is None:
                 report.pending += 1
                 break
             made += 1
@@ -475,7 +542,15 @@ def generate_due_estimates(
 
 
 def estimate_count(session: Session) -> int:
-    return repo.count_estimates(session)
+    """Items to settle: a plan's due date is one item, however many buys it holds."""
+    return len(_items(estimate_views(session)))
+
+
+def _items(views: Sequence[EstimateView]) -> set[tuple[object, ...]]:
+    return {
+        (v.plan_id, v.due_date or v.date, v.row_type) if v.plan_id is not None else (None, v.id)
+        for v in views
+    }
 
 
 def list_estimates(session: Session) -> tuple[Sequence[Transaction], Sequence[FxConversion]]:
@@ -591,11 +666,20 @@ def settle(
 
 
 @dataclass(frozen=True)
+class LegView:
+    id: int
+    instrument_id: int
+    symbol: str
+    amount: Decimal | None
+    shares: Decimal | None
+
+
+@dataclass(frozen=True)
 class PlanView:
     plan: RecurringPlan
     status: str  # "active" | "paused" | "ended"
     account: str | None
-    symbol: str | None
+    legs: tuple[LegView, ...]
     next_due: date | None
     #: A one-line caution for the list (a buy plan whose account has no settlement fund).
     note: str | None = None
@@ -625,6 +709,12 @@ class EstimateView:
     #: Decimals the ledger really holds for this account + instrument (what a stepper moves).
     price_dp: int = 4
     quantity_dp: int = 4
+    #: USD per EUR that the dollars of this row are valued at in EUR (buys only), and where
+    #: it comes from: "conversion" (all-in rate of the plan's own latest conversion on or
+    #: before the due date, else the latest real conversion) or "ecb" (today's settled fixing).
+    eur_rate: Decimal | None = None
+    eur_rate_source: str | None = None
+    eur_rate_date: date | None = None
 
 
 #: Stepper precision when an account + instrument has no history (the plan's 0.0001).
@@ -664,14 +754,21 @@ def ledger_precision(session: Session, account_id: int, instrument_id: int) -> t
 
 
 @dataclass(frozen=True)
+class SuggestedLeg:
+    instrument_id: int
+    symbol: str
+    amount: Decimal
+
+
+@dataclass(frozen=True)
 class Suggestion:
     kind: str
     cadence: recurrence_suggest.CadenceSuggestion
     account_id: int | None = None
     account: str | None = None
-    instrument_id: int | None = None
-    symbol: str | None = None
     provider: str | None = None
+    #: Buy plans: the holdings bought together (same account and cadence).
+    legs: tuple[SuggestedLeg, ...] = ()
 
 
 #: How far back the "Set up your routine" flow looks for a rhythm.
@@ -706,32 +803,38 @@ def suggest_routine(  # noqa: PLR0912 - three independent collectors, narrated i
                 recurrence_suggest.Observation(t.date, abs(t.gross_native))
             )
 
-    def account_name(account_id: int) -> str:
+    def name_of(account_id: int) -> str:
         if account_id not in names:
             a = accounts_repo.get_account(session, account_id)
-            names[account_id] = f"{a.broker} {a.account_label}" if a else ""
+            names[account_id] = account_name(a) if a else ""
         return names[account_id]
 
     out: list[Suggestion] = []
     for account_id, obs in deposits.items():
         s = recurrence_suggest.suggest_cadence(obs)
         if s is not None:
-            out.append(
-                Suggestion("deposit", s, account_id=account_id, account=account_name(account_id))
-            )
+            out.append(Suggestion("deposit", s, account_id=account_id, account=name_of(account_id)))
+    # Buys on the same rhythm in one account are one multi-leg plan.
+    grouped: dict[
+        tuple[int, str, int, int | None], list[tuple[int, recurrence_suggest.CadenceSuggestion]]
+    ] = {}
     for (account_id, instrument_id), obs in buys.items():
         s = recurrence_suggest.suggest_cadence(obs)
         if s is not None:
-            out.append(
-                Suggestion(
-                    "buy",
-                    s,
-                    account_id=account_id,
-                    account=account_name(account_id),
-                    instrument_id=instrument_id,
-                    symbol=symbols[instrument_id],
-                )
+            grouped.setdefault((account_id, s.unit, s.every, s.anchor), []).append(
+                (instrument_id, s)
             )
+    for (account_id, unit, every, anchor), members in grouped.items():
+        legs = tuple(SuggestedLeg(i, symbols[i], c.amount) for i, c in members)
+        total = sum((c.amount for _, c in members), Decimal(0))
+        cadence = recurrence_suggest.CadenceSuggestion(
+            unit, every, anchor, total, max(c.occurrences for _, c in members)
+        )
+        out.append(
+            Suggestion(
+                "buy", cadence, account_id=account_id, account=name_of(account_id), legs=legs
+            )
+        )
     by_provider: dict[str, list[recurrence_suggest.Observation]] = {}
     for c in fx_conversion_service.list_conversions(session):
         if not c.is_estimate and since <= c.date <= day:
@@ -752,9 +855,12 @@ class ReminderGroup:
     plan_id: int | None
     kind: str  # "buy" | "conversion"
     count: int
-    input: str  # "type" (conversions) | "import" (buys; typing stays available)
+    #: "import" when a file import can settle them (buys, Wise conversions); typing stays
+    #: available either way. "type" (Revolut conversions) has no statement to import.
+    input: str
     message: str
     row_ids: tuple[tuple[str, int], ...]
+    provider: str | None = None
 
 
 def _cadence_word(plan: RecurringPlan | None) -> str:
@@ -778,31 +884,42 @@ def reminder_groups(session: Session) -> list[ReminderGroup]:
         plan = repo.get_plan(session, plan_id) if plan_id is not None else None
         n = len(views)
         refs = tuple((v.row_type, v.id) for v in views)
+        dates = sorted({v.due_date or v.date for v in views})
+        k = len(dates)
         if row_type == "fx_conversion":
-            provider = (views[0].label or "").title() or "Conversion"
-            if n == 1:
-                on = views[0].date
-                message = (
-                    f"{provider} conversion, {on.day} {on.strftime('%b')}: type what you received"
-                )
+            key = (views[0].label or "").lower()
+            name = key.title() or "Conversion"
+            if k == 1:
+                on = dates[0]
+                message = f"{name} conversion · {on.day} {on.strftime('%b')}"
             else:
-                message = f"{provider} conversions: {n} to settle: type what you received"
-            out.append(ReminderGroup(plan_id, "conversion", n, "type", message, refs))
+                message = f"{name} conversions · {k} to settle"
+            how = "import" if key == "wise" else "type"
+            out.append(ReminderGroup(plan_id, "conversion", k, how, message, refs, key or None))
         else:
             broker = (views[0].label.split(" ")[0] if views[0].label else "").title()
             title = f"{_cadence_word(plan)} buys" + (f" ({broker})" if broker else "")
-            file_hint = f"import your {broker} file" if broker else "import your broker file"
-            message = f"{title}: {n} to settle. {file_hint[0].upper()}{file_hint[1:]}, or type them"
-            out.append(ReminderGroup(plan_id, "buy", n, "import", message, refs))
+            buys = f"{n} {'buy' if n == 1 else 'buys'}"
+            if k == 1:
+                on = dates[0]
+                message = f"{title} · {on.day} {on.strftime('%b')}, {buys}"
+            elif n == k:
+                message = f"{title} · {k} due dates"
+            else:
+                message = f"{title} · {k} due dates, {buys}"
+            out.append(ReminderGroup(plan_id, "buy", k, "import", message, refs))
     return out
 
 
 def plan_view(session: Session, plan: RecurringPlan, *, today: date | None = None) -> PlanView:
     day = today or exchange_today()
     account = accounts_repo.get_account(session, plan.account_id) if plan.account_id else None
-    instrument = (
-        instruments_repo.get_instrument(session, plan.instrument_id) if plan.instrument_id else None
-    )
+    legs: list[LegView] = []
+    for leg in repo.list_legs(session, plan.id) if plan.kind == "buy" else ():
+        inst = instruments_repo.get_instrument(session, leg.instrument_id)
+        legs.append(
+            LegView(leg.id, leg.instrument_id, inst.symbol if inst else "", leg.amount, leg.shares)
+        )
     nxt = next_due(plan, today=day)
     if plan.paused:
         status = "paused"
@@ -813,8 +930,8 @@ def plan_view(session: Session, plan: RecurringPlan, *, today: date | None = Non
     return PlanView(
         plan=plan,
         status=status,
-        account=f"{account.broker} {account.account_label}" if account else None,
-        symbol=instrument.symbol if instrument else None,
+        account=account_name(account) if account else None,
+        legs=tuple(legs),
         next_due=nxt,
         note=(
             NO_FUND_NOTE
@@ -826,9 +943,35 @@ def plan_view(session: Session, plan: RecurringPlan, *, today: date | None = Non
     )
 
 
+def _eur_rate_for(
+    session: Session, on: date, conversions: Sequence[FxConversion]
+) -> tuple[Decimal, str, date] | None:
+    """The EUR value rate for dollars due on ``on`` (all-in USD per EUR, see EstimateView)."""
+
+    def all_in(c: FxConversion) -> Decimal:
+        return c.usd_received / (c.eur_sent + (c.fees_eur or Decimal(0)))
+
+    before = [c for c in conversions if c.date <= on]
+    planned = [c for c in before if c.estimate_plan_id is not None]
+    real = [c for c in before if not c.is_estimate]
+    for pool in (planned, real):
+        if pool:
+            latest = max(pool, key=lambda c: (c.date, c.id))
+            return all_in(latest), "conversion", latest.date
+    ecb = fx_service.get_settled_rate(session, exchange_today(), base="EUR", quote="USD")
+    return (ecb, "ecb", exchange_today()) if ecb else None
+
+
+def _eur_fields(found: tuple[Decimal, str, date] | None) -> dict[str, object]:
+    if found is None:
+        return {}
+    return {"eur_rate": found[0], "eur_rate_source": found[1], "eur_rate_date": found[2]}
+
+
 def estimate_views(session: Session) -> list[EstimateView]:
     """Every est. row to settle, newest first (buys and conversions together)."""
     txns, convs = list_estimates(session)
+    all_conversions = fx_conversion_service.list_conversions(session) if txns else ()
     out: list[EstimateView] = []
     for t in txns:
         account = accounts_repo.get_account(session, t.account_id)
@@ -840,7 +983,7 @@ def estimate_views(session: Session) -> list[EstimateView]:
                 plan_id=t.estimate_plan_id,
                 due_date=t.estimate_due_date,
                 date=t.date,
-                label=f"{account.broker} {account.account_label}" if account else "",
+                label=account_name(account) if account else "",
                 symbol=instrument.symbol if instrument else None,
                 currency=account.native_currency if account else None,
                 price=t.price_native,
@@ -851,6 +994,11 @@ def estimate_views(session: Session) -> list[EstimateView]:
                 received=None,
                 price_dp=ledger_precision(session, t.account_id, t.instrument_id or 0)[0],
                 quantity_dp=ledger_precision(session, t.account_id, t.instrument_id or 0)[1],
+                **_eur_fields(
+                    _eur_rate_for(session, t.estimate_due_date or t.date, all_conversions)
+                    if account is not None and account.native_currency == "USD"
+                    else None
+                ),
             )
         )
     out.extend(

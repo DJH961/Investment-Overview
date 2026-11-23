@@ -26,6 +26,7 @@ const ROUTES = [
   "/instruments",
   "/conversions",
   "/currency",
+  "/recurring",
   "/allocations",
   "/diagnostics",
   "/settings",
