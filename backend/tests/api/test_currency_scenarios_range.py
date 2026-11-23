@@ -47,9 +47,10 @@ def test_marks_follow_the_range(api_client: TestClient, seeded: None) -> None:  
     assert Decimal(n["historic_high"]["rate_display"]) <= Decimal(
         w["historic_high"]["rate_display"]
     )
+    # The window includes the close it starts from (a weekend start: the Friday).
     assert date.fromisoformat(n["historic_low"]["date"]) >= date.fromisoformat(
         narrow["USD"]["range_start"]
-    )
+    ) - timedelta(days=4)
 
 
 def test_short_range_cushion_says_too_short(api_client: TestClient, seeded: None) -> None:  # noqa: F811
