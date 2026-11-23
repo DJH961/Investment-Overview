@@ -172,6 +172,7 @@
   grid-template-columns: minmax(0, 1fr) auto auto;
   grid-template-areas:
     "id usd menu"
+    "tags tags tags"
     "kept kept kept"
     "paid paid paid"
     "detail detail detail";
@@ -184,18 +185,27 @@
     border-top: 0;
   }
 
+  // Phones: the date is line 1 (with the amount); the chips are line 2, never clipped.
   &__id {
-    grid-area: id;
+    display: contents;
+  }
+
+  &__tags {
+    grid-area: tags;
     display: flex;
-    flex-wrap: nowrap;
-    overflow: hidden;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--space-1) var(--space-2);
     min-width: 0;
   }
 
+  // A figure that must never break across lines ("cost +€6.50").
+  &__nobreak {
+    white-space: nowrap;
+  }
+
   &__date {
-    flex: none;
+    grid-area: id;
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
     font-variant-numeric: tabular-nums;
@@ -333,7 +343,7 @@
     display: inline-flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: var(--space-1) var(--space-2);
+    gap: var(--space-1);
   }
 
   &__paid-item {
@@ -461,9 +471,16 @@
     }
 
     &__id {
+      grid-area: id;
+      display: flex;
       flex-direction: column;
-      overflow: visible;
       align-items: flex-start;
+      gap: var(--space-1);
+      min-width: 0;
+    }
+
+    &__chips {
+      column-gap: var(--space-2);
     }
 
     &__paid-label,
