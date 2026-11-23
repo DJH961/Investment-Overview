@@ -496,7 +496,10 @@ def seed_full(session: Any) -> None:
     # The brokerage account's core (settlement) fund: constant $1.00 NAV, so a recurring buy
     # shows its est. money-market draw. The retirement account has none (the plan note shows).
     inst["FAKEMM"] = instruments_repo.get_or_create(
-        session, symbol="FAKEMM", name="Fake Money Market Settlement Fund", asset_class="mutual_fund"
+        session,
+        symbol="FAKEMM",
+        name="Fake Money Market Settlement Fund",
+        asset_class="mutual_fund",
     )
     prices_repo.upsert_closes(session, inst["FAKEMM"].id, {d: D("1") for d in days})
     instrument_overrides_repo.set_category(session, inst["FAKEMM"].id, "Bonds")

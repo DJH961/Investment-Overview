@@ -183,13 +183,13 @@ export function Recurring() {
       <Sheet open={adding !== null} onOpenChange={(o) => !o && setAdding(null)} title="Add a plan">
         {adding && (
           <>
-            <div className="recurring-page__kinds" role="group" aria-label="Kind of plan">
+            <fieldset className="recurring-page__kinds" aria-label="Kind of plan">
               {(["buy", "deposit", "conversion"] as const).map((k) => (
                 <Button key={k} size="sm" variant={adding === k ? "primary" : "secondary"} aria-pressed={adding === k} onClick={() => setAdding(k)}>
                   {k === "buy" ? "Buy" : k === "deposit" ? "Deposit" : "Conversion"}
                 </Button>
               ))}
-            </div>
+            </fieldset>
             <PlanForm key={adding} kind={adding} hideKind onSaved={() => setAdding(null)} />
           </>
         )}

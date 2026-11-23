@@ -67,7 +67,7 @@ export function PlanForm({ kind, id, initial, hideKind, hideActions, formId, dep
   const [unit, setUnit] = useState<string>(initial?.unit ?? (kind === "buy" ? "weeks" : "months"));
   const [every, setEvery] = useState(String(initial?.every ?? 1));
   const [anchor, setAnchor] = useState(initial?.anchor == null ? "" : String(initial.anchor));
-  const [start, setStart] = useState(initial?.start_date ?? new Date().toISOString().slice(0, 10));
+  const [start, setStart] = useState(() => initial?.start_date ?? new Date().toISOString().slice(0, 10));
   const [end, setEnd] = useState(initial?.end_date ?? "");
   const [accountId, setAccountId] = useState(initial?.account_id == null ? "" : String(initial.account_id));
   const [legs, setLegs] = useState<LegDraft[]>(() =>

@@ -29,7 +29,13 @@ export function Stepper({ label, value, dp, mult = 1, prefix, suffix, onChange, 
   const [typing, setTyping] = useState(false);
   const [draft, setDraft] = useState(value);
   const valueRef = useRef(value);
-  valueRef.current = value;
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    if (typing) inputRef.current?.focus();
+  }, [typing]);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const repeats = useRef(0);
 
@@ -99,7 +105,7 @@ export function Stepper({ label, value, dp, mult = 1, prefix, suffix, onChange, 
             inputMode="decimal"
             aria-label={label}
             value={draft}
-            autoFocus
+            ref={inputRef}
             onChange={(e) => setDraft(e.target.value)}
             onBlur={commit}
             onKeyDown={(e) => {

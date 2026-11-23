@@ -1,5 +1,5 @@
 import { Check } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { formatDate, formatMoney, formatNumber } from "../../lib/format";
 import { usePrefs } from "../../lib/prefs";
 import { useSettle, type EstimateRow, type SettleRowBody } from "../../lib/queries/recurring";
@@ -94,12 +94,15 @@ function SettleSheetBody({ rows, onClose }: SettleSheetProps) {
 
   // A fresh queue starts at the first draft.
   const signature = rows.map((r) => `${r.row_type}:${r.id}`).join(",");
-  useEffect(() => {
+  const [seen, setSeen] = useState(signature);
+  if (seen !== signature) {
+    // Reset during render (React's "adjust state when a prop changes" pattern).
+    setSeen(signature);
     setIndex(0);
     setDrafts({});
     setMult(1);
     setEditingPrice(false);
-  }, [signature]);
+  }
 
   const row = rows[Math.min(index, Math.max(rows.length - 1, 0))];
   const key = row ? `${row.row_type}:${row.id}` : "";
