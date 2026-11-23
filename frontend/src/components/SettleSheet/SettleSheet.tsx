@@ -35,10 +35,13 @@ interface Draft {
   fee: string;
 }
 
+const PRICE_SHOWN_DP = 4;
+
 /** What the steppers move: the ledger's precision, without the padding zeros of a long draft. */
 function dpsOf(row: EstimateRow): { priceDp: number; qtyDp: number } {
   return {
-    priceDp: effectiveDp(row.price ?? "", row.price_dp),
+    // Shown and stepped at the usual price precision (4); the stored price keeps full precision.
+    priceDp: Math.min(effectiveDp(row.price ?? "", row.price_dp), PRICE_SHOWN_DP),
     qtyDp: effectiveDp(row.quantity ?? "", row.quantity_dp),
   };
 }
@@ -101,9 +104,10 @@ export function SettleSheet({ rows, onClose }: SettleSheetProps) {
   const isBuy = row.row_type === "transaction";
   const dps = dpsOf(row);
   const set = (next: Draft) => setDrafts((d) => ({ ...d, [key]: next }));
-  const derived = derivePrice(draft.total, draft.quantity, dps.priceDp);
-  const originalPrice = row.price ? toDp(row.price, dps.priceDp) : "";
-  const price = draft.priceOverride ?? (draft.touched ? derived : originalPrice);
+  // Full precision is what gets stored; the line below shows it rounded to `priceDp`.
+  const fullPrice =
+    draft.priceOverride ?? (draft.touched ? derivePrice(draft.total, draft.quantity, row.price_dp) : (row.price ?? ""));
+  const price = fullPrice ? toDp(fullPrice, dps.priceDp) : "";
   const editReceived = (received: string) =>
     set({ ...draft, received, rate: relinkConversion("received", { received, rate: draft.rate }, row.sent ?? "0").rate });
   const editRate = (rate: string) =>
@@ -113,7 +117,7 @@ export function SettleSheet({ rows, onClose }: SettleSheetProps) {
   const body = (): SettleRowBody => {
     const base = { row_type: row.row_type, id: row.id } as SettleRowBody;
     // Net is the total; the stored price is the derived (or overridden) one.
-    if (isBuy) return { ...base, price: price || undefined, quantity: draft.quantity, total: draft.total };
+    if (isBuy) return { ...base, price: fullPrice || undefined, quantity: draft.quantity, total: draft.total };
     return { ...base, received: draft.received, fees: draft.fee };
   };
 

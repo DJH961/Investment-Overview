@@ -45,7 +45,8 @@ const PROVIDER_NAME: Record<string, string> = { wise: "Wise", revolut: "Revolut"
 
 /** The short, scannable first line: what happens and how often. */
 function titleText(p: RecurringPlan): string {
-  const every = cadenceText(p).toLowerCase();
+  const c = cadenceText(p);
+  const every = c.charAt(0).toLowerCase() + c.slice(1); // 'every 2 weeks on Monday'
   if (p.kind === "conversion") {
     return `${shortMoney(p.amount, "EUR")} via ${PROVIDER_NAME[p.provider ?? "revolut"]} · ${every}`;
   }
