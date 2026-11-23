@@ -44,11 +44,6 @@ function adjective(c: { unit: string; every: number }): string {
   return c.every === 1 ? ADJ[c.unit]! : `every ${c.every} ${ONE[c.unit]}s`;
 }
 
-/** "each month" / "every 2 weeks": when the money has been used up. */
-function each(c: { unit: string; every: number }): string {
-  return c.every === 1 ? `each ${ONE[c.unit]}` : `every ${c.every} ${ONE[c.unit]}s`;
-}
-
 const TITLES = ["Your EUR to USD conversion", "Your monthly deposit", "Your regular buys"];
 
 /**
@@ -182,8 +177,11 @@ export function SetupFlow({ open, onClose }: { open: boolean; onClose: () => voi
         <>
           {depositAmount && Number(split.total) !== Number(split.deposit_total) && (
             <>
-              ≈ {usd(split.total)} {perRun(buyNow)}, so your {adjective(depositCadence)} {usd(split.deposit_total)} deposit is
-              invested {each(depositCadence)}.{" "}
+              ≈ {usd(split.total)} {perRun(buyNow)}, so your{" "}
+              {depositCadence.every === 1
+                ? `${adjective(depositCadence)} ${usd(split.deposit_total)} deposit`
+                : `${usd(split.deposit_total)} deposit ${perRun(depositCadence)}`}{" "}
+              is invested in full.{" "}
             </>
           )}
           {how}{" "}
@@ -227,7 +225,10 @@ export function SetupFlow({ open, onClose }: { open: boolean; onClose: () => voi
       </Button>
     </>
   );
-  const remountKey = [index, suggestions ? "s" : "w", isCleared ? "c" : "p", useFlow[1] ? "f" : "", flowUsd ?? "", split ? `${split.method}${split.legs.map((l) => l.amount).join("-")}` : ""].join("|");
+  // The form restarts only when what it is prefilled from changes (never on a typed edit): the
+  // deposit amount follows the conversion only when it is the flow that fills it.
+  const followsFlow = index === 1 && (Boolean(useFlow[1]) || !history.deposit);
+  const remountKey = [index, suggestions ? "s" : "w", isCleared ? "c" : "p", useFlow[1] ? "f" : "", followsFlow ? (flowUsd ?? "") : "", index === 2 && split ? `${split.method}${split.legs.map((l) => l.amount).join("-")}` : ""].join("|");
   return (
     <FormShell open={open} onClose={onClose} title="Set up your routine" footer={footer}>
       <div className="recurring-page__setup">
