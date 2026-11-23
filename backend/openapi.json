@@ -5718,7 +5718,8 @@
             "enum": [
               "tailwind",
               "headwind",
-              "neutral"
+              "neutral",
+              "mixed"
             ],
             "title": "Kind",
             "type": "string"
