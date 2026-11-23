@@ -16,10 +16,10 @@ For a date range and a reporting currency (EUR or USD) this builds one
 - **Flows**: the cashflow-legs path (:func:`services.cashflows.build_portfolio_cashflows`),
   i.e. ``net_native`` at that date's rate plus the FX-pool conversion overrides,
   never the frozen ``net_eur`` / ``net_usd`` legs. The stream's sign is flipped
-  (money into the book is positive). Note: for a matched deposit the override
-  makes the euro flow the deposit's effective euro cost, not ``dollars / r_t``;
-  that conversion-cost difference therefore stays inside the *flow* part (and so
-  outside both market and currency) until push 7.3 shows it on its own.
+  (money into the book is positive). For a matched deposit the override makes the
+  euro flow the deposit's effective euro cost, while the book only grows by
+  ``dollars / r_t``. That difference (the rate move while the dollars waited plus
+  the conversion spread) is each row's ``carry``: currency, never market (7.3.1).
 
 **Broker cash (opt-in, ``include_broker_cash``; the Impact section).** The book
 then also holds each brokerage account's idle cash: the running sum of the
@@ -249,8 +249,12 @@ def _flows_by_row(
     end: date,
     *,
     retain_all: bool = False,
-) -> dict[date, Decimal]:
-    """External flows into the book in ``reporting``, booked on the row they precede.
+) -> tuple[dict[date, Decimal], dict[date, Decimal]]:
+    """``(flows, carry)`` into the book in ``reporting``, booked on the row they precede.
+
+    ``flows`` is what the money cost (FX-pool overrides applied); ``carry`` is the
+    same stream valued at each flow's own-date rate minus ``flows`` (non-zero only
+    for matched deposits in the EUR view).
 
     ``retain_all``: every account's cash is in the book (broker cash), so no
     dividend or interest leaves it.
@@ -261,25 +265,39 @@ def _flows_by_row(
         if retain_all
         else metrics_service.build_retained_cash_account_ids(session, txns)
     )
-    stream = cashflows.build_portfolio_cashflows(
-        txns,
-        currency=reporting,
-        retained_cash_account_ids=retained,
-        eur_to_usd=settled_rates(session, "USD"),
-        eur_overrides=cashflows.eur_overrides_for(session),
-    )
-    out: dict[date, Decimal] = defaultdict(lambda: ZERO)
-    if not row_dates:
+    eur_to_usd = settled_rates(session, "USD")
+    overrides = cashflows.eur_overrides_for(session)
+
+    def booked(eur_overrides: Mapping[int, Decimal] | None) -> dict[date, Decimal]:
+        stream = cashflows.build_portfolio_cashflows(
+            txns,
+            currency=reporting,
+            retained_cash_account_ids=retained,
+            eur_to_usd=eur_to_usd,
+            eur_overrides=eur_overrides,
+        )
+        out: dict[date, Decimal] = defaultdict(lambda: ZERO)
+        if not row_dates:
+            return out
+        anchor = row_dates[0]
+        for cf in stream:
+            if cf.date <= anchor:
+                continue
+            i = bisect.bisect_left(row_dates, cf.date)
+            if i >= len(row_dates):
+                continue
+            out[row_dates[i]] -= cf.amount  # XIRR sign: money in is negative
         return out
-    anchor = row_dates[0]
-    for cf in stream:
-        if cf.date <= anchor:
-            continue
-        i = bisect.bisect_left(row_dates, cf.date)
-        if i >= len(row_dates):
-            continue
-        out[row_dates[i]] -= cf.amount  # XIRR sign: money in is negative
-    return out
+
+    flows = booked(overrides)
+    carry: dict[date, Decimal] = {}
+    if overrides and reporting.upper() == "EUR":
+        at_day = booked(None)
+        for on in set(flows) | set(at_day):
+            diff = at_day.get(on, ZERO) - flows.get(on, ZERO)
+            if diff:
+                carry[on] = diff
+    return flows, carry
 
 
 def _day_rates(
@@ -375,7 +393,7 @@ def _build_rows(  # noqa: PLR0912
         {d for s in series.values() for d in s.dates if start < d <= end} if foreign else set()
     )
     row_dates = sorted({start} | holding_dates | cash_dates | fx_dates)
-    flows = _flows_by_row(session, rep, row_dates, end, retain_all=broker_cash)
+    flows, carry = _flows_by_row(session, rep, row_dates, end, retain_all=broker_cash)
 
     day_books: list[dict[str, Decimal]] = []
     day_rates: list[dict[str, FxRate]] = []
@@ -412,7 +430,7 @@ def _build_rows(  # noqa: PLR0912
         i = bisect.bisect_left(row_dates, sf.on)
         flows[row_dates[i]] = flows.get(row_dates[i], ZERO) + sf_rate.to_reporting(sf.native)
     rows = [
-        AttributionDay(on=on, book=b, rates=r, flow=flows.get(on, ZERO))
+        AttributionDay(on=on, book=b, rates=r, flow=flows.get(on, ZERO), carry=carry.get(on, ZERO))
         for on, b, r in zip(row_dates, day_books, day_rates, strict=True)
     ]
     return BookRows(rows, [sf for sf in shortfalls if start < sf.on <= end])

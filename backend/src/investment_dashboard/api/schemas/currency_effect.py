@@ -124,7 +124,15 @@ class EffectBridge(ApiModel):
     #: Net external flows (deposits minus withdrawals) at their own dates' rates.
     deposits: DecStr
     market: DecStr
+    #: ``revaluation + waiting + conversion_cost`` exactly (as displayed).
     currency: DecStr
+    #: The book revalued day by day at each day's rate.
+    revaluation: DecStr | None = None
+    #: The rate move on deposited dollars between their conversion and the deposit
+    #: (EUR view; 0 for unmatched deposits and in the USD view).
+    waiting: DecStr | None = None
+    #: Spread and fees of the conversions behind the range's deposits (negative = cost).
+    conversion_cost: DecStr | None = None
     end: DecStr
 
 

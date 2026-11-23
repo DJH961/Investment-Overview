@@ -205,6 +205,17 @@ def conversion_cost(c: Conversion) -> ConversionCost:
     )
 
 
+def slice_cost(eur_paid: Decimal, usd: Decimal, ecb_rate: Decimal | None) -> Decimal:
+    """What ``usd`` bought at ``eur_paid`` cost against the conversion's own ECB fixing.
+
+    ``eur_paid - usd / ecb`` (spread plus fees; positive = it cost you). ``0`` without
+    a fixing: the whole gap then stays in the "while your dollars waited" part.
+    """
+    if ecb_rate is None or ecb_rate <= 0:
+        return ZERO
+    return eur_paid - usd / ecb_rate
+
+
 def month_average(
     rates: Mapping[date, Decimal], on: date, today: date
 ) -> tuple[Decimal, bool] | None:

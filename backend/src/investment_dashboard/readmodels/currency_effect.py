@@ -61,6 +61,7 @@ from investment_dashboard.readmodels import fx_attribution_rows as rows_rm
 from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.repositories import instruments_repo, transactions_repo
 from investment_dashboard.services import (
+    fx_cost_service,
     fx_session_rates_service,
     intraday_snapshots_service,
     metrics_service,
@@ -933,11 +934,38 @@ def _buys(session: Session, today: Mapping[str, Any], now: datetime) -> dict[str
 # -- the payload ---------------------------------------------------------------------------------
 
 
-def _bridge(parts: Sequence[fa.DayParts]) -> dict[str, Any] | None:
+def carry_split(
+    parts: Sequence[fa.DayParts], costs: Mapping[date, Decimal]
+) -> tuple[Decimal, Decimal, Decimal]:
+    """``(revaluation, waiting, conversion_cost)`` of ``parts``' currency part (exact).
+
+    ``revaluation`` is the book revalued day by day; the deposits' ``carry`` splits
+    into the rate move while the dollars waited (conversion -> deposit) and the
+    conversion cost (spread + fees, negative = it cost you). The three add up to the
+    bridge's currency part exactly.
+    """
+    if not parts:
+        return ZERO, ZERO, ZERO
+    lo, hi = parts[0].prev_on, parts[-1].on
+    with fa.exact_context():
+        carry = sum((p.carry for p in parts), ZERO)
+        reval = sum((p.currency for p in parts), ZERO) - carry
+        cost = -sum((c for on, c in costs.items() if lo < on <= hi), ZERO) if carry else ZERO
+        waiting = carry - cost
+    return reval, waiting, cost
+
+
+def _bridge(
+    parts: Sequence[fa.DayParts], costs: Mapping[date, Decimal] | None = None
+) -> dict[str, Any] | None:
     if not parts:
         return None
     b = fa.bridge(parts)
     start, end, flows, currency = _q(b.start), _q(b.end), _q(b.flows), _q(b.currency)
+    _reval, waiting, cost = carry_split(parts, costs or {})
+    # Each line rounds on its own; the revaluation takes the remainder so the
+    # displayed lines always add up to the displayed currency part.
+    waiting_q, cost_q = _q(waiting), _q(cost)
     return {
         "start_on": b.start_on.isoformat(),
         "end_on": b.end_on.isoformat(),
@@ -945,6 +973,9 @@ def _bridge(parts: Sequence[fa.DayParts]) -> dict[str, Any] | None:
         "deposits": dec(flows),
         "market": dec(end - start - flows - currency),
         "currency": dec(currency),
+        "revaluation": dec(currency - waiting_q - cost_q),
+        "waiting": dec(waiting_q),
+        "conversion_cost": dec(cost_q),
         "end": dec(end),
     }
 
@@ -1005,8 +1036,10 @@ def _one_side(  # noqa: PLR0912, PLR0915
     payload: Mapping[str, Any],
     recorded: Mapping[date, tuple[Decimal, Decimal]],
     first: date | None,
+    costs: Mapping[date, Decimal] | None = None,
 ) -> dict[str, Any]:
     life = lives.get(ccy)
+    costs = costs if ccy == "EUR" else None
     after, through = range_window(range_key, today)
     idx = life.window(after, through) if life is not None else []
     parts = [life.parts[i] for i in idx] if life is not None else []
@@ -1184,7 +1217,7 @@ def _one_side(  # noqa: PLR0912, PLR0915
         "granularity": granularity,
         "headline": headline,
         "series": series,
-        "bridge": _bridge(parts),
+        "bridge": _bridge(parts, costs),
         "months": bars(months),
         "years": bars(fa.year_totals(parts)) if moved else [],
         "grid": month_grid(months),
@@ -1231,6 +1264,7 @@ def build_effect_both(
     returns = headline_returns(range_key, today, lives, overview)
     recorded = fx_session_rates_service.session_rates(session)
     first = min(recorded) if recorded else None
+    costs = fx_cost_service.deposit_costs(session)
     out = {
         ccy: _one_side(
             session,
@@ -1243,6 +1277,7 @@ def build_effect_both(
             payload=overview[ccy],
             recorded=recorded,
             first=first,
+            costs=costs,
         )
         for ccy in ("EUR", "USD")
     }
