@@ -1,70 +1,64 @@
-# 7.3.0 handover (sessions 2–3 of 7.3; written 2026-11-22, keep current)
+# 7.3.0 handover (sessions 2–3 of 7.3; updated 2026-11-23, keep current)
 
 Read first: `docs/v7_plan.md` §5.1 "7.3 as settled", `docs/v7_3_contract.md`,
 `docs/v7_3_handover.md` (session 1, shipped in 7.2.1).
 
-**Branch:** `feat/v7.3.0` (worktree `.claude/worktrees/v7-3-planning-dev-144c07`). 7.2.1
-(#429) is merged to main (2c6cb361) and main is merged into feat/v7.3.0. One release, 7.3.0
-(owner choice); PR against main. No version bump yet; lanes write CHANGELOG under
-`[Unreleased]`, folded into `## [7.3.0]` at release. Nothing pushed.
+**Branch:** `feat/v7.3.0` (worktree `.claude/worktrees/v7-3-planning-dev-144c07`), based on
+main (7.2.1 #429 and the 360 px chip fix #430 merged in). One release, 7.3.0; PR against main.
+No version bump yet; CHANGELOG entries sit under `[Unreleased]`, folded into
+`## [7.3.0]` at release. Nothing pushed.
 
 ## Owner decisions (2026-11-22)
 
-- 7.3.0 = conversion costs + Currency "Conversions" section + P15 + P14. P6 (lump sum) dropped
-  from 7.3.
-- **Owner's real journey** (design everything around it): a Revolut automation converts EUR→USD
-  from checking accounts he does NOT want in the app → a fixed monthly automatic deposit from
-  USD checking to Vanguard/Fidelity lands in the money-market (core) fund → weekly automatic
-  buys draw down the MMF. The conversion paying a deposit is often much earlier (FIFO pool).
-- P14 plan kinds: **conversion, deposit, buy**. Deposits have zero variation → est. row, never
-  prompts. Conversions: est. at settled ECB × (1 + provider's EUR-weighted avg off-ECB), plus
-  the plan's expected fee (default: last real fee for that provider); settled by typing USD
-  received (Revolut statements are useless). Buys: est. at the day's close + a matching **MMF
-  drawdown leg** that follows the settled buy total automatically.
-- **KEY: hand-settling a draft must be effortless**: open the draft, −/+ steppers on the last
-  stored decimal (precision as seen in that account's imports), ×10 toggle, hold to repeat, one
-  Save, next draft. A later full broker import only matches/updates (P15), never duplicates.
-- One grouped reminder per plan saying what input is needed (Transactions badge, info-level
-  Data Health, Recurring list card). Nothing for deposits.
-- Guided "Set up your routine" on the Recurring list creates all three plans; suggestions from
-  ledger history, created only on confirm.
-- Wise CSV import preset (no Revolut): per-row disregard (card purchases), setting "ignore
-  conversions not into USD" (default on), dedupe by TransferWise ID, hidden-fee maths for
-  CONVERSION rows (EUR total from Description). Owner's sample lines never go in the repo.
-- `kept_usd` per conversion: dollars kept in the USD checking account, never matched.
-  Replaces the "idle dollars" extra (owner does NOT want that).
-- "Received in USD" deposit mark (family money) + an **info-level, non-intrusive** health check
-  for ECB-only deposits.
-- Extras: chart markers YES with an on/off chip; timing panel YES; Brief line NO; exports NO.
-- **Conversions page = a usable place to add conversions, light stats only**; the Currency
-  page's Conversions section is the deep dive.
+- 7.3.0 = conversion costs + Currency "Conversions" section + P15 + P14 + Wise import.
+  P6 (lump sum) dropped from 7.3.
+- **Owner's real journey** (design everything around it): a Revolut automation converts
+  EUR→USD from checking accounts he does NOT want in the app → a fixed monthly automatic
+  deposit from USD checking to Vanguard/Fidelity lands in the money-market (core) fund →
+  weekly automatic buys draw down the MMF. The conversion paying a deposit is often much
+  earlier (FIFO pool).
+- P14 plan kinds: **conversion, deposit, buy**. Deposits: est. row, never prompts. Conversions:
+  est. at settled ECB × (1 + provider's EUR-weighted avg off-ECB, fees excluded) plus the
+  plan's expected fee; settled by typing USD received. Buys: est. at the day's close + a
+  matching **MMF drawdown leg** that follows the settled buy total.
+- **KEY: hand-settling a draft must be effortless** (−/+ steppers on the last stored decimal,
+  ×10, hold to repeat, one Save, next draft). A later broker import only matches/updates.
+- Wise CSV preset only (Revolut statements are useless); per-row disregard; setting "ignore
+  conversions not into USD" (default on). Owner's sample lines never go in the repo.
+- `kept_usd` per conversion (dollars kept in USD checking, never matched); no idle-dollars
+  warning. "Received in USD" deposit mark; info-only health check.
+- Extras: chart markers YES (on/off chip), timing panel YES; Brief line NO; exports NO.
+- **Conversions page = a place to add conversions, light stats only**; the Currency page's
+  Conversions section is the deep dive.
+- 2026-11-23: fix in this release: Impact can claim a positive EUR total and "tailwind" while
+  the % impact below is negative (bug lane, below).
 
-## Lanes (implementer subagents, one worktree each under `.claude/worktrees/agent-*`)
+## Lanes
 
 | Lane | Branch | State |
 |---|---|---|
-| A costs + Currency section + markers + timing | `lane/v7.3-costs` 335be900 | **merged** (007dc850). Light stats on the page live in `CostBits.tsx`. Open: one clean `npm run test:overflow` run on a quiet machine; marker tap on phones is weak (SVG title) |
-| B P15 import matching | `lane/v7.3-import-match` 34f54b9a | **merged** into feat/v7.3.0. Undo of updated rows NOT done (needs schema, below) |
-| C P14 recurring plans | `lane/v7.3-recurring` | running; owns migration 0027 (down `a7c3e9d1b5f2`) |
-| D Wise import + kept_usd + Received in USD | `lane/v7.3-wise` | running; migration `0027a` (down `a7c3e9d1b5f2`) → re-parent after 0027 at merge |
+| A costs + Currency section + markers + timing | `lane/v7.3-costs` | merged |
+| B P15 import matching | `lane/v7.3-import-match` | merged; **undo of updated rows in progress** (same agent, on top of feat/v7.3.0) |
+| C P14 recurring plans | `lane/v7.3-recurring` | merged; migration 0027 `c5e1a7d3f902` |
+| D Wise import + kept_usd + Received in USD | `lane/v7.3-wise` | merged; migration re-parented as **0028** `c4e8a2f6b0d7` (down `c5e1a7d3f902`) |
+| Impact sign bug | `fix/v7.3-impact-sign` (from main) | in progress |
 
-If a lane's agent is gone, its branch holds its committed work: read `git log` there.
+Merge wiring already done on feat/v7.3.0: placeholder provider offset replaced by
+`fx_cost_service.provider_avg_off_pct`; estimated conversions left out of costs, markers and
+the offset (`fx_cost_service.conversions_with_fixings`); `apply_import_update` calls
+`recurring_service.confirm_estimate`. openapi, api-types and fixtures regenerated.
+Targeted backend tests: 120 passed after the last merge; frontend typecheck clean.
 
-## Merge-time to-dos (main session)
+## Left to do
 
-1. Merge A, C, D; re-parent D's migration onto C's 0027; run migration roundtrip test.
-2. Swap lane C's placeholder provider-offset helper for lane A's
-   `domain.fx_spread.provider_avg_off_pct(rows, provider) -> Decimal | None`
-   (service: `services.fx_cost_service.provider_avg_off_pct(session, provider)`).
-3. Wire P15: lane B's `profile_for(existing)` reads `is_estimate` (works by itself once C's
-   column exists); call C's `confirm_estimate(row)` from B's `apply_import_update`
-   (`services/import_update_service.py`) so an import confirms est. rows (and the MMF leg).
-4. P15 undo: C adds `import_batches.update_images` (JSON before-images) + `updated_count`;
-   then store before-images in `apply_updates` and restore them in `import_undo_service`.
-5. Lane A TODOs: skip `is_estimate` conversions in `conversionMarks` and
-   `readmodels/currency_rate._markers`. Add `/currency` to the overflow route list.
-6. Regenerate openapi.json, api-types.ts, fixtures once after all merges; full frontend tests.
-7. Bump 7.3.0 in lockstep (backend/pyproject, web/ + frontend/package.json, lockfiles,
-   openapi), CHANGELOG `## [7.3.0] — date`, plan status line.
-8. Screenshots of changed views (360/390/768/1280, both themes), critique each, send to the
-   owner for approval before release. PR after 7.2.1 merges; resolve conflicts with main.
+1. Merge lane B's undo and the Impact fix; regenerate openapi/api-types/fixtures; targeted tests.
+2. Full frontend `npm run test` and one clean `npm run test:overflow` (add `/currency` and
+   `/recurring` to the overflow route list).
+3. Known gaps to judge: Data Health `estimated_rows` is warning-level (there is no info
+   severity); rate-chart marker tap on phones is weak (SVG title); no frontend tests for
+   SettleSheet/Recurring beyond stepper maths; setup flow is 3 separate POSTs.
+4. Screenshots of changed views (Conversions page, Currency Conversions section, rate chart
+   markers, Recurring list + setup, settle sheet, Transactions est. chip, Import update rows,
+   Wise import, Impact) at 360/390/768/1280 both themes; critique each; owner approves.
+5. Bump 7.3.0 in lockstep (backend/pyproject, web/ + frontend/package.json, lockfiles,
+   openapi), CHANGELOG `## [7.3.0] — date`, plan status line; PR; CI green.
