@@ -146,6 +146,34 @@
     box-shadow: 0 0 0 3px var(--color-pos-soft);
   }
 
+  // Closing… / Closed / Opening: a hollow muted dot, the word says which.
+  &__corner--closing &__dot,
+  &__corner--closed &__dot,
+  &__corner--opening &__dot {
+    border: var(--border-width) solid var(--color-faint);
+    background: none;
+    box-shadow: none;
+  }
+
+  // The open's first tick: the live dot pulses once. Off with reduced motion.
+  &__corner--pulse &__dot {
+    animation: overview-hero-pulse 1.2s var(--ease-out) 1;
+  }
+
+  &__corner--live {
+    transition: color var(--duration-slow) var(--ease-standard);
+  }
+
+  @include m.reduced-motion {
+    &__corner--pulse &__dot {
+      animation: none;
+    }
+
+    &__corner--live {
+      transition: none;
+    }
+  }
+
   // The second currency always sits on its own line, at every width: beside the
   // figure, a longer value (US$ vs €, or the hidden "€••,•••.••") would wrap at some
   // widths and not others, and the hero would change height on a currency switch.
@@ -355,5 +383,22 @@
 
   &__note {
     color: var(--color-warn);
+  }
+}
+
+// One soft ring out of the live dot (the open's first tick).
+@keyframes overview-hero-pulse {
+  0% {
+    box-shadow: 0 0 0 0 var(--color-pos-soft);
+    transform: scale(0.7);
+  }
+
+  40% {
+    transform: scale(1.15);
+  }
+
+  100% {
+    box-shadow: 0 0 0 9px transparent;
+    transform: scale(1);
   }
 }
