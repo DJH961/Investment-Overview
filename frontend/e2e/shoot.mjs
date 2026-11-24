@@ -13,6 +13,12 @@
 //   --viewport              shoot the window only, not the full page
 //   --sidebar               keep the desktop sidebar open (it is folded by default)
 //   --base http://localhost:5273
+//   --serve                 start (and always stop) our own fixture dev server on a free port;
+//                           then no server needs to be running and --base is ignored
+//   --pair                  also write <route>-pair-<width>-<theme>.png: EUR left, USD right,
+//                           labeled (needs both currencies, not with --el)
+//   --tiles                 also cut full-page shots taller than 2.5 screens into screen-sized
+//                           pieces with a little overlap (<name>-t1.png, -t2.png, …)
 // Examples:
 //   npm run shots -- ../.claude/ui-shots/currency currency,overview --theme both
 //   npm run shots -- ../.claude/ui-shots/kpi conversions --el ".stat-strip" --width 360,390,800,1280
@@ -24,6 +30,9 @@
 // (Chromium mis-draws it otherwise) and prints any horizontal overflow.
 import { chromium } from "playwright";
 import { mkdirSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { createServer } from "node:net";
+import { fileURLToPath } from "node:url";
 
 const args = process.argv.slice(2);
 const flag = (name, def) => {
@@ -42,7 +51,10 @@ const both = (v, pair) => (v === "both" ? pair : [v]);
 const ccys = both(flag("ccy", "both"), ["EUR", "USD"]);
 const themes = both(flag("theme", "light"), ["light", "dark"]);
 const widths = flag("width", "390,1280").split(",").map(Number);
-const base = flag("base", "http://localhost:5273");
+let base = flag("base", "http://localhost:5273");
+const serve = args.includes("--serve");
+const wantPair = args.includes("--pair");
+const wantTiles = args.includes("--tiles");
 const el = flag("el", null);
 const fullPage = !args.includes("--viewport") && !el;
 
@@ -58,10 +70,95 @@ async function checkCcy(page, want) {
   if (got !== want) throw new Error(`page shows ${got}, not ${want}: is the server a 7.3.1+ fixture build?`);
 }
 
+let server = null;
+const stopServer = () => {
+  if (!server) return;
+  const pid = server.pid;
+  server = null;
+  if (process.platform === "win32") spawnSync("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore" });
+  else process.kill(pid, "SIGTERM");
+};
+process.on("exit", stopServer);
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+  process.on(sig, () => {
+    stopServer();
+    process.exit(130);
+  });
+}
+
+/** A free port that is not one of the shared dev/preview ports. */
+const freePort = () =>
+  new Promise((resolve, reject) => {
+    const s = createServer();
+    s.on("error", reject);
+    s.listen(0, "127.0.0.1", () => {
+      const { port } = s.address();
+      s.close(() => (port === 4173 || port === 5273 ? freePort().then(resolve, reject) : resolve(port)));
+    });
+  });
+
+async function startServer() {
+  const port = await freePort();
+  const vite = fileURLToPath(new URL("../node_modules/vite/bin/vite.js", import.meta.url));
+  server = spawn(process.execPath, [vite, "--mode", "fixtures", "--port", String(port), "--strictPort", "--host", "127.0.0.1"], {
+    cwd: fileURLToPath(new URL("..", import.meta.url)),
+    stdio: "ignore",
+  });
+  let exited = false;
+  server.on("exit", () => (exited = true));
+  base = `http://127.0.0.1:${port}`;
+  for (let i = 0; i < 240; i++) {
+    if (exited) throw new Error("the fixture dev server exited before it answered");
+    try {
+      if ((await fetch(base)).ok) return;
+    } catch {
+      /* not up yet */
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  throw new Error("the fixture dev server did not answer within 60 s");
+}
+
+/** Left/right image with a label on each, composed by Playwright (no extra dependency). */
+async function writePair(browser, left, right, file) {
+  const url = (b) => `data:image/png;base64,${b.toString("base64")}`;
+  const ctx = await browser.newContext({ viewport: { width: 400, height: 400 } });
+  const page = await ctx.newPage();
+  await page.setContent(
+    `<body style="margin:0;background:#888;font:600 20px sans-serif;color:#fff">` +
+      `<div style="display:flex;gap:16px;align-items:flex-start;width:max-content;padding:8px">` +
+      [["EUR", left], ["USD", right]]
+        .map(([l, b]) => `<figure style="margin:0"><div style="padding:0 0 6px">${l}</div><img src="${url(b)}" style="display:block"></figure>`)
+        .join("") +
+      `</div></body>`,
+  );
+  await page.waitForFunction(() => [...document.images].every((i) => i.complete && i.naturalWidth));
+  await page.screenshot({ path: file, fullPage: true });
+  await ctx.close();
+}
+
+/** Screen-sized pieces (with overlap) of a full-page capture, by clip. */
+async function writeTiles(page, width, total, base0, outDir0) {
+  const h = 900;
+  const overlap = 80;
+  const files = [];
+  for (let top = 0, n = 1; top < total; top += h - overlap, n++) {
+    const height = Math.min(h, total - top);
+    const file = base0.replace(/\.png$/, `-t${n}.png`);
+    await page.screenshot({ path: `${outDir0}/${file}`, fullPage: true, clip: { x: 0, y: top, width, height } });
+    files.push(file);
+    if (top + height >= total) break;
+  }
+  return files;
+}
+
+if (serve) await startServer();
 const browser = await chromium.launch();
+try {
 for (const route of routes) {
   for (const theme of themes) {
     for (const width of widths) {
+      const shots = {};
       for (const ccy of ccys) {
         const ctx = await browser.newContext({ viewport: { width, height: 900 }, colorScheme: theme });
         const page = await ctx.newPage();
@@ -84,7 +181,7 @@ for (const route of routes) {
             content:
               "aside.sidebar{position:absolute !important;top:0 !important;height:900px !important}" +
               "header{position:relative !important;top:0 !important}" +
-              "[class*='bottom-nav'],[class*='mobile-nav']{position:static !important}",
+              ".tab-bar{position:static !important}",
           });
         }
         await page.waitForTimeout(600);
@@ -103,12 +200,24 @@ for (const route of routes) {
             console.log(crop);
           }
         } else {
-          await page.screenshot({ path: `${outDir}/${name}`, fullPage });
+          shots[ccy] = await page.screenshot({ path: `${outDir}/${name}`, fullPage });
           console.log(`${name}${overflow > 0 ? `  OVERFLOW ${overflow}px` : ""}`);
+          if (wantTiles && fullPage) {
+            const total = await page.evaluate(() => document.documentElement.scrollHeight);
+            if (total > 2.5 * 900) for (const f of await writeTiles(page, width, total, name, outDir)) console.log(f);
+          }
         }
         await ctx.close();
+      }
+      if (wantPair && shots.EUR && shots.USD) {
+        const pairName = `${route.replace(/^\//, "").replace(/\//g, "_") || "home"}-pair-${width}-${theme}.png`;
+        await writePair(browser, shots.EUR, shots.USD, `${outDir}/${pairName}`);
+        console.log(pairName);
       }
     }
   }
 }
-await browser.close();
+} finally {
+  await browser.close();
+  stopServer();
+}

@@ -17,6 +17,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `investment_dashboard.tools.release`: one command (`uv run python -m
+  investment_dashboard.tools.release x.y.z`) for the release bump: versions, lockfiles,
+  OpenAPI contract and CHANGELOG folding, with `--dry-run`. Documented in AGENTS.md.
+
 ## [7.3.1] — 2026-11-24
 
 ### Added

@@ -236,12 +236,16 @@ Money maths is the exception: it stays test-first (property tests plus golden va
 
 ### Taking shots (`npm run shots`)
 
-Use `frontend/e2e/shoot.mjs`; don't write one-off Playwright scripts. Two steps:
+Use `frontend/e2e/shoot.mjs`; don't write one-off Playwright scripts. **Recommended for
+agents: `--serve`.** The tool starts its own fixture dev server on a free port, waits for it,
+shoots and always stops it (even on error or Ctrl+C), so parallel agents never clash and no
+background process is left behind. From `frontend/`:
 
-1. Start the fixture dev server on port 5273: `preview_start` with `frontend-fixtures`
-   (`.claude/launch.json`), or `npm run dev:fixtures -- --port 5273 --strictPort` in the
-   background. Parallel agents use their own port and pass `--base http://localhost:<port>`.
-2. From `frontend/`, run:
+    npm run shots -- ../.claude/ui-shots/<topic> currency --serve --pair --tiles
+
+Without `--serve`, start the fixture dev server yourself on port 5273 (`preview_start` with
+`frontend-fixtures`, or `npm run dev:fixtures -- --port 5273 --strictPort`) or pass
+`--base http://localhost:<port>`.
 
 | Want | Command |
 | --- | --- |
@@ -252,6 +256,9 @@ Use `frontend/e2e/shoot.mjs`; don't write one-off Playwright scripts. Two steps:
 | Just the first screen, not the full page | add `--viewport` |
 | One currency only | add `--ccy USD` |
 | Sidebar open (when the navigation is the subject) | add `--sidebar` |
+| Own server, no port clash, nothing left running | add `--serve` |
+| EUR left, USD right in one labeled image | add `--pair` (`<route>-pair-<width>-<theme>.png`) |
+| Long phone page readable piece by piece | add `--tiles` (full pages over 2.5 screens also get `-t1.png`, `-t2.png`, … with a little overlap) |
 
 Files are `<route>-<ccy>-<width>-<theme>[-elN].png`. Write routes without the leading slash
 (`holding/FAKEL`, not `/holding/FAKEL`): Git Bash turns `/x` into a Windows path. The script
@@ -283,12 +290,12 @@ make every figure on the page tell the same story at that moment.
 - **Release fast — default is one release per change.** Any change that alters
   what the app does (feature or bug fix) is released **in the same PR/push**: a
   patch bump for fixes, a minor bump for features, under a dated
-  `## [x.y.z] — YYYY-MM-DD` heading. Bump `backend/pyproject.toml`, `web/package.json`
-  and `frontend/package.json` in lockstep and regenerate lockfiles (`uv lock`, and
-  `npm install` inside `web/` and `frontend/`). `backend/openapi.json` embeds the
-  version, so regenerate it too (`uv run python -m
-  investment_dashboard.tools.export_openapi openapi.json` in `backend/`), or CI fails
-  and the release never deploys. Pushing the bump to `main` tags the release.
+  `## [x.y.z] — YYYY-MM-DD` heading. Bump with one command from `backend/`:
+  `uv run python -m investment_dashboard.tools.release x.y.z [--date YYYY-MM-DD] [--dry-run]`.
+  It sets the version in `pyproject.toml` and both `package.json` files, refreshes the
+  lockfiles, regenerates `openapi.json` and `api-types.ts` (CI fails on drift) and folds
+  `[Unreleased]` into the dated CHANGELOG heading; it never commits, pushes or tags.
+  Pushing the bump to `main` tags the release.
 - **`[Unreleased]` is temporary storage, not the default.** Use it only for
   changes with no effect on the running app (docs, CI, tests, refactors) or to
   batch a short series of related PRs. Fold it into the next release; no entry
