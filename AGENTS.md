@@ -185,7 +185,7 @@ endpoints you touched:
 
 `--only` re-records just the matching requests in every data set (`full`, `empty`, `nice`) and
 keeps every other key byte-identical. A plain run first compares a hash of `backend/src/**/*.py`
-with `fingerprints.json` next to the data and prints "fixtures up to date" when nothing changed;
+with a local, git-ignored fingerprint (`backend/.cache/`) and prints "fixtures up to date" when nothing changed;
 `--only` never updates that stamp. CI's drift guard runs with `--force`. Lanes never run the full
 regeneration. The main session runs it once, after merging, just before the release PR.
 

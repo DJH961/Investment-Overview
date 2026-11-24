@@ -17,25 +17,57 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Added
-- `investment_dashboard.tools.release`: one command (`uv run python -m
-  investment_dashboard.tools.release x.y.z`) for the release bump: versions, lockfiles,
-  OpenAPI contract and CHANGELOG folding, with `--dry-run`. Documented in AGENTS.md.
-
-## [7.3.1] — 2026-11-24
+## [7.3.1] — 2026-11-25
 
 ### Added
-- `npm run shots` (`frontend/e2e/shoot.mjs`): review screenshots of any pages in EUR
-  and USD, light and dark, at chosen widths, or crops of one element, in one command.
-  The fixture dev server takes `?ccy=USD&theme=dark&rail=1` URL switches, so it just loads
-  URLs (no clicking); it loads lazy
-  sections and reports sideways overflow. Documented in AGENTS.md › "Taking shots".
-- `PRODUCT.md`: the product record (users, purpose, positioning, constraints,
-  principles) that Impeccable design work reads before touching the UI.
-- `DESIGN.md` and `.impeccable/design.json`: the current visual system
-  ("The Neo-Private Bank") recorded from `tokens.scss` and the core components.
+- **Market open and close, end to end.** The whole screen tells one story at each moment:
+  before the open, the open with no prices yet ("First prices in a moment" on a 1D chart
+  anchored at the previous close, "Last session · Mon" until the first tick), the first tick,
+  just before the close, closing ("Settling…"), closed ("Opens in 17 h") and the FX weekend.
+  The top bar, hero, clock, graphs, Holdings and the holding page all follow one market
+  phase; "live" markers show only while trading; the overnight chip only on weeknights.
+  The home-screen currency cards show the FX weekend (a moon, then "FX is back"). A short
+  sweep along the session bar at the close and figures easing in at the first tick (off
+  with reduced motion). The phone chip after the close reads "Closed · opens 14:30".
+- **Currency, EUR and USD side by side:** Impact's "What the rate did, in each currency"
+  (your euro book next to the euros you sent in) and Exposure's "The same rate, from each
+  side" (one compact row; on phones only the arrow, the word on hover).
+- **Currency › Exposure in the EUR view:** "Your dollars in euros" ($116.41 is worth €100,
+  a year ago, change, weekly bars), mirroring "Your next euro" in the USD view.
+- **"Mixed"** (an icon and one plain sentence) where the two sides genuinely point opposite
+  ways: the Impact headline when the euro amount and the return gap disagree, and the
+  side-by-side card.
+- Every "€1,000 buys" figure uses your regular conversion amount from Settings (€100 when
+  unset), with cents for small amounts.
+- Rate chart: prints its window; on Max the part before you started is muted and dashed.
+- Conversions page: six KPI figures (6 in a row, 3×2 on tablets, 2×3 on phones) and an
+  Import statement button.
+
+### Dev tools
+- `npm run shots` (`frontend/e2e/shoot.mjs`): review screenshots in EUR and USD, light and
+  dark, at chosen widths, or crops of one element (`--el`), in one command. `--serve` runs
+  its own fixture server and always stops it; `--pair` puts EUR and USD in one image;
+  `--tiles` cuts long phone pages into screens; `--at closing` (any market moment);
+  `--nice` uses the realistic data set. Documented in AGENTS.md › "Taking shots".
+- Fixture dev server URL switches: `?ccy=EUR|USD`, `?theme=light|dark|auto`, `?rail=1|0`
+  (sidebar folded), `?at=<moment>` (preopen, opening, firsttick, preclose, closing, closed,
+  fxfri, fxsun or an ISO instant, with every figure consistent) and `?fixtures=nice`.
+- A realistic fixture set (`nice.json`, about €50k, monthly conversions and weekly buys)
+  for showing work; the big stress-test set stays the default for every test.
+- `make_fixtures`: `--only /api/<path>[,…]` re-records just those requests, a plain run
+  skips when nothing changed (local fingerprint), `--force` for CI.
+- `investment_dashboard.tools.release x.y.z [--dry-run]`: the release bump in one command
+  (versions, lockfiles, OpenAPI contract, CHANGELOG folding).
+- `scripts/test_changed.py [--base main] [--run]`: the targeted tests for your diff. Agents
+  run only these; the full suites run once per release.
+- `market_clock` test fixture: pins "now" to a named market moment (backend `clock.now()`
+  seam), so time-of-day tests check the same thing at any hour.
+- `PRODUCT.md`, `DESIGN.md` and `.impeccable/design.json`: the product record and the
+  visual system ("The Neo-Private Bank") that design work reads first.
 
 ### Fixed
+- A zero currency effect reads "Neutral", never "Tailwind" or "Headwind".
+- The pre-close countdown and the "Open" chip are ink, not the accent color.
 - Currency › Impact: a deposit of dollars bought earlier no longer shows its rate
   move and conversion spread as "market". It counts as currency, in two new lines:
   "While your dollars waited" and "Conversion cost". The euro total and the return

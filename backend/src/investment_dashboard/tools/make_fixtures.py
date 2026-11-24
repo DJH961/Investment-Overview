@@ -27,8 +27,8 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import hashlib
 import datetime as _dt
+import hashlib
 import json
 import os
 import random
@@ -1470,9 +1470,7 @@ def _normalise(value: Any, key: str = "") -> Any:
     return value
 
 
-def _build(
-    dataset: str, workdir: Path, only: tuple[str, ...] | None = None
-) -> dict[str, Any]:
+def _build(dataset: str, workdir: Path, only: tuple[str, ...] | None = None) -> dict[str, Any]:
     """Hermetically create the database, call every endpoint, return ``{"GET path": body}``.
 
     No network (every non-loopback connection is refused and recorded), no
@@ -1618,7 +1616,9 @@ def render(data: dict[str, Any]) -> str:
 # -- skip when nothing changed -------------------------------------------------------
 
 DATASETS = ("full", "empty", "nice")
-FINGERPRINT_FILE = "fingerprints.json"
+# A local, git-ignored cache, never next to the committed fixtures: any backend change
+# would otherwise make the committed stamp stale and fail CI's drift guard.
+FINGERPRINT_PATH = Path(__file__).resolve().parents[3] / ".cache" / "fixture-fingerprints.json"
 
 
 def fingerprint(dataset: str) -> str:
@@ -1634,17 +1634,27 @@ def fingerprint(dataset: str) -> str:
     return digest.hexdigest()
 
 
+def _fingerprint_key(out_dir: Path, dataset: str) -> str:
+    return f"{out_dir.resolve().as_posix()}::{dataset}"
+
+
 def _read_fingerprints(out_dir: Path) -> dict[str, str]:
     try:
-        return json.loads((out_dir / FINGERPRINT_FILE).read_text(encoding="utf-8"))  # type: ignore[no-any-return]
+        known = json.loads(FINGERPRINT_PATH.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
+    prefix = _fingerprint_key(out_dir, "")
+    return {k[len(prefix) :]: v for k, v in known.items() if k.startswith(prefix)}
 
 
 def _write_fingerprint(out_dir: Path, dataset: str, value: str) -> None:
-    known = _read_fingerprints(out_dir)
-    known[dataset] = value
-    (out_dir / FINGERPRINT_FILE).write_text(render(known), encoding="utf-8", newline="\n")
+    try:
+        known = json.loads(FINGERPRINT_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        known = {}
+    known[_fingerprint_key(out_dir, dataset)] = value
+    FINGERPRINT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    FINGERPRINT_PATH.write_text(render(known), encoding="utf-8", newline="\n")
 
 
 def _parse_only(text: str) -> tuple[str, ...]:
