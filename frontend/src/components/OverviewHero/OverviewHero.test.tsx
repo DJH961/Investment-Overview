@@ -58,6 +58,7 @@ describe("OverviewHero", () => {
   it("shows the live corner stamp and the incomplete-total note", () => {
     const live = {
       ...base,
+      freshness: { ...base.freshness!, market_state: "open", next_close_at: "2026-11-02T21:00:00Z", session_opened_at: "2026-11-02T14:30:00Z" },
       daily_caption: { title: "Today", as_of_text: "live", live: true, corner_text: "live" },
       total_value_complete: false,
     } as OverviewDto;

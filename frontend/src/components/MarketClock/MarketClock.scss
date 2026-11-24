@@ -55,11 +55,78 @@
   }
 
   &__label {
-    overflow: hidden;
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
     color: var(--color-fg);
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
+  }
+
+  &__label-text {
+    overflow: hidden;
+    min-width: 0;
     text-overflow: ellipsis;
+  }
+
+  // Phones get the short bell copy ("Bell! That's the close"), wide screens the long one.
+  &__label-text--short {
+    display: none;
+  }
+
+  @include m.phone {
+    &__label-text--long {
+      display: none;
+    }
+
+    &__label-text--short {
+      display: inline;
+    }
+  }
+
+  // The bell: a small quiet glyph before the label. At a bell moment it takes the brass
+  // colour, swings in a three-beat wiggle and sends out one soft ripple (~1.2 s, once).
+  // The words say the same thing, so neither colour nor motion carries it alone.
+  &__bell {
+    position: relative;
+    display: inline-flex;
+    flex: none;
+    color: var(--color-muted);
+  }
+
+  &__bell-icon {
+    width: 14px;
+    height: 14px;
+    transform-origin: 50% 10%;
+  }
+
+  &__bell--rang {
+    color: var(--color-bell);
+  }
+
+  &__bell::after {
+    position: absolute;
+    inset: -3px;
+    border: var(--border-width) solid var(--color-bell);
+    border-radius: var(--radius-full);
+    opacity: 0;
+    content: "";
+    pointer-events: none;
+  }
+
+  &--ring &__bell-icon {
+    animation: market-clock-swing 1.2s var(--ease-standard) 1;
+  }
+
+  &--ring &__bell::after {
+    animation: market-clock-ripple 1.2s var(--ease-out) 1;
+  }
+
+  // Settling the close / waiting for the first tick: a dashed state chip with a word
+  // ("Closing…", "Opening"), never a spinner or an error.
+  &--pending &__state {
+    border-style: dashed;
   }
 
   // "Open" / "Closed" / "Holiday": a word, with a small outline chip.
@@ -222,8 +289,27 @@
   &--near &__head {
     grid-column: 2;
     grid-row: 1;
+    align-self: center;
     justify-content: flex-end;
     min-width: 0;
+    // Beside the big digits a label may take two lines rather than lose its end
+    // ("Bell! That's the close" at 360 px).
+    white-space: normal;
+  }
+
+  &--near &__label {
+    align-items: flex-start;
+    justify-content: flex-end;
+    text-align: right;
+    line-height: var(--line-height-tight);
+  }
+
+  &--near &__bell {
+    margin-top: 1px;
+  }
+
+  &--near &__label-text {
+    overflow: visible;
   }
 
   &--near &__bar {
@@ -259,6 +345,55 @@
     &__digits {
       transition: none;
     }
+
+    &--ring &__bell-icon,
+    &--ring &__bell::after {
+      animation: none;
+    }
+  }
+}
+
+// Three beats, each smaller than the last, then still.
+@keyframes market-clock-swing {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+
+  12% {
+    transform: rotate(18deg);
+  }
+
+  26% {
+    transform: rotate(-15deg);
+  }
+
+  40% {
+    transform: rotate(11deg);
+  }
+
+  54% {
+    transform: rotate(-7deg);
+  }
+
+  68% {
+    transform: rotate(3deg);
+  }
+
+  80% {
+    transform: rotate(0);
+  }
+}
+
+@keyframes market-clock-ripple {
+  0% {
+    opacity: 0.7;
+    transform: scale(0.6);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(2.2);
   }
 }
 
