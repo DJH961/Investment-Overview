@@ -17,6 +17,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `PRODUCT.md`: the product record (users, purpose, positioning, constraints,
+  principles) that Impeccable design work reads before touching the UI.
+
 ## [7.3.0] — 2026-11-23
 
 ### Changed
