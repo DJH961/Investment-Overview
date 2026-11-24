@@ -257,12 +257,13 @@ Files are `<route>-<ccy>-<width>-<theme>[-elN].png`. Write routes without the le
 (`holding/FAKEL`, not `/holding/FAKEL`): Git Bash turns `/x` into a Windows path. The script
 does the fiddly parts for you:
 
-- It switches EUR/USD with the app's own toggle and fails loudly if the switch did not take
-  (the fixture settings override a seeded `localStorage` value, so seeding does not work).
-- It folds the desktop sidebar with the app's own button, so the sidebar never covers or
-  stretches over a full-page shot. The sidebar fills the window height by design; check it
-  with `--viewport --sidebar` at real heights (1280×800, 1280×1000), never in a full-page
-  shot.
+- Currency, theme and sidebar come from the fixture server's URL switches:
+  `/currency?ccy=USD&theme=dark&rail=1` (`rail=1` folds the sidebar). They work in any
+  browser too, including the Browser pane, and stay for the tab; in-app toggles keep
+  working. The script checks the page really shows the asked currency.
+- The folded sidebar never covers or stretches over a full-page shot. The open sidebar
+  fills the window height by design; check it with `--viewport --sidebar` at real
+  heights (1280×800, 1280×1000), never in a full-page shot.
 - It scrolls once so lazy sections (Scenarios, Conversions) load, pins fixed chrome in flow
   for the capture, and prints `OVERFLOW <n>px` when a page scrolls sideways.
 

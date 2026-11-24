@@ -17,12 +17,11 @@
 //   npm run shots -- ../.claude/ui-shots/currency currency,overview --theme both
 //   npm run shots -- ../.claude/ui-shots/kpi conversions --el ".stat-strip" --width 360,390,800,1280
 //
-// Files are named <route>-<ccy>-<width>-<theme>[-elN].png. For each shot the script:
-// sets the currency with the app's own toggle and checks that it took effect (the
-// fixture settings override a seeded localStorage value); folds the sidebar with the
-// app's own button; scrolls the page once so lazy sections load; pins fixed chrome in
-// flow for full-page captures (Chromium mis-draws it otherwise); and prints any
-// horizontal overflow.
+// Files are named <route>-<ccy>-<width>-<theme>[-elN].png. Currency, theme and the
+// folded sidebar come from the fixture server's URL switches (`?ccy=USD&theme=dark&
+// rail=1`, see src/fixtures/install.ts), checked after load. The script then scrolls
+// once so lazy sections load, pins fixed chrome in flow for full-page captures
+// (Chromium mis-draws it otherwise) and prints any horizontal overflow.
 import { chromium } from "playwright";
 import { mkdirSync } from "node:fs";
 
@@ -49,33 +48,14 @@ const fullPage = !args.includes("--viewport") && !el;
 
 mkdirSync(outDir, { recursive: true });
 
-/** Reads the current reporting currency from the top bar (desktop switch or phone button). */
-async function currentCcy(page) {
-  return page.evaluate(() => {
-    const radio = [...document.querySelectorAll('[role="radio"]')].find(
-      (r) => (r.textContent ?? "").trim() === "USD" || (r.textContent ?? "").trim() === "EUR",
-    );
-    if (radio && radio.offsetParent) {
-      const checked = [...document.querySelectorAll('[role="radio"]')].find(
-        (r) => r.offsetParent && r.getAttribute("aria-checked") === "true" && /^(EUR|USD)$/.test((r.textContent ?? "").trim()),
-      );
-      if (checked) return checked.textContent.trim();
-    }
-    const btn = [...document.querySelectorAll("button[aria-label]")].find((b) => /^Showing (EUR|USD)/.test(b.getAttribute("aria-label")));
-    return btn ? btn.getAttribute("aria-label").slice(8, 11) : null;
-  });
-}
+/** The fixture server's view switches (src/fixtures/install.ts): currency, theme, sidebar. */
+const viewUrl = (route, ccy, theme) =>
+  `${base}${route}${route.includes("?") ? "&" : "?"}ccy=${ccy}&theme=${theme}&rail=${args.includes("--sidebar") ? 0 : 1}`;
 
-async function setCcy(page, want) {
-  for (let i = 0; i < 2; i++) {
-    if ((await currentCcy(page)) === want) return;
-    const radio = page.getByRole("radio", { name: want, exact: true }).first();
-    if ((await radio.count()) && (await radio.isVisible())) await radio.click();
-    else await page.getByRole("button", { name: /^Showing (EUR|USD), switch to/ }).first().click();
-    await page.waitForTimeout(1200);
-  }
-  const got = await currentCcy(page);
-  if (got !== want) throw new Error(`could not switch to ${want} (shows ${got})`);
+/** Fails loudly when the page does not show the asked currency. */
+async function checkCcy(page, want) {
+  const got = await page.evaluate(() => localStorage.getItem("iv.ccy"));
+  if (got !== want) throw new Error(`page shows ${got}, not ${want}: is the server a 7.3.1+ fixture build?`);
 }
 
 const browser = await chromium.launch();
@@ -85,18 +65,9 @@ for (const route of routes) {
       for (const ccy of ccys) {
         const ctx = await browser.newContext({ viewport: { width, height: 900 }, colorScheme: theme });
         const page = await ctx.newPage();
-        await page.goto(base + route, { waitUntil: "networkidle" });
+        await page.goto(viewUrl(route, ccy, theme), { waitUntil: "networkidle" });
         await page.waitForTimeout(1200);
-        await setCcy(page, ccy);
-        // Fold the desktop sidebar to its icon rail (the app's own toggle) unless
-        // --sidebar is given: shots show the page, not the navigation.
-        if (!args.includes("--sidebar")) {
-          const fold = page.getByRole("button", { name: "Collapse sidebar" });
-          if ((await fold.count()) && (await fold.first().isVisible())) {
-            await fold.first().click();
-            await page.waitForTimeout(500);
-          }
-        }
+        await checkCcy(page, ccy);
         // Scroll the window (not the mouse wheel: over the fixed sidebar a wheel can
         // shift the whole shell sideways in the capture).
         for (let i = 0; i < 40; i++) {
