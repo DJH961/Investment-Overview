@@ -22,14 +22,14 @@
   white-space: nowrap;
   cursor: pointer;
 
-  // The mini progress bar: a soft accent fill behind the text with a firm 2 px line
+  // The mini progress bar: a soft neutral fill behind the text with a firm 2 px line
   // along its foot, so it reads as progress (never a line through the digits).
   &__fill {
     position: absolute;
     inset: 0 auto 0 0;
     z-index: -1;
-    background: var(--color-accent-soft);
-    box-shadow: inset 0 -2px 0 var(--color-accent);
+    background: var(--color-border);
+    box-shadow: inset 0 -2px 0 var(--color-border-strong);
     transition: width var(--duration-slow) var(--ease-standard);
 
     @media (prefers-reduced-motion: reduce) {
@@ -57,30 +57,68 @@
     box-shadow: 0 0 0 3px var(--color-pos-soft);
   }
 
-  // Room check: the hero head row (label, "≈ est." chip, this chip). "Open for 2h 10m" shows when it fits; only a
-  // row with truly no room falls back to the dot (the accessible name and the sheet still say everything).
-  @container hero-head (max-width: 17rem) {
-    justify-content: center;
-    min-width: 32px;
+  // Closing… / Opening: a hollow dot and a dashed edge; the word says which.
+  &--pending {
+    border-style: dashed;
+    color: var(--color-muted);
+  }
 
+  &--pending &__dot {
+    border: var(--border-width) solid var(--color-faint);
+    background: none;
+  }
+
+  // The open's first tick: the live dot pulses once.
+  &--pulse &__dot {
+    animation: market-chip-pulse 1.2s var(--ease-out) 1;
+
+    @media (prefers-reduced-motion: reduce) {
+      animation: none;
+    }
+  }
+
+  // Room check: the hero head row (label, "≈ est." chip, this chip). "Open for 2h 10m"
+  // shows when it fits; a tight row says the state in one word ("Open", "Closing…").
+  &__word {
+    display: none;
+  }
+
+  @container hero-head (max-width: 17rem) {
     &__text {
-      @include m.visually-hidden;
+      display: none;
+    }
+
+    &__word {
+      display: inline;
     }
   }
 
   @container hero-head (max-width: 19.5rem) {
-    .overview-hero__head--est & {
-      justify-content: center;
-      min-width: 32px;
+    .overview-hero__head--est &__text {
+      display: none;
     }
 
-    .overview-hero__head--est &__text {
-      @include m.visually-hidden;
+    .overview-hero__head--est &__word {
+      display: inline;
     }
   }
 
   &:focus-visible {
     outline: 2px solid var(--color-accent);
     outline-offset: 2px;
+  }
+}
+
+@keyframes market-chip-pulse {
+  0% {
+    transform: scale(0.7);
+  }
+
+  40% {
+    transform: scale(1.2);
+  }
+
+  100% {
+    transform: scale(1);
   }
 }

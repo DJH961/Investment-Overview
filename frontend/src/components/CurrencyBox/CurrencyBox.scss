@@ -188,6 +188,31 @@
     font-size: var(--font-size-xs);
   }
 
+  // The weekend line carries the moon (the glyph only repeats the words).
+  &__reopen {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
+
+  &__fx-icon {
+    width: 14px;
+    height: 14px;
+    flex: none;
+    color: var(--color-fx-moon);
+  }
+
+  // The FX reopen: the new rate and its move ease in once (the first two hours back).
+  &--fx-back &__value {
+    animation: currency-box-ease-in 1.2s var(--ease-out) 1;
+  }
+
+  @include m.reduced-motion {
+    &--fx-back &__value {
+      animation: none;
+    }
+  }
+
   &__warning {
     color: var(--color-warn);
   }
@@ -276,5 +301,13 @@
 
   &:focus-visible {
     @include m.focus-ring;
+  }
+}
+
+// The new rate eases in: a short fade up, once.
+@keyframes currency-box-ease-in {
+  from {
+    opacity: 0.2;
+    transform: translateY(3px);
   }
 }

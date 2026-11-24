@@ -30,6 +30,64 @@
     }
   }
 
+  // The FX week in the head: a small chip with a glyph and the words (the glyph's colour
+  // only repeats them). Moon: Friday's close for the weekend. Sunrise: Sunday's reopen.
+  &__fx {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 1px var(--space-2);
+    border: var(--border-width) solid var(--color-border-strong);
+    border-radius: var(--radius-full);
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    white-space: nowrap;
+    animation: rate-chart-settle var(--duration-slow) var(--ease-out) 1;
+  }
+
+  &__fx-icon {
+    width: 14px;
+    height: 14px;
+    flex: none;
+  }
+
+  &__fx--weekend &__fx-icon {
+    color: var(--color-fx-moon);
+  }
+
+  &__fx--back &__fx-icon {
+    color: var(--color-fx-sunrise);
+  }
+
+  // Weekend: the line ends in a calm hollow cap in its own colour (the rate is frozen
+  // at Friday's close, nothing is moving).
+  &--fx-weekend .chart__end-pill-dot,
+  &--fx-weekend .chart__now-dot {
+    fill: var(--color-surface);
+    stroke: var(--chart-1);
+    stroke-width: 2;
+  }
+
+  // Back: the first new tick after the reopen draws in (the line grows to its new tip).
+  &--fx-grow .chart__series--primary .chart__line {
+    animation: rate-chart-grow 0.9s var(--ease-out) 1;
+  }
+
+  @include m.reduced-motion {
+    &__fx,
+    &--fx-grow .chart__series--primary .chart__line {
+      animation: none;
+    }
+  }
+
+  &__window {
+    margin: calc(-1 * var(--space-1)) 0 var(--space-3);
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+  }
+
   &__change {
     color: var(--color-muted);
     font-size: var(--font-size-sm);
@@ -178,5 +236,24 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-2);
+  }
+}
+
+// The FX chip settles in (fades up a few pixels).
+@keyframes rate-chart-settle {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}
+
+// The newest stretch of the line grows in to its tip.
+@keyframes rate-chart-grow {
+  from {
+    clip-path: inset(0 6% 0 0);
+  }
+
+  to {
+    clip-path: inset(0 0 0 0);
   }
 }

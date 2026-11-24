@@ -5,9 +5,10 @@ import { Card } from "../../../../components/Card";
 import { KindTag } from "../../../../components/CurrencySection";
 import { InfoTip } from "../../../../components/InfoTip";
 import { Money } from "../../../../components/Money";
-import { formatDate, formatNumber } from "../../../../lib/format";
-import type { CurrencyEffectDto } from "../../../../lib/queries/currencyEffect";
+import { formatDate, formatNumber, signOf } from "../../../../lib/format";
+import type { CurrencyEffectDto, OtherLensDto } from "../../../../lib/queries/currencyEffect";
 import { toNum } from "../../../../lib/queries/portfolio";
+import { fractionTone, investDigits, ppText } from "../../numbers";
 import { gapWords, RETURNS_TIP } from "./impactFormat";
 
 /**
@@ -54,6 +55,7 @@ export function CurrencyBar({ v, max }: { v: number | null; max: number }) {
 /** What the euro did to your deposits, in dollars; the rate alone when you sent nothing. */
 export function InvestingHeadline({ data, inv }: { data: CurrencyEffectDto; inv: Investing }) {
   const pp = toNum(data.headline.effect_pp ?? null);
+  const lens = data.headline.other_lens ?? null;
   const none = inv.deposit_count === 0;
   const ro = inv.rate_only;
   const change = toNum(ro.change);
@@ -72,8 +74,8 @@ export function InvestingHeadline({ data, inv }: { data: CurrencyEffectDto; inv:
       <p className="impact__lede">
         {none ? (
           <>
-            No deposits in this range. <Money amount={toNum(ro.amount_eur)} currency="EUR" digits={0} /> buys{" "}
-            <Money amount={toNum(ro.usd_now)} currency="USD" digits={0} /> now, {change !== null && change < 0 ? "fewer" : "more"} dollars
+            No deposits in this range. <Money amount={toNum(ro.amount_eur)} currency="EUR" digits={Number.isInteger(toNum(ro.amount_eur)) ? 0 : 2} /> buys{" "}
+            <Money amount={toNum(ro.usd_now)} currency="USD" digits={investDigits(toNum(ro.amount_eur))} /> now, {change !== null && change < 0 ? "fewer" : "more"} dollars
             than at the start.
           </>
         ) : (
@@ -86,9 +88,33 @@ export function InvestingHeadline({ data, inv }: { data: CurrencyEffectDto; inv:
       </p>
       <p className="impact__fig-line">
         <KindTag kind={none ? ro.kind : inv.kind} />
-        {pp !== null ? <span>{gapWords(pp)}</span> : null}
       </p>
+      {lens ? (
+        <OtherLensLine lens={lens} />
+      ) : pp !== null ? (
+        <p className="impact__lens">{gapWords(pp)}</p>
+      ) : null}
+      {data.headline.lens_note ? <p className="impact__lens-note">{data.headline.lens_note}</p> : null}
     </div>
+  );
+}
+
+/**
+ * The same rate move read from the other currency ("Seen from euros: −13.2 pp"): a muted,
+ * labelled line with its own sign, never presented as the headline's quantity.
+ */
+export function OtherLensLine({ lens }: { lens: OtherLensDto }) {
+  const v = toNum(lens.value ?? null);
+  if (v === null) return null;
+  const tone = lens.unit === "fraction" ? fractionTone(v) : signOf(v, 0);
+  return (
+    <p className="impact__lens" data-lens={lens.kind}>
+      <span className="impact__lens-label">{lens.label}:</span>
+      <span className={clsx("impact__lens-value", tone !== "flat" && `impact__lens-value--${tone}`)}>
+        {lens.unit === "fraction" ? ppText(v) : <Money amount={v} currency={lens.currency ?? "EUR"} signed digits={0} />}
+      </span>
+      {lens.unit === "fraction" ? <span>return gap, euros against dollars</span> : null}
+    </p>
   );
 }
 
@@ -209,7 +235,7 @@ export function DepositsTable({ rows }: { rows: DepositRow[] }) {
 
 export const TOP_DEPOSITS = 5;
 
-export function DepositsCard({ inv, range }: { inv: Investing; range: string }) {
+export function DepositsCard({ inv, range, holdingsNote }: { inv: Investing; range: string; holdingsNote?: string | null }) {
   const rows = inv.deposits ?? [];
   const more = rows.length > TOP_DEPOSITS;
   return (
@@ -231,6 +257,12 @@ export function DepositsCard({ inv, range }: { inv: Investing; range: string }) 
       ) : (
         <p className="impact__note">No deposits in this range.</p>
       )}
+      {/* Once: in the dollar view the rate cannot move an all-dollar book. */}
+      {holdingsNote ? (
+        <p className="impact__note" data-note="holdings">
+          {holdingsNote}
+        </p>
+      ) : null}
       {more ? (
         <Link className="impact__more" to={`/currency/holdings?range=${range}`}>
           Show all {rows.length} <ArrowRight aria-hidden className="impact__more-icon" />

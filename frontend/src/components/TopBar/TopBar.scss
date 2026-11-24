@@ -268,8 +268,37 @@
     align-items: center;
   }
 
+  // A scheduled update in flight: the icon stays still, a soft ink ring breathes around it
+  // (ink, not accent: accent is too close to the blue health "OK" badge beside it, CVD list).
+  &__refresh--pulse {
+    position: relative;
+
+    &::after {
+      position: absolute;
+      inset: 0;
+      border: calc(var(--border-width) * 2) solid var(--color-fg);
+      border-radius: var(--radius-full);
+      animation: top-bar-pulse 1.6s var(--ease-standard) infinite;
+      content: "";
+      opacity: 0;
+      pointer-events: none;
+    }
+  }
+
+  // The owner's refresh: spins until it is done.
   &__spin {
     animation: top-bar-spin 0.9s linear infinite;
+  }
+
+  // A scheduled update landed: one quick turn.
+  &__landed {
+    animation: top-bar-spin 0.5s var(--ease-out) 1;
+  }
+
+  // The "Updated hh:mm" stamp when it changes after an update landed.
+  &__updated-text--flip {
+    display: inline-block;
+    animation: top-bar-flip var(--duration-slow) var(--ease-out) 1;
   }
 
   &--compact {
@@ -382,8 +411,42 @@
   }
 }
 
+@keyframes top-bar-pulse {
+  0% {
+    opacity: 0.35;
+    transform: scale(0.7);
+  }
+
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes top-bar-flip {
+  from {
+    opacity: 0;
+    transform: rotateX(90deg);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 @include m.reduced-motion {
-  .top-bar__spin {
+  .top-bar__spin,
+  .top-bar__landed,
+  .top-bar__updated-text--flip {
     animation: none;
+  }
+
+  // Still marked, without motion: a steady faint ring.
+  .top-bar__refresh--pulse::after {
+    animation: none;
+    opacity: 0.25;
+    transform: scale(0.85);
   }
 }

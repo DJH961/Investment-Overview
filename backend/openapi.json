@@ -3659,6 +3659,16 @@
             "title": "Unpriced",
             "type": "integer"
           },
+          "window": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RangeWindow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "worst": {
             "anyOf": [
               {
@@ -3877,6 +3887,17 @@
             "title": "Holdings",
             "type": "array"
           },
+          "holdings_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Holdings Note"
+          },
           "investing": {
             "anyOf": [
               {
@@ -3962,6 +3983,16 @@
             },
             "title": "Stats",
             "type": "array"
+          },
+          "window": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RangeWindow"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "years": {
             "items": {
@@ -5816,6 +5847,11 @@
             "title": "Rolling",
             "type": "array"
           },
+          "rolling_too_short": {
+            "default": false,
+            "title": "Rolling Too Short",
+            "type": "boolean"
+          },
           "stats": {
             "items": {
               "$ref": "#/components/schemas/DollarStat"
@@ -5825,6 +5861,16 @@
           },
           "trend": {
             "$ref": "#/components/schemas/DollarTrend"
+          },
+          "window": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RangeWindow"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -6427,6 +6473,18 @@
       "EffectBridge": {
         "description": "``start + deposits + market + currency == end`` exactly, in ``ccy``.",
         "properties": {
+          "conversion_cost": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversion Cost"
+          },
           "currency": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Currency",
@@ -6451,6 +6509,18 @@
             "title": "Market",
             "type": "string"
           },
+          "revaluation": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revaluation"
+          },
           "start": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Start",
@@ -6459,6 +6529,18 @@
           "start_on": {
             "title": "Start On",
             "type": "string"
+          },
+          "waiting": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Waiting"
           }
         },
         "required": [
@@ -6474,7 +6556,7 @@
         "type": "object"
       },
       "EffectBuys": {
-        "description": "\"\u20ac1,000 buys $X; yesterday $Y\" (``domain/session_fx.fx_buying_power_split``).",
+        "description": "\"The regular amount buys $X; yesterday $Y\" (``domain/session_fx.fx_buying_power_split``).",
         "properties": {
           "amount_eur": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
@@ -6638,7 +6720,8 @@
             "enum": [
               "tailwind",
               "headwind",
-              "neutral"
+              "neutral",
+              "mixed"
             ],
             "title": "Kind",
             "type": "string"
@@ -6652,6 +6735,17 @@
             ],
             "title": "Lead",
             "type": "string"
+          },
+          "lens_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lens Note"
           },
           "market": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
@@ -6695,6 +6789,16 @@
               }
             ],
             "title": "Other Effect"
+          },
+          "other_lens": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OtherLens"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "return_basis": {
             "enum": [
@@ -8156,6 +8260,12 @@
       "GraphNowPoint": {
         "description": "The live \"now\" marker drawn after the close (the session line ends at the close).",
         "properties": {
+          "funds_estimated": {
+            "default": false,
+            "description": "A fund's NAV is pending: the value is on the twin-estimated book",
+            "title": "Funds Estimated",
+            "type": "boolean"
+          },
           "overnight_currency": {
             "anyOf": [
               {
@@ -13377,7 +13487,7 @@
         "type": "object"
       },
       "NextEuro": {
-        "description": "\"\u20ac1,000 buys $X now; $Y a year ago\" (a euro notional at one rate each).",
+        "description": "\"The regular amount buys $X now; $Y a year ago\" (a euro notional at one rate each).",
         "properties": {
           "amount_eur": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
@@ -13407,6 +13517,16 @@
               }
             ],
             "title": "Change Pct"
+          },
+          "dollar_lens": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NextEuroDollar"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "spark": {
             "items": {
@@ -13449,6 +13569,101 @@
           "usd_now"
         ],
         "title": "NextEuro",
+        "type": "object"
+      },
+      "NextEuroDollar": {
+        "description": "The EUR view of the card (\"your dollars in euros\"): the dollars the regular amount\nbuys today (a native dollar figure) valued in euros at a single rate each.",
+        "properties": {
+          "better_than_share": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Better Than Share"
+          },
+          "change_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Pct"
+          },
+          "eur_now": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Eur Now",
+            "type": "string"
+          },
+          "eur_year_ago": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eur Year Ago"
+          },
+          "spark": {
+            "items": {
+              "$ref": "#/components/schemas/NextEuroDollarPoint"
+            },
+            "title": "Spark",
+            "type": "array"
+          },
+          "usd_amount": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd Amount",
+            "type": "string"
+          },
+          "year_ago_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year Ago Date"
+          }
+        },
+        "required": [
+          "usd_amount",
+          "eur_now"
+        ],
+        "title": "NextEuroDollar",
+        "type": "object"
+      },
+      "NextEuroDollarPoint": {
+        "description": "One weekly point of the book-lens sparkline: what ``usd_amount`` was worth in euros.",
+        "properties": {
+          "eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Eur",
+            "type": "string"
+          },
+          "t": {
+            "title": "T",
+            "type": "string"
+          }
+        },
+        "required": [
+          "t",
+          "eur"
+        ],
+        "title": "NextEuroDollarPoint",
         "type": "object"
       },
       "NextEuroPoint": {
@@ -13581,6 +13796,66 @@
           "complete"
         ],
         "title": "OnboardingOut",
+        "type": "object"
+      },
+      "OtherLens": {
+        "description": "The same rate move read from the other currency, labelled as such.",
+        "properties": {
+          "currency": {
+            "anyOf": [
+              {
+                "enum": [
+                  "EUR",
+                  "USD"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "kind": {
+            "enum": [
+              "tailwind",
+              "headwind",
+              "neutral"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "unit": {
+            "enum": [
+              "fraction",
+              "money"
+            ],
+            "title": "Unit",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "label",
+          "unit",
+          "kind"
+        ],
+        "title": "OtherLens",
         "type": "object"
       },
       "OverviewEstimate": {
@@ -16269,6 +16544,51 @@
         "title": "ProviderOut",
         "type": "object"
       },
+      "RangeWindow": {
+        "description": "The page range as dates (``readmodels/currency_range``), the same in every section.",
+        "properties": {
+          "context_until": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Until"
+          },
+          "intraday": {
+            "title": "Intraday",
+            "type": "boolean"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "live": {
+            "title": "Live",
+            "type": "boolean"
+          },
+          "start": {
+            "title": "Start",
+            "type": "string"
+          },
+          "through": {
+            "title": "Through",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "start",
+          "through",
+          "live",
+          "intraday"
+        ],
+        "title": "RangeWindow",
+        "type": "object"
+      },
       "RateChange": {
         "properties": {
           "end_rate": {
@@ -16434,6 +16754,16 @@
             },
             "title": "Us Market Hours",
             "type": "array"
+          },
+          "window": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RangeWindow"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -16470,7 +16800,7 @@
         "type": "object"
       },
       "RateOnly": {
-        "description": "EUR 1,000 at the range start's rate and at its end's (the rate alone).",
+        "description": "The regular EUR amount at the range start's rate and at its end's (the rate alone).",
         "properties": {
           "amount_eur": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
@@ -17940,6 +18270,16 @@
               }
             ],
             "title": "Value Now Other"
+          },
+          "window": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RangeWindow"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -22912,7 +23252,7 @@
   "info": {
     "summary": "v6 API: the server owns data, prices and all maths.",
     "title": "Investment Overview",
-    "version": "7.3.0"
+    "version": "7.3.1"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -24074,7 +24414,7 @@
             "required": false,
             "schema": {
               "default": "ytd",
-              "pattern": "^(1d|1w|1m|3m|ytd|1y|3y|5y|10y|all|\\d{4})$",
+              "pattern": "^(1d|1w|1m|3m|ytd|1y|3y|5y|10y|all|max|\\d{4})$",
               "title": "Range",
               "type": "string"
             }

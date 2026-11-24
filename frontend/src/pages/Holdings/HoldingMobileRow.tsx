@@ -23,6 +23,8 @@ interface Props {
   tick?: string | null;
   /** "Not updated yesterday — an earlier session's move" for a stale day move. */
   staleMove?: string | null;
+  /** The market trades and prices stream: the live dot may show (off while opening / closing). */
+  liveDot?: boolean;
 }
 
 /**
@@ -32,7 +34,7 @@ interface Props {
  * compact peek (past week, four one-line facts, the ways into the holding page);
  * everything else lives on that page.
  */
-export function HoldingMobileRow({ row, ccy, stamp = null, tick = null, staleMove = null }: Props) {
+export function HoldingMobileRow({ row, ccy, stamp = null, tick = null, staleMove = null, liveDot = true }: Props) {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
   const detailId = `holding-detail-${row.instrument_id}`;
@@ -65,7 +67,7 @@ export function HoldingMobileRow({ row, ccy, stamp = null, tick = null, staleMov
         />
         <span className="holdings-page__item-title">
           {/* Under the row toggle: the symbol is not a link (the peek has "Open"). */}
-          <HoldingIdentity row={row} link={false} live={row.market_open && !stale} />
+          <HoldingIdentity row={row} link={false} live={row.market_open && liveDot && !stale} />
         </span>
         <span className="holdings-page__item-figures">
           <Money amount={toNum(row.value)} currency={ccy} />

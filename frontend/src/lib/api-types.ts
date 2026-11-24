@@ -3432,6 +3432,7 @@ export interface components {
              * @description Conversions with no fixing close enough; not counted.
              */
             unpriced: number;
+            window?: components["schemas"]["RangeWindow"] | null;
             worst: components["schemas"]["CostRowOut"] | null;
         };
         /** CurrencyBlock */
@@ -3491,6 +3492,8 @@ export interface components {
             headline: components["schemas"]["EffectHeadline"];
             /** Holdings */
             holdings?: components["schemas"]["HoldingEffect"][];
+            /** Holdings Note */
+            holdings_note?: string | null;
             investing?: components["schemas"]["InvestingEffect"] | null;
             /**
              * Missing Deposit Days
@@ -3517,6 +3520,7 @@ export interface components {
             start_on?: string | null;
             /** Stats */
             stats?: components["schemas"]["EffectStat"][];
+            window?: components["schemas"]["RangeWindow"] | null;
             /** Years */
             years?: components["schemas"]["EffectBar"][];
         };
@@ -4147,9 +4151,15 @@ export interface components {
             range: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "all" | "5y" | "10y" | "max";
             /** Rolling */
             rolling?: components["schemas"]["RollingSeries"][];
+            /**
+             * Rolling Too Short
+             * @default false
+             */
+            rolling_too_short: boolean;
             /** Stats */
             stats?: components["schemas"]["DollarStat"][];
             trend?: components["schemas"]["DollarTrend"];
+            window?: components["schemas"]["RangeWindow"] | null;
         };
         /**
          * DollarPosition
@@ -4347,6 +4357,8 @@ export interface components {
          * @description ``start + deposits + market + currency == end`` exactly, in ``ccy``.
          */
         EffectBridge: {
+            /** Conversion Cost */
+            conversion_cost?: string | null;
             /** Currency */
             currency: string;
             /** Deposits */
@@ -4357,14 +4369,18 @@ export interface components {
             end_on: string;
             /** Market */
             market: string;
+            /** Revaluation */
+            revaluation?: string | null;
             /** Start */
             start: string;
             /** Start On */
             start_on: string;
+            /** Waiting */
+            waiting?: string | null;
         };
         /**
          * EffectBuys
-         * @description "€1,000 buys $X; yesterday $Y" (``domain/session_fx.fx_buying_power_split``).
+         * @description "The regular amount buys $X; yesterday $Y" (``domain/session_fx.fx_buying_power_split``).
          */
         EffectBuys: {
             /** Amount Eur */
@@ -4414,13 +4430,15 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "tailwind" | "headwind" | "neutral";
+            kind: "tailwind" | "headwind" | "neutral" | "mixed";
             /**
              * Lead
              * @default effect
              * @enum {string}
              */
             lead: "effect" | "gap" | "deposits";
+            /** Lens Note */
+            lens_note?: string | null;
             /** Market */
             market: string;
             /** Note */
@@ -4429,6 +4447,7 @@ export interface components {
             other_ccy?: ("EUR" | "USD") | null;
             /** Other Effect */
             other_effect?: string | null;
+            other_lens?: components["schemas"]["OtherLens"] | null;
             /**
              * Return Basis
              * @enum {string}
@@ -4954,6 +4973,12 @@ export interface components {
          * @description The live "now" marker drawn after the close (the session line ends at the close).
          */
         GraphNowPoint: {
+            /**
+             * Funds Estimated
+             * @description A fund's NAV is pending: the value is on the twin-estimated book
+             * @default false
+             */
+            funds_estimated: boolean;
             /**
              * Overnight Currency
              * @description Currency-only change since the session close (close prices x close rate -> live rate), in this line's currency; null when it cannot be computed
@@ -6781,7 +6806,7 @@ export interface components {
         };
         /**
          * NextEuro
-         * @description "€1,000 buys $X now; $Y a year ago" (a euro notional at one rate each).
+         * @description "The regular amount buys $X now; $Y a year ago" (a euro notional at one rate each).
          */
         NextEuro: {
             /** Amount Eur */
@@ -6790,6 +6815,7 @@ export interface components {
             better_than_share?: string | null;
             /** Change Pct */
             change_pct?: string | null;
+            dollar_lens?: components["schemas"]["NextEuroDollar"] | null;
             /** Spark */
             spark?: components["schemas"]["NextEuroPoint"][];
             /** Usd Now */
@@ -6798,6 +6824,37 @@ export interface components {
             usd_year_ago?: string | null;
             /** Year Ago Date */
             year_ago_date?: string | null;
+        };
+        /**
+         * NextEuroDollar
+         * @description The EUR view of the card ("your dollars in euros"): the dollars the regular amount
+         *     buys today (a native dollar figure) valued in euros at a single rate each.
+         */
+        NextEuroDollar: {
+            /** Better Than Share */
+            better_than_share?: string | null;
+            /** Change Pct */
+            change_pct?: string | null;
+            /** Eur Now */
+            eur_now: string;
+            /** Eur Year Ago */
+            eur_year_ago?: string | null;
+            /** Spark */
+            spark?: components["schemas"]["NextEuroDollarPoint"][];
+            /** Usd Amount */
+            usd_amount: string;
+            /** Year Ago Date */
+            year_ago_date?: string | null;
+        };
+        /**
+         * NextEuroDollarPoint
+         * @description One weekly point of the book-lens sparkline: what ``usd_amount`` was worth in euros.
+         */
+        NextEuroDollarPoint: {
+            /** Eur */
+            eur: string;
+            /** T */
+            t: string;
         };
         /**
          * NextEuroPoint
@@ -6862,6 +6919,28 @@ export interface components {
             password: boolean;
             /** Targets */
             targets: boolean;
+        };
+        /**
+         * OtherLens
+         * @description The same rate move read from the other currency, labelled as such.
+         */
+        OtherLens: {
+            /** Currency */
+            currency?: ("EUR" | "USD") | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "tailwind" | "headwind" | "neutral";
+            /** Label */
+            label: string;
+            /**
+             * Unit
+             * @enum {string}
+             */
+            unit: "fraction" | "money";
+            /** Value */
+            value?: string | null;
         };
         /**
          * OverviewEstimate
@@ -7696,6 +7775,24 @@ export interface components {
             /** Status */
             status: string | null;
         };
+        /**
+         * RangeWindow
+         * @description The page range as dates (``readmodels/currency_range``), the same in every section.
+         */
+        RangeWindow: {
+            /** Context Until */
+            context_until?: string | null;
+            /** Intraday */
+            intraday: boolean;
+            /** Key */
+            key: string;
+            /** Live */
+            live: boolean;
+            /** Start */
+            start: string;
+            /** Through */
+            through: string;
+        };
         /** RateChange */
         RateChange: {
             /** End Rate */
@@ -7742,6 +7839,7 @@ export interface components {
             trend?: components["schemas"]["RateTrend"] | null;
             /** Us Market Hours */
             us_market_hours?: components["schemas"]["RateSession"][];
+            window?: components["schemas"]["RangeWindow"] | null;
         };
         /** RateHistoryPoint */
         RateHistoryPoint: {
@@ -7754,7 +7852,7 @@ export interface components {
         };
         /**
          * RateOnly
-         * @description EUR 1,000 at the range start's rate and at its end's (the rate alone).
+         * @description The regular EUR amount at the range start's rate and at its end's (the rate alone).
          */
         RateOnly: {
             /** Amount Eur */
@@ -8220,6 +8318,7 @@ export interface components {
             value_now?: string | null;
             /** Value Now Other */
             value_now_other?: string | null;
+            window?: components["schemas"]["RangeWindow"] | null;
         };
         /** SchedulerJob */
         SchedulerJob: {

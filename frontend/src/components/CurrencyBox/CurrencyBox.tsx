@@ -1,5 +1,9 @@
+import clsx from "clsx";
+import { Moon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Card } from "../Card";
+import { FxState } from "../FxState";
+import { useFxMoment } from "../../lib/fxWeekend";
 import { DivergingBar, type DivergingBarRow } from "../DivergingBar";
 import { Money } from "../Money";
 import { Percent } from "../Percent";
@@ -188,7 +192,7 @@ function EffectPanel({ data }: { data: CurrencyBoxData }) {
   const { hide } = useHideAmounts();
   // Hide mode: each figure as a share of the portfolio value (server-supplied).
   const total = toNum(data.kpis?.total_value ?? null);
-  const share = (v: number) => <Percent ratio={total ? v / total : null} signed colored />;
+  const share = (v: number) => <Percent ratio={total ? v / total : null} signed colored digits={1} />;
   const today = data.currency.today;
   const phrase = sincePhrase(today.since_phrase);
   const ip = today.investing_power_usd;
@@ -219,7 +223,7 @@ function EffectPanel({ data }: { data: CurrencyBoxData }) {
     const base = amountUsd !== null ? amountUsd - net : null;
     const fmt = (v: number) =>
       hide ? (
-        <Percent ratio={base ? v / base : null} signed colored />
+        <Percent ratio={base ? v / base : null} signed colored digits={1} />
       ) : (
         <Money amount={v} currency="USD" signed colored digits={digits} />
       );
@@ -261,6 +265,7 @@ function EffectPanel({ data }: { data: CurrencyBoxData }) {
  */
 export function CurrencyBox({ data, footer, trend, collapsibleId = "overview.currency" }: CurrencyBoxProps) {
   const timeZone = useTimeZone();
+  const { moment: fx } = useFxMoment();
   const today = data.currency.today;
   const frozen = today.regime?.forex_frozen ?? false;
   const spot = toNum(today.spot_display ?? null);
@@ -268,7 +273,7 @@ export function CurrencyBox({ data, footer, trend, collapsibleId = "overview.cur
 
   return (
     <Card
-      className="currency-box"
+      className={clsx("currency-box", fx === "back" && "currency-box--fx-back")}
       title={
         <span className="currency-box__title" data-truncate-ok>
           Currency
@@ -303,7 +308,7 @@ export function CurrencyBox({ data, footer, trend, collapsibleId = "overview.cur
               <div className="currency-box__stat">
                 <dt className="currency-box__label">{moveLabel(today.move)}</dt>
                 <dd className="currency-box__value">
-                  <Percent ratio={toNum(today.move.pct)} signed colored />
+                  <Percent ratio={toNum(today.move.pct)} signed colored digits={1} />
                 </dd>
                 <dd className="currency-box__meta">
                   <span className="currency-box__sub">{MOVE_SUB[today.move.anchor_kind]}</span>
@@ -314,7 +319,7 @@ export function CurrencyBox({ data, footer, trend, collapsibleId = "overview.cur
               <div className="currency-box__stat">
                 <dt className="currency-box__label">{today.since.kind === "open" ? "Since open" : "Since close"}</dt>
                 <dd className="currency-box__value">
-                  <Percent ratio={toNum(today.since.pct)} signed colored />
+                  <Percent ratio={toNum(today.since.pct)} signed colored digits={1} />
                 </dd>
                 <dd className="currency-box__meta">
                   <span className="currency-box__sub">rate move</span>
@@ -322,11 +327,16 @@ export function CurrencyBox({ data, footer, trend, collapsibleId = "overview.cur
               </div>
             )}
           </dl>
-          {frozen && (
+          {frozen ? (
             <p className="currency-box__reopen">
-              Frozen at Friday&apos;s close
-              {today.reopen_at ? ` · reopens ${formatWeekdayTime(today.reopen_at, timeZone)}` : ""}
+              <Moon aria-hidden className="currency-box__fx-icon" />
+              <span>
+                Frozen at Friday&apos;s close
+                {today.reopen_at ? ` · reopens ${formatWeekdayTime(today.reopen_at, timeZone)}` : ""}
+              </span>
             </p>
+          ) : (
+            <FxState className="currency-box__fx" />
           )}
           {today.anchor_missing && (
             <p className="currency-box__warning">The previous close rate is missing; the move uses the best earlier rate.</p>

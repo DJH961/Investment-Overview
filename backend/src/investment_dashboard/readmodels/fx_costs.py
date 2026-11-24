@@ -7,13 +7,14 @@ ECB fixing (never a EUR total at today's rate). See :mod:`domain.fx_spread`.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 from typing import TYPE_CHECKING, Any
 
 from investment_dashboard.domain import fx_spread
 from investment_dashboard.domain.fx_spread import ConversionCost, CostSummary
+from investment_dashboard.readmodels import currency_range
 from investment_dashboard.readmodels._serialize import dec, iso
-from investment_dashboard.readmodels.currency_rate import range_start
+from investment_dashboard.repositories import transactions_repo
 from investment_dashboard.services import fx_cost_service
 
 if TYPE_CHECKING:
@@ -111,12 +112,14 @@ def _side(
 def build_costs_both(session: Session, range_key: str, today: date) -> dict[str, dict[str, Any]]:
     """``{"EUR": ..., "USD": ...}`` for conversions dated in the range."""
     convs = fx_cost_service.conversions_with_fixings(session)
-    first = min((c.date for c in convs), default=None)
-    if range_key == "1d":
-        start = today
-    elif range_key == "1w":
-        start = today - timedelta(days=7)
-    else:
-        start = range_start(range_key, today, first)
+    first = transactions_repo.earliest_transaction_date(session) or min(
+        (c.date for c in convs), default=None
+    )
+    # Conversions dated inside the range (``after`` is the close before it).
+    window = currency_range.resolve(range_key, today, first)
+    start = window.start
     report = fx_spread.build_report(convs, start=start, end=today)
-    return {ccy: _side(report, ccy, range_key, start) for ccy in ("EUR", "USD")}
+    return {
+        ccy: _side(report, ccy, range_key, start) | {"window": window.to_dict()}
+        for ccy in ("EUR", "USD")
+    }

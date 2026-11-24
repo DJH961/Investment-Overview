@@ -72,6 +72,8 @@ export const CVD_PAIRS: { a: string; b: string; why: string }[] = [
   // (benchmark, chart-3) and the dashed "your average" reference (muted).
   { a: "--chart-1", b: "--chart-3", why: "rate chart: rate line vs 200-day average" },
   { a: "--chart-1", b: "--color-muted", why: "rate chart: rate line vs your average rate" },
+  { a: "--chart-1", b: "--color-muted", why: "Currency Max: your line vs the dashed before-you-started context" },
+  { a: "--color-pos", b: "--color-neg", why: "Currency USD view: headline vs the 'Seen from euros' lens of the other sign" },
   { a: "--chart-3", b: "--color-muted", why: "rate chart: 200-day average vs your average rate" },
   // Conversion markers on the rate chart: a neutral ink ring (kind = null), ▲ pos above /
   // ▼ neg below the reference (7.3), each outlined in ink, over the three lines above.
@@ -92,6 +94,23 @@ export const CVD_PAIRS: { a: string; b: string; why: string }[] = [
   { a: "--chart-3", b: "--chart-1", why: "constant-currency chart: band hatch vs actual value line" },
   { a: "--chart-3", b: "--color-fg", why: "constant-currency chart: band hatch vs frozen-rate line" },
   { a: "--chart-1", b: "--color-fg", why: "constant-currency chart: actual value vs frozen-rate line" },
+  // Top bar (7.3.1): the ink pulse ring of a scheduled update sits right beside the
+  // Health & Repair badge (ok pos / warn / error neg icon).
+  { a: "--color-fg", b: "--color-pos", why: "TopBar: update pulse ring vs health badge OK" },
+  { a: "--color-fg", b: "--color-warn", why: "TopBar: update pulse ring vs health badge warning" },
+  { a: "--color-fg", b: "--color-neg", why: "TopBar: update pulse ring vs health badge problem" },
+  // Bell moments (7.3.1): the brass bell and its ripple in the market clock, beside the
+  // accent session track / soon digits and the hero's blue/orange day move.
+  { a: "--color-bell", b: "--color-accent", why: "market clock: ringing bell vs session track / soon digits" },
+  { a: "--color-bell", b: "--color-pos", why: "market clock: ringing bell vs the hero's up-day move / live dot" },
+  { a: "--color-bell", b: "--color-neg", why: "market clock: ringing bell vs the hero's down-day move" },
+  // FX weekend (7.3.1): the moon (weekend close) and sunrise (reopen) glyphs in the rate
+  // chart's head, above the rate line (chart-1) and the dashed 200-day average (chart-3).
+  // The two glyphs never show together (one state at a time) and the end cap keeps the line's colour.
+  { a: "--color-fx-moon", b: "--chart-1", why: "rate chart: weekend moon glyph vs rate line" },
+  { a: "--color-fx-moon", b: "--chart-3", why: "rate chart: weekend moon glyph vs 200-day average" },
+  { a: "--color-fx-sunrise", b: "--chart-1", why: "rate chart: reopen sunrise glyph vs rate line" },
+  { a: "--color-fx-sunrise", b: "--chart-3", why: "rate chart: reopen sunrise glyph vs 200-day average" },
 ];
 
 /** Charts with 3+ untoned series (n2..n4) are rare; they get the lower bar plus dashes. */
@@ -112,6 +131,9 @@ const MARK_TOKENS = [
   "--chart-estimate",
   "--color-lot-long",
   "--color-lot-soon",
+  "--color-bell",
+  "--color-fx-moon",
+  "--color-fx-sunrise",
 ];
 
 const here = dirname(fileURLToPath(import.meta.url));

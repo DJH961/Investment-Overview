@@ -1,0 +1,38 @@
+@use "../../styles/mixins" as m;
+
+// The FX week as a quiet line with a glyph (the glyph's colour only repeats the words).
+.fx-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  animation: fx-state-settle var(--duration-slow) var(--ease-out) 1;
+
+  &__icon {
+    width: 14px;
+    height: 14px;
+    flex: none;
+  }
+
+  &--weekend &__icon {
+    color: var(--color-fx-moon);
+  }
+
+  &--back &__icon {
+    color: var(--color-fx-sunrise);
+  }
+
+  @include m.reduced-motion {
+    animation: none;
+  }
+}
+
+// The line settles in (fades up a few pixels).
+@keyframes fx-state-settle {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}

@@ -4,7 +4,7 @@ import { jobAffectsReports, markStaleAndRefetch, scheduleRefetchAllActive, setti
 import { api } from "./api";
 import { applyTick, patchGraphPoint, patchOverviewFromEvent, type TickLike, type TickPointDto } from "./tickPatch";
 import type { components } from "./api-types";
-import { applyRefreshEvent } from "./refresh";
+import { applyRefreshEvent, takeDeferredAutoRefetch } from "./refresh";
 import { getServerStatus, setServerStatus } from "./serverStatus";
 import { noteServerVersion } from "./appVersion";
 
@@ -248,7 +248,9 @@ export function handleLiveEvent(queryClient: QueryClient, data: string): void {
     // tick-dependent queries follows. Inactive ones are only marked stale.
     noteSeq(ev);
     applyTick(queryClient, ev as TickLike);
-    markStaleAndRefetch(queryClient, "tick");
+    // An automatic price run just before this tick folds its report refetch into this
+    // tick's wave: one round of refetches a minute, not two.
+    markStaleAndRefetch(queryClient, type === "tick" && takeDeferredAutoRefetch() ? "refresh" : "tick");
   } else if (type === "refresh") {
     markStaleAndRefetch(queryClient, "refresh");
   } else if (type === "graphs" && typeof ev.range === "string") {
@@ -270,6 +272,13 @@ export function handleLiveEvent(queryClient: QueryClient, data: string): void {
     if (settingsAffectReports(keys)) markStaleAndRefetch(queryClient, "refresh");
   } else if (type === "server") {
     handleServerEvent(queryClient, ev);
+  } else if (type === "market_session" || type === "session_closed" || type === "session_opened") {
+    // A bell (applied to the refresh state above). Once the closing prices are in, the
+    // reports refetch once; at the open the overview fetches the new session's instants.
+    // While the close is still settling nothing refetches (the clock shows "Closing…").
+    const bell = type === "session_closed" ? "closed" : type === "session_opened" ? "opening" : ev.state;
+    if (bell === "closed") markStaleAndRefetch(queryClient, "refresh");
+    else if (bell === "opening") markStaleAndRefetch(queryClient, "tick");
   }
   eventListeners.forEach((l) => l(ev));
 }

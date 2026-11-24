@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
 
-from investment_dashboard.domain import day_move, dividends, periods
+from investment_dashboard.domain import clock, day_move, dividends, periods
 from investment_dashboard.domain.currency import (
     dual_currency_amounts,
     lookup_rate_with_forward_fill,
@@ -306,7 +306,7 @@ def build_window_value_series(  # noqa: PLR0912, PLR0915
     the empty state / the daily snapshot series.
     """
     currency = currency.upper()
-    now = now or datetime.now(UTC)
+    now = now or clock.now()
 
     if positions is None:
         positions = compute_positions(session)
@@ -701,7 +701,7 @@ def previous_session_close_value(
     """
     from investment_dashboard.services import metrics_service  # noqa: PLC0415
 
-    now = now or datetime.now(UTC)
+    now = now or clock.now()
     session_date = intraday_snapshots_service.last_session_date(now)
     prev_date = intraday_snapshots_service.previous_trading_session(session_date)
     try:
@@ -844,7 +844,7 @@ def compute_instrument_metrics(  # noqa: PLR0915
     growth calculation.
     """
     as_of = as_of or exchange_today()
-    now = now or datetime.now(UTC)
+    now = now or clock.now()
     txns = list(transactions_repo.list_transactions(session, end=as_of))
     eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
     today_rate = lookup_rate_with_forward_fill(eur_to_usd, as_of)
@@ -1517,7 +1517,7 @@ def position_rows(
                 "price_data_warning": p.instrument.id in anomalies,
                 # Price freshness ("as of" the observation date) for the table's
                 # transparency column. Money-market par funds have no feed date.
-                "price_as_of": _fmt_asof(fr, now=datetime.now(UTC)),
+                "price_as_of": _fmt_asof(fr, now=clock.now()),
                 "name": (eff.name if eff is not None else p.instrument.name) or "",
                 "category": p.category or "",
                 "shares": fmt_shares(p.shares),

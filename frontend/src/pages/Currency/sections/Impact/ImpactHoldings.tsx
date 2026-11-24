@@ -4,7 +4,7 @@ import { ErrorState } from "../../../../components/ErrorState";
 import { Money } from "../../../../components/Money";
 import { Skeleton } from "../../../../components/Skeleton";
 import { formatDate } from "../../../../lib/format";
-import { effectRangeFor, useCurrencyEffect } from "../../../../lib/queries/currencyEffect";
+import { useCurrencyEffect } from "../../../../lib/queries/currencyEffect";
 import { toNum } from "../../../../lib/queries/portfolio";
 import type { CurrencySubPageProps } from "../../sections";
 import { DepositsTable } from "./ImpactInvesting";
@@ -13,7 +13,7 @@ import "./Impact.scss";
 
 /** `/currency/holdings`: every holding's price move, dividends and currency effect over the range. */
 export function ImpactHoldings({ currency, range }: CurrencySubPageProps) {
-  const q = useCurrencyEffect(effectRangeFor(range), currency);
+  const q = useCurrencyEffect(range, currency);
   const data = q.data;
   if (q.isError && !data) return <ErrorState title="Per-holding split could not be loaded" onRetry={() => void q.refetch()} />;
   if (!data) return <Skeleton height="20rem" />;
@@ -56,7 +56,7 @@ export function ImpactHoldings({ currency, range }: CurrencySubPageProps) {
   if (!all.length) return <EmptyState title="No holdings in this range" />;
   // Only the holdings the exchange rate moved in this view.
   const rows = sortHoldings(withCurrencyEffect(all, data.ccy));
-  if (!rows.length) return <EmptyState title="No currency effect on your holdings" description={noEffectLine(all, data.ccy)} />;
+  if (!rows.length) return <EmptyState title="No currency effect on your holdings" description={data.holdings_note || noEffectLine(all, data.ccy)} />;
   const sum = (k: "price" | "dividends" | "currency" | "total") => rows.reduce((a, h) => a + (toNum(h[k]) ?? 0), 0);
   return (
     <Card

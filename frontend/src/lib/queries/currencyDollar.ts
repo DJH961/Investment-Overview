@@ -39,7 +39,12 @@ export function useDollar(ccy: ReportingCurrency, range: RateRange) {
   return useQuery(dollarQuery(ccy, range));
 }
 
-export const scenariosQuery = (ccy: ReportingCurrency, range: RateRange = "max") =>
+/** Both sides of the cached `/both` entry, for panels that set EUR next to USD. */
+export function useDollarBoth(range: RateRange) {
+  return useQuery({ ...dollarQuery("EUR", range), select: (d: Both<DollarDto>) => d });
+}
+
+export const scenariosQuery =(ccy: ReportingCurrency, range: RateRange = "max") =>
   queryOptions({
     queryKey: ["currency", "scenarios", range],
     queryFn: ({ signal }) => api<Both<ScenariosDto>>(`/api/currency/scenarios/both?range=${range}`, { signal }),

@@ -44,7 +44,7 @@ describe("MarketClock countdown", () => {
 
   it("closed over a weekend: counts to the opening bell with days", () => {
     render(<MarketClock freshness={closed} now={new Date("2026-06-28T18:55:49Z")} />);
-    expect(root()).toHaveTextContent("Until the opening bell");
+    expect(root()).toHaveTextContent("See you Wed 13:30");
     expect(digits()).toBe("2d18:34:11");
     expect(root()).toHaveTextContent("Last close Wed 13:30");
     expect(root().querySelectorAll(".market-clock__tick")).toHaveLength(0);
@@ -106,7 +106,9 @@ describe("MarketClock countdown", () => {
     expect(digits()).toBe("00:00:01");
     expect(onBoundary).not.toHaveBeenCalled();
     advance(1000);
-    expect(digits()).toBe("00:00:00");
+    // A word, never a zero countdown.
+    expect(screen.queryByTestId("market-clock-digits")).toBeNull();
+    expect(screen.getByTestId("market-clock-word")).toHaveTextContent(/Settling|Closed/);
     expect(root()).toHaveTextContent("The closing bell has rung");
     expect(onBoundary).toHaveBeenCalledTimes(1);
     // No loop while the same (stale) instant stays on screen; later only the state.
@@ -159,7 +161,7 @@ describe("MarketClock on a half day (Black Friday 2026: closes 13:00 ET = 18:00Z
       last_close_at: "2026-11-27T18:00:00+00:00",
     };
     render(<MarketClock freshness={after} now={new Date("2026-11-27T19:00:00Z")} />);
-    expect(root()).toHaveTextContent("Until the opening bell");
+    expect(root()).toHaveTextContent("See you Mon 14:30");
     // One hour into the 68.5 h wait from the real 18:00Z close (not a 17.5 h guess).
     expect(root().querySelector<HTMLElement>(".market-clock__fill")?.style.width).toBe("1.46%");
   });

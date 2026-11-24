@@ -893,6 +893,35 @@ class LastSessionSplit:
     base_usd: Decimal | None = None
 
 
+def now_point_values(
+    split: LastSessionSplit, ccy: str
+) -> tuple[Decimal, Decimal, Decimal | None, bool]:
+    """``(value now, overnight currency, overnight %, estimated)`` for the graphs' Now dot.
+
+    On the *estimated* book while a fund's NAV is pending (its ETF twin estimates it),
+    so the dot sits where the hero and the 1D line end (7.3.1); else the official
+    book. ``overnight %`` is over the matching previous-close baseline
+    (``value_now - move - overnight``).
+    """
+    usd = ccy == "USD"
+    est_value = split.value_now_est_usd if usd else split.value_now_est_eur
+    est_night = split.overnight_est_usd if usd else split.overnight_est_eur
+    est_move = split.move_est_usd if usd else split.move_est_eur
+    if split.estimated_funds and est_value is not None and est_night is not None:
+        base = (
+            est_value
+            - (est_move or Decimal(0))
+            - est_night
+            - (split.lead_usd if usd else split.lead_eur)
+        )
+        pct = est_night / base if base > 0 else None
+        return est_value, est_night, pct, True
+    value = split.value_now_usd if usd else split.value_now_eur
+    night = split.overnight_usd if usd else split.overnight_eur
+    pct = split.overnight_pct_usd if usd else split.overnight_pct_eur
+    return value, night, pct, False
+
+
 def _estimated_split(
     session: Session,
     *,

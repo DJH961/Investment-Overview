@@ -143,9 +143,10 @@ def test_retry_backoff_falls_back_to_plain_warning_without_round(
     assert any("backing off" in r.getMessage() for r in caplog.records if r.name == _retry.__name__)
 
 
-def test_refresh_due_prices_emits_full_narrative(session, monkeypatch, caplog) -> None:
+def test_refresh_due_prices_emits_full_narrative(
+    session, monkeypatch, caplog, market_clock
+) -> None:
     """A real (un-wrapped) refresh auto-opens a round and narrates it START→END."""
-    from datetime import UTC, datetime
     from decimal import Decimal
 
     from investment_dashboard.repositories import instruments_repo
@@ -154,7 +155,7 @@ def test_refresh_due_prices_emits_full_narrative(session, monkeypatch, caplog) -
     instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
     session.flush()
 
-    now = datetime.now(UTC).replace(tzinfo=None)
+    now = market_clock("closed").replace(tzinfo=None)
     today = now.date()
     monkeypatch.setattr(
         prices_service, "fetch_closes", lambda *a, **k: {"VTI": {today: Decimal("100")}}

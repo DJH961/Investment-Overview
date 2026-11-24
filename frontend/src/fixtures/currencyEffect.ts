@@ -94,7 +94,7 @@ export function effectScale(now: number, totalEur: number): number {
   return end > 0 && totalEur > 0 ? totalEur / end : 1;
 }
 
-const kindOf = (v: number): Kind => (Math.abs(v) < 0.005 ? "neutral" : v > 0 ? "tailwind" : "headwind");
+const kindOf = (v: number): Kind => (Math.abs(v) < 0.5 ? "neutral" : v > 0 ? "tailwind" : "headwind");
 const s = (v: number, d = 2) => v.toFixed(d);
 const iso = (t: number) => new Date(t).toISOString().slice(0, 10);
 

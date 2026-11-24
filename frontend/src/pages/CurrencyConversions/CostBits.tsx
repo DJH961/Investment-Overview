@@ -17,6 +17,11 @@ export function useCostsAll(): FxCostsDto | undefined {
 }
 
 /** The extra stat-strip tiles: total cost and the average distance from the ECB reference. */
+function costOf(cost: string | null | undefined): number | null {
+  const n = toNum(cost);
+  return n === null ? null : -n;
+}
+
 export function costStatItems(costs: FxCostsDto | undefined): StatItem[] {
   if (!costs || costs.summary.count === 0) return [];
   const s = costs.summary;
@@ -25,12 +30,21 @@ export function costStatItems(costs: FxCostsDto | undefined): StatItem[] {
     costs.cheaper_provider && costs.cheaper_than
       ? `${providerLabel(costs.cheaper_provider)} cheaper than ${providerLabel(costs.cheaper_than)}`
       : null;
+  const rate = toNum(s.all_in_rate);
   return [
+    {
+      key: "rate",
+      label: "Your average rate",
+      tip: "Dollars you got per euro on average, with fees counted in, weighted by the euros converted.",
+      value: rate === null ? "–" : formatNumber(rate, 4),
+      note: "$ per €, fees included",
+    },
     {
       key: "cost",
       label: "Total cost",
       tip: "Fees plus the spread against the ECB daily reference (struck about 14:15 CET, so a small negative figure is intraday noise, not a win).",
-      value: <Money amount={toNum(s.cost)} currency="EUR" signed digits={0} />,
+      // A cost is shown as what it took from you: negative, in the loss colour (7.3.1).
+      value: <Money amount={costOf(s.cost)} currency="EUR" signed colored digits={0} />,
       note: (
         <Link to={{ pathname: "/currency", hash: "#conversions" }} className="cost-link">
           Cost over time →

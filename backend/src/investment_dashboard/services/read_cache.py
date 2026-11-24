@@ -62,6 +62,15 @@ _entries: OrderedDict[tuple[Any, ...], tuple[tuple[tuple[str, int], ...], float,
 _gens: dict[str, int] = dict.fromkeys((*ALL_DEPS, BRIEF), 0)
 #: (key, generations) -> Event set when the thread computing it finished (single flight).
 _inflight: dict[tuple[Any, ...], threading.Event] = {}
+#: Keys a client request read (computed or hit) since they were stored. A warm-up
+#: computes without marking, so a read nobody looks at is not re-warmed forever.
+_touched: set[tuple[Any, ...]] = set()
+#: Client-read keys an :func:`invalidate` dropped since the last :func:`warm`.
+_cleared: set[tuple[Any, ...]] = set()
+#: Set while :func:`warm` runs a warmer: collects the cache keys it reads.
+_warming: contextvars.ContextVar[set[tuple[Any, ...]] | None] = contextvars.ContextVar(
+    "read_cache_warming", default=None
+)
 #: Longest a waiter sits behind another thread's computation before computing itself.
 _WAIT_SECONDS = 30.0
 _KEYABLE = (str, int, float, bool, Decimal, Enum, type(None))
@@ -81,6 +90,9 @@ def invalidate(*deps: str) -> None:
             k for k, (snap, _, _) in _entries.items() if any(d in targets for d, _ in snap)
         ]:
             del _entries[key]
+            if key in _touched:
+                _touched.discard(key)
+                _cleared.add(key)
 
 
 #: Events that never change a cached read (restart notices).
@@ -121,6 +133,26 @@ def invalidate_for_event(
         invalidate()
 
 
+def _store(
+    key: tuple[Any, ...],
+    snap: tuple[tuple[str, int], ...],
+    expires: float,
+    value: Any,
+    *,
+    by_client: bool,
+) -> None:
+    """Keep one computed answer (caller holds ``_lock``); evict past :data:`MAX_ENTRIES`."""
+    _entries[key] = (snap, expires, value)
+    _entries.move_to_end(key)
+    if by_client:
+        _touched.add(key)
+    else:
+        _touched.discard(key)
+    while len(_entries) > MAX_ENTRIES:
+        evicted, _ = _entries.popitem(last=False)
+        _touched.discard(evicted)
+
+
 def cached_read[**P, R](
     fn: Callable[P, R] | None = None, *, deps: tuple[str, ...] = ALL_DEPS
 ) -> Any:
@@ -137,6 +169,9 @@ def cached_read[**P, R](
     @functools.wraps(func)
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         key = (name, *sorted((k, v) for k, v in kwargs.items() if isinstance(v, _KEYABLE)))
+        warming = _warming.get()
+        if warming is not None:
+            warming.add(key)
         while True:
             now = time.monotonic()
             with _lock:
@@ -144,6 +179,8 @@ def cached_read[**P, R](
                 hit = _entries.get(key)
                 if hit is not None and hit[0] == snap and hit[1] > now:
                     _entries.move_to_end(key)
+                    if warming is None:
+                        _touched.add(key)
                     return hit[2]  # type: ignore[no-any-return]
                 flight = (key, snap)
                 pending = _inflight.get(flight)
@@ -164,10 +201,7 @@ def cached_read[**P, R](
             with _lock:
                 # Something it reads changed while computing: don't store a stale answer.
                 if snap == tuple((d, _gens[d]) for d in deps):
-                    _entries[key] = (snap, now + TTL_SECONDS, value)
-                    _entries.move_to_end(key)
-                    while len(_entries) > MAX_ENTRIES:
-                        _entries.popitem(last=False)
+                    _store(key, snap, now + TTL_SECONDS, value, by_client=warming is None)
             return value
         finally:
             with _lock:
@@ -179,6 +213,8 @@ def cached_read[**P, R](
 
 
 _warmers: list[Callable[[Any], None]] = []
+#: The cache keys each warmer read the last time it ran.
+_warmer_keys: dict[Callable[[Any], None], frozenset[tuple[Any, ...]]] = {}
 
 
 def register_warmer(fn: Callable[[Any], None]) -> None:
@@ -187,27 +223,61 @@ def register_warmer(fn: Callable[[Any], None]) -> None:
         _warmers.append(fn)
 
 
+def _due_warmers() -> list[Callable[[Any], None]]:
+    """The warmers whose reads a client used and the last invalidation dropped.
+
+    A warmer that never ran yet always runs (that is how its keys are learnt).
+    Takes the dropped set, so the next warm-up starts from a clean slate.
+    """
+    with _lock:
+        cleared = set(_cleared)
+        _cleared.clear()
+    return [
+        fn
+        for fn in _warmers
+        if (learnt := _warmer_keys.get(fn)) is None or not learnt.isdisjoint(cleared)
+    ]
+
+
 def warm() -> None:
     """Compute the registered reads sequentially on one session; never raises.
 
     Each warmer calls the same cached function the API route uses, so the cache keys
-    match. A failure is logged and the next warmer still runs.
+    match. Only the reads the last invalidation actually dropped, and that a client
+    had read, are recomputed: a page nobody has open is not rebuilt every minute.
+    A failure is logged and the next warmer still runs.
     """
     if not _warmers:
         return
     started = time.perf_counter()
+    due = _due_warmers()
+    if not due:
+        return
     try:
         from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
 
         with ledger_session_scope() as session:
-            for fn in list(_warmers):
+            for fn in due:
+                keys: set[tuple[Any, ...]] = set()
+                token = _warming.set(keys)
                 try:
                     fn(session)
                 except Exception:
                     log.warning("read cache warmer %s failed", fn, exc_info=True)
+                finally:
+                    _warming.reset(token)
+                    if keys:
+                        _warmer_keys[fn] = frozenset(keys)
+                    else:  # it failed before reading anything: try it again next time
+                        _warmer_keys.pop(fn, None)
     except Exception:
         log.warning("read cache warm-up failed", exc_info=True)
-    log.debug("read cache warmed in %.2fs", time.perf_counter() - started)
+    log.debug(
+        "read cache warmed %d/%d read(s) in %.2fs",
+        len(due),
+        len(_warmers),
+        time.perf_counter() - started,
+    )
 
 
 #: Changes on every process start so a restarted server (generations back at 0)

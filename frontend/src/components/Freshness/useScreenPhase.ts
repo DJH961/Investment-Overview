@@ -1,0 +1,50 @@
+import { useQuery } from "@tanstack/react-query";
+import { parseInstant } from "../../lib/format";
+import { useMarketPhase, type MarketPhase } from "../../lib/marketPhase";
+import { overviewQuery } from "../../lib/queries/portfolio";
+import { useTimeZone } from "../../lib/timezone";
+import { lastSessionLabel } from "./stamps";
+
+/** What the day figures (a holding's move, the day KPI) are called at each moment. */
+export interface DayWords {
+  /** Column / tile label: "Today", or "Last session" until the first prices of a new session land. */
+  label: string;
+  /** One line under the list when the figures are not today's live ones, else null. */
+  caption: string | null;
+  /** The holding's live dot may show: the market trades and prices stream (or the phase is unknown). */
+  live: boolean;
+  /** "Last session · Mon" while the day figures are an earlier session's (the same words as the hero), else null. */
+  earlier: string | null;
+  /** The overnight (night) currency chip may show: only while the US market is shut, never in a live session. */
+  night: boolean;
+}
+
+/** Pure: the wording for one phase (`sessionDate` is the headline move's session). */
+/** `overnight`: the gap from the last close to the next open is a weeknight (under a day), not a weekend or holiday. */
+export function dayWords(phase: MarketPhase | null, sessionDate: string | null | undefined, timeZone?: string, overnight: boolean | null = null): DayWords {
+  const live = phase === null || phase === "live" || phase === "open";
+  const night = phase === null || (phase === "closed" && overnight !== false);
+  const earlier = phase === "closing" ? null : lastSessionLabel(sessionDate, { timeZone });
+  if (phase === "closing") return { label: "Today", caption: "Closing · the closing prices are being settled", live, earlier, night };
+  if (phase === "opening") {
+    return { label: "Last session", caption: "Market open · figures are the last session's until the first prices land", live, earlier, night };
+  }
+  if (earlier && phase !== "live" && phase !== "open") {
+    return { label: "Last session", caption: `${earlier.replace("Last session", "Day figures are from the last session")}`, live, earlier, night };
+  }
+  return { label: "Today", caption: null, live, earlier, night };
+}
+
+/**
+ * The market phase the whole screen follows, read from the Overview payload the shell
+ * already holds (never a fetch of its own), so a list or a holding page says the same
+ * thing as the top bar and the hero. (Freshness and the session date are the same in both currencies.)
+ */
+export function useScreenPhase(): DayWords & { phase: MarketPhase | null } {
+  const timeZone = useTimeZone();
+  const data = useQuery({ ...overviewQuery("EUR"), enabled: false }).data;
+  const { phase } = useMarketPhase(data?.freshness, Boolean(data?.daily_caption?.live));
+  const f = data?.freshness;
+  const gap = f?.last_close_at && f?.next_open_at ? parseInstant(f.next_open_at).getTime() - parseInstant(f.last_close_at).getTime() : Number.NaN;
+  return { phase, ...dayWords(phase, data?.kpis?.daily_growth_as_of, timeZone, Number.isNaN(gap) ? null : gap < 24 * 3_600_000) };
+}

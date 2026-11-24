@@ -18,7 +18,10 @@ export type TickCategoryDto = components["schemas"]["TickCategory"];
 
 /** The tick's live "now" marker figures per reporting currency (null: marker over; no `t`). */
 export type TickNowPoint = Partial<
-  Record<"EUR" | "USD", { v: string; overnight_currency?: string | null; overnight_pct?: string | null }>
+  Record<
+    "EUR" | "USD",
+    { v: string; overnight_currency?: string | null; overnight_pct?: string | null; funds_estimated?: boolean }
+  >
 >;
 
 const decimal = (v: unknown): string | null => (typeof v === "string" && v !== "" ? v : null);
@@ -221,6 +224,7 @@ export function patchGraphPoint(
                 v: n.v,
                 overnight_currency: n.overnight_currency ?? g.now_point.overnight_currency,
                 overnight_pct: n.overnight_pct ?? g.now_point.overnight_pct,
+                funds_estimated: n.funds_estimated ?? g.now_point.funds_estimated,
               },
             };
           }
@@ -351,14 +355,45 @@ export function patchHoldingsPrices(
   }
 }
 
+/** Move only the after-close "now" marker in the cached intraday graphs (server values). */
+export function patchNowMarker(queryClient: QueryClient, nowPoint: TickNowPoint): void {
+  for (const range of INTRADAY_RANGES) {
+    for (const [key, data] of queryClient.getQueriesData<Both<GraphDto>>({ queryKey: ["graphs", range, "both"] })) {
+      if (!data || typeof data !== "object") continue;
+      let changed = false;
+      const next = { ...data };
+      for (const side of SIDES) {
+        const g = data[side];
+        const n = nowPoint[side];
+        if (!g?.now_point || !n || !decimal(n.v)) continue;
+        next[side] = {
+          ...g,
+          now_point: {
+            ...g.now_point,
+            v: n.v,
+            overnight_currency: n.overnight_currency ?? g.now_point.overnight_currency,
+            overnight_pct: n.overnight_pct ?? g.now_point.overnight_pct,
+            funds_estimated: n.funds_estimated ?? g.now_point.funds_estimated,
+          },
+        };
+        changed = true;
+      }
+      if (changed) queryClient.setQueryData<Both<GraphDto>>(key, next);
+    }
+  }
+}
+
 /** Everything one tick changes on screen without a request. */
 export function applyTick(queryClient: QueryClient, ev: TickLike): void {
   patchOverviewFromEvent(queryClient, ev);
   patchCurrencyFromEvent(queryClient, ev);
-  const point =ev.point as TickPointDto | null | undefined;
+  const point = ev.point as TickPointDto | null | undefined;
+  const now = ev.now_point;
   if (point && typeof point === "object") {
-    const now = ev.now_point;
     patchGraphPoint(queryClient, point, now === null ? null : now && typeof now === "object" ? (now as TickNowPoint) : undefined);
+  } else if (now && typeof now === "object") {
+    // After the close a tick has no line point, but the "now" marker still moves.
+    patchNowMarker(queryClient, now as TickNowPoint);
   }
   const prices = ev.prices as Record<string, TickPriceDto> | null | undefined;
   const estimates = ev.estimates as Record<string, TickEstimateDto> | null | undefined;

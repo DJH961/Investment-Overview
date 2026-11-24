@@ -98,7 +98,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from investment_dashboard.domain import market_hours, periods
+from investment_dashboard.domain import clock, market_hours, periods
 from investment_dashboard.domain.instruments import is_money_market_effective
 from investment_dashboard.domain.money_market import MONEY_MARKET_NAV
 from investment_dashboard.domain.returns import Cashflow, GrowthMode, window_growth
@@ -200,7 +200,7 @@ def build(
         return None
     out: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
-        "captured_at": _iso_utc(now or datetime.now(UTC)),
+        "captured_at": _iso_utc(now or clock.now()),
         "grid": grid,
     }
     if backbone is not None:
@@ -450,7 +450,7 @@ def _day_series(
         session, currency="USD", tz=None, now=now, positions=positions
     )
     points = _downsample(_zip_points(eur, usd), MAX_DAY_POINTS)
-    ref = now or datetime.now(UTC)
+    ref = now or clock.now()
     return {
         "session_date": intraday_snapshots_service.last_session_date(ref).isoformat(),
         "market_open": market_hours.is_us_market_open(ref),
@@ -475,7 +475,7 @@ def _week_series(
     usd = build_week_value_series(session, currency="USD", tz=None, now=now, positions=positions)
     points = _downsample(_zip_points(eur, usd), MAX_DAY_POINTS)
     window = intraday_snapshots_service.recent_trading_sessions(now)
-    ref = now or datetime.now(UTC)
+    ref = now or clock.now()
     return {
         "start_date": window[0].isoformat(),
         "end_date": window[-1].isoformat(),
@@ -570,7 +570,7 @@ def reload_range(session: Session, range_key: str, *, now: datetime | None = Non
     returned); daily ranges re-warm the snapshot cache over the window
     (``None``: there is no point count to report).
     """
-    now = now or datetime.now(UTC)
+    now = now or clock.now()
     if range_key == "1d":
         return intraday_snapshots_service.reload_day_graph(session, now=now)
     if range_key == "1w":
@@ -598,6 +598,28 @@ def _point_time(at: date) -> str:
     return at.isoformat()
 
 
+def _opening_points(
+    points: list[ValueSeriesPoint], reference: Decimal, now: datetime
+) -> list[ValueSeriesPoint]:
+    """A 1D line that is not empty at the open: the previous close, flat, from the bell.
+
+    Before the day's second sample the series holds at most the live tip (or nothing),
+    which a chart cannot draw as a line. Anchor it at the regular open (UTC) with the
+    previous session's close value (the day's own reference), so the first prices
+    extend a line that already starts where the portfolio last closed. With no point
+    at all, a second one at ``now`` keeps it a line.
+    """
+    aware = now if now.tzinfo is not None else now.replace(tzinfo=UTC)
+    opened = market_hours.regular_session_open(market_hours.exchange_today(aware)).astimezone(UTC)
+    first = _aware_utc(points[0].date) if points and isinstance(points[0].date, datetime) else None
+    if first is not None and first <= opened:
+        return points
+    out = [ValueSeriesPoint(date=opened, value=reference), *points]
+    if not points:
+        out.append(ValueSeriesPoint(date=aware.astimezone(UTC), value=reference))
+    return out
+
+
 def _graph_points(
     session: Session, *, range_key: str, ccy: str, now: datetime
 ) -> tuple[list[ValueSeriesPoint], Decimal | None, bool]:
@@ -608,7 +630,15 @@ def _graph_points(
         points = build_intraday_value_series(
             session, currency=ccy, tz=UTC, now=now, freeze_after_hours=True
         )
-        reference = previous_session_close_value(session, currency=ccy, now=now) if points else None
+        open_now = market_hours.is_us_market_open(now)
+        # While the market is open the reference is known even before the first sample.
+        reference = (
+            previous_session_close_value(session, currency=ccy, now=now)
+            if points or open_now
+            else None
+        )
+        if open_now and len(points) < 2 and reference is not None:
+            points = _opening_points(points, reference, now)
         return points, reference, True
     if range_key == "1w":
         points = build_week_value_series(
@@ -851,7 +881,7 @@ def _growth(
 
 def _now_values(
     session: Session, *, ccy: str, now: datetime
-) -> tuple[Decimal, Decimal | None, Decimal | None] | None:
+) -> tuple[Decimal, Decimal | None, Decimal | None, bool] | None:
     """``(live value, overnight currency, overnight %)`` in ``ccy`` once the market has shut, else ``None``.
 
     ``overnight %`` is the overnight currency over the previous-close baseline value.
@@ -878,11 +908,16 @@ def _now_values(
         )
         overnight = usd if ccy == "USD" else eur
     overnight_pct: Decimal | None = None
-    if overnight is not None:
-        split = metrics_service.last_session_split(session, now=now, fx_now=live_fx)
-        if split is not None:
-            overnight_pct = split.overnight_pct_usd if ccy == "USD" else split.overnight_pct_eur
-    return value, overnight, overnight_pct
+    split = metrics_service.last_session_split(session, now=now, fx_now=live_fx)
+    if split is not None:
+        v, night, pct, estimated = metrics_service.now_point_values(split, ccy)
+        if estimated:
+            # A fund's NAV is pending: the dot sits on the twin-estimated book, where
+            # the hero and the 1D line end (7.3.1).
+            return v, night, pct, True
+        if overnight is not None:
+            overnight_pct = pct
+    return value, overnight, overnight_pct, False
 
 
 def now_point(session: Session, *, ccy: str, now: datetime) -> dict[str, Any] | None:
@@ -890,12 +925,13 @@ def now_point(session: Session, *, ccy: str, now: datetime) -> dict[str, Any] | 
     values = _now_values(session, ccy=ccy, now=now)
     if values is None:
         return None
-    value, overnight, overnight_pct = values
+    value, overnight, overnight_pct, estimated = values
     return {
         "t": _utc_iso(now),
         "v": dec(value),
         "overnight_currency": dec(overnight),
         "overnight_pct": dec(overnight_pct),
+        "funds_estimated": estimated,
     }
 
 
@@ -955,7 +991,7 @@ def build_graph(
     ``scale`` the chart uses to start both lines at the same pixel. ``growth`` is
     the window growth of each line, each from its own series and cashflows.
     """
-    now = now or datetime.now(UTC)
+    now = now or clock.now()
     today = market_hours.exchange_today(now)
     memo = memo if memo is not None else {}
 
@@ -994,7 +1030,7 @@ def build_graph(
         eur_flow, usd_flow = memo["ref_flows"]
         return usd_flow if c == "USD" else eur_flow  # type: ignore[no-any-return]
 
-    def now_values(c: str) -> tuple[Decimal, Decimal | None, Decimal | None] | None:
+    def now_values(c: str) -> tuple[Decimal, Decimal | None, Decimal | None, bool] | None:
         """Live "now" value after the close (the 1D and 1W lines)."""
         if range_key not in ("1d", "1w") or not intraday:
             return None

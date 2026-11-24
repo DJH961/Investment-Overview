@@ -24,7 +24,7 @@ export const STRIP_LABELS: Record<string, StatMeta> = {
   rate_now: { label: "EUR/USD now", tip: "How many dollars one euro buys at the latest rate." },
   effect_today: {
     label: "Effect today",
-    tip: "Euro view: what the exchange rate added to or took from your portfolio's euro value since the last close. Dollar view: how many more or fewer dollars €1,000 buys than at the last close.",
+    tip: "Euro view: what the exchange rate added to or took from your portfolio's euro value since the last close. Dollar view: how many more or fewer dollars your regular conversion amount (Settings) buys than at the last close.",
   },
   effect_ytd: {
     label: "Effect this year",
@@ -76,7 +76,22 @@ const stripRank = (key: string) => {
   return i < 0 ? STRIP_ORDER.length : i;
 };
 
-const RANGE_OPTIONS = RATE_RANGES.map((r) => ({
+const EFFECT_TILES = new Set(["effect_today", "effect_this_year", "effect_lifetime"]);
+
+/**
+ * A tile's words. In the dollar view the effect tiles lead with your deposits in dollars;
+ * their fraction beside it is the euro lens (euro return minus dollar return), so it is
+ * labelled as such instead of standing there as an unexplained gap of the other sign.
+ */
+export function stripMeta(s: { key: string; unit: string; secondary_unit?: string | null }, ccy: string): StatMeta | undefined {
+  const meta = STRIP_LABELS[s.key];
+  if (!meta || ccy !== "USD" || !EFFECT_TILES.has(s.key)) return meta;
+  if (s.unit === "money" && s.secondary_unit === "fraction") return { ...meta, noteLead: "Seen from euros" };
+  if (s.unit === "fraction" && s.secondary_unit === "money") return { ...meta, noteLead: "in euros" };
+  return meta;
+}
+
+const RANGE_OPTIONS =RATE_RANGES.map((r) => ({
   value: r,
   label: RATE_RANGE_LABELS[r],
   hint: r === "all" ? "All, since you started" : r === "max" ? "Max, since 1999" : undefined,
@@ -174,7 +189,7 @@ function CurrencyMain({ range }: { range: CurrencyRangeState }) {
               items={stats
                 .filter((s) => !NOT_IN_STRIP.has(s.key))
                 .sort((a, b) => stripRank(a.key) - stripRank(b.key))
-                .map((s) => serverStatItem(s, STRIP_LABELS[s.key], cur.ccy))}
+                .map((s) => serverStatItem(s, stripMeta(s, cur.ccy), cur.ccy))}
             />
           ) : null}
           {CURRENCY_SECTIONS.map((s, i) => (

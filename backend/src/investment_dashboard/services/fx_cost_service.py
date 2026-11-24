@@ -12,6 +12,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from investment_dashboard.domain import fx_spread
+from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.services import fx_conversion_service, fx_service
 
 if TYPE_CHECKING:
@@ -27,7 +28,7 @@ def conversions_with_fixings(session: Session) -> list[fx_spread.Conversion]:
     """
     rows = fx_conversion_service.list_conversions(session)
     rates = fx_service.get_settled_rates(session, base="EUR", quote="USD")
-    today = date.today()
+    today = exchange_today()
     out: list[fx_spread.Conversion] = []
     for r in rows:
         if r.is_estimate:
@@ -70,3 +71,28 @@ def provider_avg_off_pct(session: Session, provider: str | None) -> Decimal | No
     conversion.
     """
     return fx_spread.provider_avg_off_pct(conversion_costs(session), provider)
+
+
+def deposit_costs(session: Session) -> dict[date, Decimal]:
+    """Deposit date -> conversion cost (EUR) of the dollars matched to that day's deposits.
+
+    Each FX-pool slice is measured against its own conversion's fixing
+    (:func:`fx_spread.slice_cost`); the ECB fallback part of a deposit costs nothing.
+    Used by Impact to split the deposits' currency part into "while your dollars
+    waited" and "conversion cost" (7.3.1).
+    """
+    fixings = {c.id: c.ecb_rate for c in conversions_with_fixings(session)}
+    if not fixings:
+        return {}
+    report = fx_conversion_service.compute_pool(session)
+    out: dict[date, Decimal] = {}
+    for m in report.result.deposits:
+        if m.rate_missing:
+            continue
+        cost = sum(
+            (fx_spread.slice_cost(s.eur, s.usd, fixings.get(s.conversion_id)) for s in m.matched),
+            Decimal(0),
+        )
+        if cost:
+            out[m.date] = out.get(m.date, Decimal(0)) + cost
+    return out

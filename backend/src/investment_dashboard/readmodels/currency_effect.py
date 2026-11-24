@@ -51,18 +51,21 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.domain import clock, fx_effect_split, fx_trend
 from investment_dashboard.domain import dividends as dividends_domain
 from investment_dashboard.domain import fx_attribution as fa
-from investment_dashboard.domain import fx_effect_split, fx_trend
 from investment_dashboard.domain.market_hours import exchange_today, is_trading_day
 from investment_dashboard.domain.session_fx import fx_buying_power_split
 from investment_dashboard.readmodels import currency_deposits as deposits_rm
+from investment_dashboard.readmodels import currency_range
 from investment_dashboard.readmodels import fx_attribution_rows as rows_rm
-from investment_dashboard.readmodels._serialize import dec
+from investment_dashboard.readmodels._serialize import dec, kind_at_display
 from investment_dashboard.repositories import instruments_repo, transactions_repo
 from investment_dashboard.services import (
+    fx_cost_service,
     fx_session_rates_service,
     intraday_snapshots_service,
+    investing_power_service,
     metrics_service,
 )
 from investment_dashboard.services.read_cache import cached_read
@@ -91,8 +94,6 @@ MIN_DENOM_SHARE = Decimal("0.1")
 ROLLING_WINDOW = 252
 #: Above this many daily points a series is thinned to the last close of each week.
 MAX_DAILY_POINTS = 1100
-#: "€1,000 buys $X" (plan §5, Today stats).
-BUYS_AMOUNT_EUR = Decimal(1000)
 _CURRENCY_NAMES = {"USD": "dollar", "EUR": "euro", "GBP": "pound", "CHF": "franc"}
 
 #: When a broker account's cash would have gone below zero (see ``fx_attribution_rows``).
@@ -119,10 +120,23 @@ ALL_GAP_EXPLAINER = (
 )
 #: When the money effect and the gap in points point different ways (lead ``effect``).
 MISMATCH_NOTE = (
-    "The money figure and the gap in points point different ways here. The money figure "
-    "adds up what each day's rate move did to what you held that day. The returns weigh "
-    "each stretch of time by how much you had invested then, so large deposits or "
-    "withdrawals while the rate moved can tip the gap the other way."
+    "Mixed: the money figure and the gap in points point different ways. The money "
+    "figure adds up what each day's rate move did to what you held that day. The "
+    "returns weigh each stretch of time by how much you had invested then, so your "
+    "timing (large deposits or withdrawals while the rate moved) can tip the gap the "
+    "other way."
+)
+
+
+#: How the two views relate (USD view, shown once under its headline).
+LENS_NOTE = (
+    "One rate move, two lenses: a stronger euro shrinks your dollar book in euros "
+    "and makes each euro you send buy more dollars."
+)
+#: The USD view of an all-dollar book: the rate cannot move it.
+HOLDINGS_USD_NOTE = (
+    "Your holdings are in dollars, so in the dollar view the rate does not move them. "
+    "Their currency effect shows in the euro view."
 )
 
 
@@ -139,6 +153,17 @@ def mismatch_note(effect: Decimal, effect_pp: Decimal | None) -> str | None:
     if money == 0 or pp == 0 or (money > 0) == (pp > 0):
         return None
     return MISMATCH_NOTE
+
+
+def headline_kind(effect: Decimal, effect_pp: Decimal | None) -> str:
+    """The headline word: ``mixed`` when the money figure and the gap print opposite signs.
+
+    Otherwise the money figure's own kind, so the word never contradicts the figure
+    printed next to it.
+    """
+    if mismatch_note(effect, effect_pp) is not None:
+        return "mixed"
+    return kind_of(effect)
 
 
 # -- small helpers ---------------------------------------------------------------------
@@ -169,49 +194,27 @@ def _d(value: Any) -> Decimal | None:
         return None
 
 
-def kind_of(value: Decimal) -> str:
-    """``tailwind`` / ``headwind`` / ``neutral`` for the side's reader."""
-    if value > 0:
-        return "tailwind"
-    if value < 0:
-        return "headwind"
-    return "neutral"
+def kind_of(value: Decimal, *, fraction: bool = False) -> str:
+    """``tailwind`` / ``headwind`` / ``neutral`` for the side's reader, from the value as
+    printed (whole money units, points to one digit): a zero on screen is neutral."""
+    return kind_at_display(value, fraction=fraction)
 
 
-def _minus_months(day: date, months: int) -> date:
-    total = day.year * 12 + (day.month - 1) - months
-    year, month = divmod(total, 12)
-    month += 1
-    for dd in (day.day, 30, 29, 28):
-        try:
-            return date(year, month, dd)
-        except ValueError:
-            continue
-    return date(year, month, 28)  # pragma: no cover - unreachable
+_minus_months = currency_range.minus_months
+last_settled_day = currency_range.last_settled_day
 
 
-def last_settled_day(today: date | None = None) -> date:
-    """The last close the daily parts run through (yesterday, exchange date)."""
-    return (today or exchange_today()) - timedelta(days=1)
+def range_window(range_key: str, today: date, first: date | None = None) -> tuple[date, date]:
+    """``(after, through)``: a range is the daily parts with ``after < on <= through``.
 
-
-def range_window(range_key: str, today: date) -> tuple[date, date]:
-    """``(after, through)``: a range is the daily parts with ``after < on <= through``."""
-    end = last_settled_day(today)
-    if range_key == "all":
-        return date.min, end
-    if range_key == "ytd":
-        return date(today.year - 1, 12, 31), end
-    if range_key.isdigit():
-        year = int(range_key)
-        return date(year - 1, 12, 31), min(date(year, 12, 31), end)
-    if range_key == "1d":
-        return end - timedelta(days=1), end
-    if range_key == "1w":
-        return today - timedelta(days=7), end
-    if range_key in _MONTHS:
-        return _minus_months(today, _MONTHS[range_key]), end
-    raise ValueError(f"unknown range {range_key!r}")
+    The settled part of :func:`currency_range.resolve` (one meaning for the page). 1D
+    has no settled days: it is today's live move alone (see :func:`live_part`).
+    ``all`` without a known first transaction covers the whole lifetime.
+    """
+    if range_key == "all" and first is None:
+        return date.min, last_settled_day(today)
+    w = currency_range.resolve(range_key, today, first)
+    return w.after, w.through
 
 
 def foreign_name(currencies: Iterable[str]) -> str:
@@ -406,12 +409,23 @@ def headline_returns(
             _d(overview["USD"]["kpis"].get("daily_growth_pct")),
             "day",
         )
-    after, through = range_window(range_key, today)
-    return (
-        window_return(lives.get("EUR"), after, through),
-        window_return(lives.get("USD"), after, through),
-        "daily_chain",
-    )
+    after, through = range_window(range_key, today, _first_of(lives))
+    eur = window_return(lives.get("EUR"), after, through)
+    usd = window_return(lives.get("USD"), after, through)
+    if currency_range.resolve(range_key, today, None).live:
+        eur_live = live_part(lives.get("EUR"), overview["EUR"])
+        usd_live = live_part(lives.get("USD"), overview["USD"])
+        if eur_live is not None and usd_live is not None:
+            eur = with_today(eur, _d(overview["EUR"]["kpis"].get("daily_growth_pct")))
+            usd = with_today(usd, _d(overview["USD"]["kpis"].get("daily_growth_pct")))
+    return eur, usd, "daily_chain"
+
+
+def _first_of(lives: Mapping[str, Lifetime | None]) -> date | None:
+    for life in lives.values():
+        if life is not None and life.rows:
+            return life.rows[0].on + timedelta(days=1)
+    return None
 
 
 def currency_share(market: Decimal, currency: Decimal) -> Decimal | None:
@@ -904,10 +918,11 @@ def _buys(session: Session, today: Mapping[str, Any], now: datetime) -> dict[str
     spot, prev = _d(today.get("spot")), _d(today.get("prev"))
     if spot is None or spot <= 0:
         return None
+    amount = investing_power_service.get_amount_eur(session)
     market_open = fx_box_regime(now).market_open
     split = fx_buying_power_split(
         market_open=market_open,
-        amount_eur=BUYS_AMOUNT_EUR,
+        amount_eur=amount,
         live_fx=spot,
         prev_fx=prev,
         session_close_fx=None
@@ -919,12 +934,10 @@ def _buys(session: Session, today: Mapping[str, Any], now: datetime) -> dict[str
     )
     has_prev = prev is not None and prev > 0
     return {
-        "amount_eur": dec(BUYS_AMOUNT_EUR),
-        "usd_now": _m(BUYS_AMOUNT_EUR * spot),
-        "usd_prev": _m(BUYS_AMOUNT_EUR * prev) if has_prev and prev is not None else None,
-        "change_usd": _m(BUYS_AMOUNT_EUR * (spot - prev))
-        if has_prev and prev is not None
-        else None,
+        "amount_eur": dec(amount),
+        "usd_now": _m(amount * spot),
+        "usd_prev": _m(amount * prev) if has_prev and prev is not None else None,
+        "change_usd": _m(amount * (spot - prev)) if has_prev and prev is not None else None,
         "market_hours_usd": _m(split.market_hours_usd),
         "overnight_usd": _m(split.overnight_usd),
     }
@@ -933,11 +946,38 @@ def _buys(session: Session, today: Mapping[str, Any], now: datetime) -> dict[str
 # -- the payload ---------------------------------------------------------------------------------
 
 
-def _bridge(parts: Sequence[fa.DayParts]) -> dict[str, Any] | None:
+def carry_split(
+    parts: Sequence[fa.DayParts], costs: Mapping[date, Decimal]
+) -> tuple[Decimal, Decimal, Decimal]:
+    """``(revaluation, waiting, conversion_cost)`` of ``parts``' currency part (exact).
+
+    ``revaluation`` is the book revalued day by day; the deposits' ``carry`` splits
+    into the rate move while the dollars waited (conversion -> deposit) and the
+    conversion cost (spread + fees, negative = it cost you). The three add up to the
+    bridge's currency part exactly.
+    """
+    if not parts:
+        return ZERO, ZERO, ZERO
+    lo, hi = parts[0].prev_on, parts[-1].on
+    with fa.exact_context():
+        carry = sum((p.carry for p in parts), ZERO)
+        reval = sum((p.currency for p in parts), ZERO) - carry
+        cost = -sum((c for on, c in costs.items() if lo < on <= hi), ZERO) if carry else ZERO
+        waiting = carry - cost
+    return reval, waiting, cost
+
+
+def _bridge(
+    parts: Sequence[fa.DayParts], costs: Mapping[date, Decimal] | None = None
+) -> dict[str, Any] | None:
     if not parts:
         return None
     b = fa.bridge(parts)
     start, end, flows, currency = _q(b.start), _q(b.end), _q(b.flows), _q(b.currency)
+    _reval, waiting, cost = carry_split(parts, costs or {})
+    # Each line rounds on its own; the revaluation takes the remainder so the
+    # displayed lines always add up to the displayed currency part.
+    waiting_q, cost_q = _q(waiting), _q(cost)
     return {
         "start_on": b.start_on.isoformat(),
         "end_on": b.end_on.isoformat(),
@@ -945,6 +985,9 @@ def _bridge(parts: Sequence[fa.DayParts]) -> dict[str, Any] | None:
         "deposits": dec(flows),
         "market": dec(end - start - flows - currency),
         "currency": dec(currency),
+        "revaluation": dec(currency - waiting_q - cost_q),
+        "waiting": dec(waiting_q),
+        "conversion_cost": dec(cost_q),
         "end": dec(end),
     }
 
@@ -993,6 +1036,41 @@ def _day_split_effect(payload: Mapping[str, Any]) -> tuple[Decimal, Decimal] | N
     return currency, market
 
 
+def _as_of(payload: Mapping[str, Any]) -> date | None:
+    raw = payload.get("kpis", {}).get("daily_growth_as_of")
+    return date.fromisoformat(str(raw)[:10]) if raw else None
+
+
+def live_part(life: Lifetime | None, payload: Mapping[str, Any]) -> fa.DayParts | None:
+    """Today's live move (the Overview's day split) as one more day part.
+
+    ``None`` when the day it describes is already settled (in ``life``) or unknown.
+    The same split the strip and the Overview show, so "today" is one figure.
+    """
+    day = _day_split_effect(payload)
+    on = _as_of(payload)
+    if day is None or on is None or life is None or not life.parts:
+        return None
+    last = life.parts[-1]
+    if on <= last.on:
+        return None
+    currency, market = day
+    with fa.exact_context():
+        end = last.end + market + currency
+    return fa.DayParts(
+        prev_on=last.on, on=on, start=last.end, end=end, flow=ZERO, market=market, currency=currency
+    )
+
+
+def with_today(ret: Decimal | None, day: Decimal | None) -> Decimal | None:
+    """A settled chain extended by today's live growth (``(1 + r)(1 + d) - 1``)."""
+    if ret is None:
+        return day
+    if day is None:
+        return ret
+    return (ONE + ret) * (ONE + day) - ONE
+
+
 def _one_side(  # noqa: PLR0912, PLR0915
     session: Session,
     ccy: str,
@@ -1005,11 +1083,22 @@ def _one_side(  # noqa: PLR0912, PLR0915
     payload: Mapping[str, Any],
     recorded: Mapping[date, tuple[Decimal, Decimal]],
     first: date | None,
+    costs: Mapping[date, Decimal] | None = None,
 ) -> dict[str, Any]:
     life = lives.get(ccy)
-    after, through = range_window(range_key, today)
+    costs = costs if ccy == "EUR" else None
+    window = currency_range.resolve(range_key, today, first_ledger_date(session))
+    after, through = range_window(range_key, today, window.first)
     idx = life.window(after, through) if life is not None else []
     parts = [life.parts[i] for i in idx] if life is not None else []
+    # One meaning per range: a range that ends now includes today's live move, so the
+    # headline, bridge, months and records all describe the same days (7.3.1).
+    live = live_part(life, payload) if window.live else None
+    if live is not None:
+        parts = [*parts, live]
+    elif range_key == "1d" and life is not None and life.parts:
+        # Nothing moved since the last close (a weekend): 1D is the last session.
+        parts = [life.parts[-1]]
     eur_ret, usd_ret, basis = returns
     effect_pp = eur_ret - usd_ret if eur_ret is not None and usd_ret is not None else None
 
@@ -1020,10 +1109,6 @@ def _one_side(  # noqa: PLR0912, PLR0915
         effect = market = ZERO
     cur = payload["currency"]
     today_block = cur["today"]
-    if range_key == "1d":
-        day = _day_split_effect(payload)
-        if day is not None:
-            effect, market = day
     # Did the rate move this side's book at all? (The USD view of an all-dollar book:
     # never.) Then the money figures are all zero and the gap leads instead.
     moved = _q(effect) != 0 or any(p.currency != 0 for p in parts)
@@ -1035,13 +1120,17 @@ def _one_side(  # noqa: PLR0912, PLR0915
         "effect": _m(effect),
         "market": _m(market),
         "currency_share": _f(currency_share(market, effect)) if moved else None,
-        "kind": kind_of(effect) if lead == "effect" else kind_of(effect_pp or ZERO),
+        "kind": headline_kind(effect, effect_pp)
+        if lead == "effect"
+        else kind_of(effect_pp or ZERO, fraction=True),
         "lead": lead,
         "return_basis": basis,
         "note": mismatch_note(effect, effect_pp) if lead == "effect" else None,
         # Filled by :func:`build_effect_both` from the other side (lead ``gap`` only).
         "other_effect": None,
         "other_ccy": None,
+        "other_lens": None,
+        "lens_note": None,
     }
     # The USD view reads the currency the way you invest: your euros becoming dollars.
     investing = (
@@ -1050,7 +1139,26 @@ def _one_side(  # noqa: PLR0912, PLR0915
         else None
     )
     if investing is not None:
-        headline |= {"lead": "deposits", "kind": investing["kind"], "note": None}
+        # Two lenses on one rate move (7.3.1): the dollar view reads your euros
+        # becoming dollars; the euro-vs-dollar return gap is the euro lens, shown as
+        # a labelled line of its own so the two never read as one contradiction.
+        headline |= {
+            "lead": "deposits",
+            "kind": investing["kind"],
+            "note": None,
+            "other_lens": (
+                {
+                    "label": "Seen from euros",
+                    "value": _f(effect_pp),
+                    "unit": "fraction",
+                    "currency": None,
+                    "kind": kind_of(effect_pp, fraction=True),
+                }
+                if effect_pp is not None
+                else None
+            ),
+            "lens_note": LENS_NOTE,
+        }
 
     if range_key in INTRADAY_RANGES:
         series = intraday_series(
@@ -1184,7 +1292,7 @@ def _one_side(  # noqa: PLR0912, PLR0915
         "granularity": granularity,
         "headline": headline,
         "series": series,
-        "bridge": _bridge(parts),
+        "bridge": _bridge(parts, costs),
         "months": bars(months),
         "years": bars(fa.year_totals(parts)) if moved else [],
         "grid": month_grid(months),
@@ -1193,6 +1301,7 @@ def _one_side(  # noqa: PLR0912, PLR0915
         "run": run,
         "records": records,
         "holdings": holdings,
+        "holdings_note": HOLDINGS_USD_NOTE if ccy == "USD" and not moved else None,
         "session_split": split,
         "buys": buys,
         "stats": stats,
@@ -1202,6 +1311,7 @@ def _one_side(  # noqa: PLR0912, PLR0915
         if missing
         else None,
         "investing": investing,
+        "window": window.to_dict(),
     }
 
 
@@ -1225,12 +1335,13 @@ def build_effect_both(
     now: datetime | None = None,
 ) -> dict[str, dict[str, Any]]:
     """``{"EUR": ..., "USD": ...}`` Impact payloads for ``range_key``."""
-    now = now or datetime.now(UTC)
+    now = now or clock.now()
     today = exchange_today(now)
     lives = {c: _safe_lifetime(session, c) for c in ("EUR", "USD")}
     returns = headline_returns(range_key, today, lives, overview)
     recorded = fx_session_rates_service.session_rates(session)
     first = min(recorded) if recorded else None
+    costs = fx_cost_service.deposit_costs(session)
     out = {
         ccy: _one_side(
             session,
@@ -1243,6 +1354,7 @@ def build_effect_both(
             payload=overview[ccy],
             recorded=recorded,
             first=first,
+            costs=costs,
         )
         for ccy in ("EUR", "USD")
     }
@@ -1284,22 +1396,38 @@ def _gap(lives: Mapping[str, Lifetime | None], after: date, through: date) -> De
     return eur - usd if eur is not None and usd is not None else None
 
 
-def strip_figures(session: Session, ccy: str, *, today: date | None = None) -> StripFigures:
+def strip_figures(
+    session: Session,
+    ccy: str,
+    *,
+    today: date | None = None,
+    overview: Mapping[str, Mapping[str, Any]] | None = None,
+) -> StripFigures:
     """This year's and the lifetime currency effect and return gap for the strip tiles.
 
-    The gaps are the same time-weighted chains as the Impact section's YTD and All.
+    Exactly the Impact section's YTD and All (same days, today's live move included
+    when ``overview`` is given), so the strip and Impact never show two numbers.
     """
     today = today or exchange_today()
     life = _safe_lifetime(session, ccy)
     if life is None or not life.parts:
         return StripFigures(None, None, None)
-    after, through = range_window("ytd", today)
-    ytd = [life.parts[i] for i in life.window(after, through)]
-    year = fa.bridge(ytd).currency if ytd else ZERO
     lives = {c: _safe_lifetime(session, c) for c in ("EUR", "USD")}
-    pp = _gap(lives, after, through)
-    life_pp = _gap(lives, *range_window("all", today))
-    return StripFigures(year, pp, fa.bridge(life.parts).currency, life_pp)
+    first = _first_of(lives)
+    live = live_part(life, overview[ccy]) if overview is not None and ccy in overview else None
+    after, through = range_window("ytd", today, first)
+    ytd = [life.parts[i] for i in life.window(after, through)] + ([live] if live else [])
+    year = fa.bridge(ytd).currency if ytd else ZERO
+    every = [*life.parts, live] if live else life.parts
+    if overview is not None and "EUR" in overview and "USD" in overview:
+        e, u, _ = headline_returns("ytd", today, lives, overview)
+        pp = e - u if e is not None and u is not None else None
+        e, u, _ = headline_returns("all", today, lives, overview)
+        life_pp = e - u if e is not None and u is not None else None
+    else:
+        pp = _gap(lives, after, through)
+        life_pp = _gap(lives, *range_window("all", today, first))
+    return StripFigures(year, pp, fa.bridge(every).currency, life_pp)
 
 
 @cached_read

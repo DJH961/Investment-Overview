@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import { formatTime, formatWeekdayTime, parseInstant } from "../../lib/format";
 import type { OverviewDto } from "../../lib/queries/portfolio";
 import { useTimeZone } from "../../lib/timezone";
+import { Bell } from "lucide-react";
+import { useBlip, useMarketPhase, usePrevious, type MarketPhase } from "./marketPhase";
 import "./MarketClock.scss";
 
 type FreshnessDto = NonNullable<OverviewDto["freshness"]>;
@@ -221,11 +223,14 @@ export function useClockModel(freshness: ClockFreshness | null | undefined, onBo
       if (fire) onBoundary?.();
     }
   }, [target, counting, onBoundary, fire]);
+  const { phase } = useMarketPhase(freshness, false, fixed);
   if (!view || !freshness) return null;
 
-  const rung = view.next === "closing now" || view.next === "opening now";
   const remaining = view.remaining;
-  const parts = remaining != null ? splitCountdown(remaining) : rung ? splitCountdown(0) : null;
+  const bellRang = whichBellRang(freshness, now, phase);
+  const rung = bellRang !== null;
+  // No zero countdown at a bell: a word says it (see the head).
+  const parts = remaining != null ? splitCountdown(remaining) : null;
   const progress = trackProgress(freshness, now);
   const span = trackSpan(freshness);
   // Notches on the full hours of the owner's clock (16:00, 17:00 … for a 15:30 open),
@@ -234,21 +239,83 @@ export function useClockModel(freshness: ClockFreshness | null | undefined, onBo
   if (span && span.end - span.start <= 8 * HOUR)
     for (let t = firstFullHour(span.start, timeZone); t < span.end - 1000; t += HOUR)
       if (t > span.start + 1000) ticks.push((t - span.start) / (span.end - span.start));
-  const bell = open ? "closing" : "opening";
-  const label = rung ? `The ${bell} bell has rung` : `Until the ${bell} bell`;
+  const copy = clockLabel({ open, remaining, bellRang, phase, target: view.target, now, timeZone });
+  const label = copy.long;
   const soon = remaining != null && remaining <= SOON;
   const last = remaining != null && remaining <= MINUTE;
   const at = view.target ? parseInstant(view.target).getTime() : Number.NaN;
   const bellTime =
     Number.isNaN(at) ? null : remaining != null && remaining >= DAY ? formatWeekdayTime(at, timeZone) : formatTime(new Date(at), timeZone);
+  // From the bell until the server's next word: "Closing…" / "Opening", never a stale "Open".
+  const stateWord = phase === "closing" ? "Closing…" : phase === "opening" ? "Opening" : view.state;
   const sentence = [
-    `Market ${view.state.toLowerCase()}.`,
+    phase === "closing" ? "Market closing: the closing prices are being settled." : phase === "opening" ? "Market opening." : `Market ${view.state.toLowerCase()}.`,
     remaining != null && bellTime ? `${open ? "Closes" : "Opens"} at ${bellTime}, in ${spoken(remaining)}.` : view.next ? `${view.next}.` : "",
   ]
     .filter(Boolean)
     .join(" ");
 
-  return { view, open, remaining, parts, progress, span, ticks, rung, label, soon, last, bellTime, sentence, still, now, timeZone };
+  return { view, open, remaining, parts, progress, span, ticks, rung, bellRang, phase, label, short: copy.short, stateWord, soon, last, bellTime, sentence, still, now, timeZone };
+}
+
+/**
+ * Which bell rang in the last few minutes ("close" / "open"), or null. From the clock
+ * (a counted-to bell just passed), from the payload's own last bell (`last_close_at`,
+ * `session_opened_at`: it holds across the refetch that lands right after the bell) or
+ * from the phase (the server said "closing" / "opening").
+ */
+export function whichBellRang(f: ClockFreshness, now: Date, phase: MarketPhase | null): "close" | "open" | null {
+  const t = now.getTime();
+  const within = (iso: string | null | undefined) => {
+    if (!iso) return false;
+    const at = parseInstant(iso).getTime();
+    return !Number.isNaN(at) && t >= at && t - at < JUST_PASSED;
+  };
+  const open = f.market_state === "open";
+  if ((open && within(f.next_close_at)) || (!open && within(f.last_close_at))) return "close";
+  if ((!open && within(f.next_open_at)) || (open && within(f.session_opened_at))) return "open";
+  if (phase === "closing") return within(f.next_close_at) || within(f.last_close_at) ? "close" : null;
+  if (phase === "opening") return within(f.next_open_at) || within(f.session_opened_at) ? "open" : null;
+  return null;
+}
+
+/** Same calendar day in `timeZone`? */
+function dayKey(ms: number, timeZone?: string): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(ms);
+}
+
+/**
+ * The clock's head line, long (wide screens) and short (phones, fits 360 px):
+ * - a bell just rang: "The closing bell has rung" / "Bell! Closing time";
+ * - still settling the close / waiting for the first tick;
+ * - open: "Until the closing bell";
+ * - closed: under an hour "Until the opening bell", the next morning "Opens in 17 h",
+ *   further off (a weekend, a holiday) "See you Mon 15:30" (the owner's zone).
+ */
+export function clockLabel(o: {
+  open: boolean;
+  remaining: number | null;
+  bellRang: "close" | "open" | null;
+  phase: MarketPhase | null;
+  target: string | null;
+  now: Date;
+  timeZone?: string;
+}): { long: string; short: string } {
+  // Once the close is settled the clock reads like any shut market ("Opens in 17 h"), not "Bell! Closing time".
+  if (o.bellRang === "close" && o.phase !== "closed") return { long: "The closing bell has rung", short: "Bell! Closing time" };
+  if (o.bellRang === "open") return { long: "The opening bell has rung", short: "Bell! Market's open" };
+  if (o.phase === "closing") return { long: "Settling the closing prices", short: "Settling the close" };
+  if (o.phase === "opening") return { long: "Waiting for the first prices", short: "First prices soon" };
+  if (o.open) return { long: "Until the closing bell", short: "Until the closing bell" };
+  if (o.remaining == null || o.remaining <= SOON || !o.target) return { long: "Until the opening bell", short: "Until the opening bell" };
+  const at = parseInstant(o.target).getTime();
+  const tomorrow = dayKey(at, o.timeZone) === dayKey(o.now.getTime() + DAY, o.timeZone) || dayKey(at, o.timeZone) === dayKey(o.now.getTime(), o.timeZone);
+  if (tomorrow && o.remaining < DAY) {
+    const text = `Opens in ${Math.floor(o.remaining / HOUR)} h`;
+    return { long: text, short: text };
+  }
+  const text = `See you ${formatWeekdayTime(at, o.timeZone)}`;
+  return { long: text, short: text };
 }
 
 /** The compact "Open for 1h 46m" text (state, then the time until it changes): minutes only, never seconds (the quiet phone chip). */
@@ -267,9 +334,18 @@ export const NEAR_WINDOW = 15 * MINUTE;
 
 export function MarketClock({ freshness, onBoundary, now: fixed, variant = "full", fire = true }: MarketClockProps) {
   const model = useClockModel(freshness, onBoundary, fixed, fire);
+  // The session bar finishes with one light sweep when the closing bell rings.
+  const modelPhase = model?.phase ?? null;
+  const prevPhase = usePrevious(modelPhase);
+  const sweeping = useBlip(modelPhase === "closing" && prevPhase !== "closing", 1800) && !model?.still;
   if (!model) return null;
-  const { view, open, remaining, parts, progress, span, ticks, rung, label, soon, last, bellTime, sentence, still, timeZone } = model;
-  if (variant === "near" && !(parts && (rung || (remaining != null && remaining <= NEAR_WINDOW)))) return null;
+  const { open, remaining, parts, progress, span, ticks, rung, bellRang, phase, label, short, stateWord, soon, last, bellTime, sentence, still, timeZone } =
+    model;
+  // Settling the close / waiting for the first tick: the head says so even without digits.
+  const pending = phase === "closing" || phase === "opening";
+  const worded = Boolean(parts) || pending || rung;
+  const bellWord = parts ? null : phase === "closing" ? "Settling…" : phase === "opening" ? "Opening…" : bellRang === "close" ? "Closed" : bellRang === "open" ? "Open" : null;
+  if (variant === "near" && !(rung || pending || (parts && remaining != null && remaining <= NEAR_WINDOW))) return null;
   return (
     <section
       className={clsx(
@@ -279,9 +355,12 @@ export function MarketClock({ freshness, onBoundary, now: fixed, variant = "full
         last && !still && "market-clock--last",
         !parts && "market-clock--bare",
         parts && parts.days > 0 && "market-clock--days",
+        rung && !still && "market-clock--ring",
+        pending && "market-clock--pending",
         variant !== "full" && `market-clock--${variant}`,
       )}
       data-testid="market-clock"
+      data-phase={phase ?? undefined}
       aria-label="Market clock"
     >
       <p className="market-clock__sr" aria-live="off">
@@ -289,8 +368,22 @@ export function MarketClock({ freshness, onBoundary, now: fixed, variant = "full
       </p>
       <div className="market-clock__visual" aria-hidden>
         <div className="market-clock__head">
-          <span className="market-clock__label">{parts ? label : view.state}</span>
-          <span className="market-clock__state">{parts ? view.state : null}</span>
+          <span className="market-clock__label">
+            <span className={clsx("market-clock__bell", bellRang && "market-clock__bell--rang")} data-testid="market-clock-bell">
+              <Bell className="market-clock__bell-icon" aria-hidden />
+            </span>
+            {!worded ? (
+              <span className="market-clock__label-text">{stateWord}</span>
+            ) : short !== label ? (
+              <>
+                <span className="market-clock__label-text market-clock__label-text--long">{label}</span>
+                <span className="market-clock__label-text market-clock__label-text--short">{short}</span>
+              </>
+            ) : (
+              <span className="market-clock__label-text">{label}</span>
+            )}
+          </span>
+          <span className="market-clock__state">{worded ? stateWord : null}</span>
         </div>
         {parts && (
           <div className="market-clock__digits" data-testid="market-clock-digits">
@@ -305,7 +398,26 @@ export function MarketClock({ freshness, onBoundary, now: fixed, variant = "full
             <span className="market-clock__time">{parts.clock}</span>
           </div>
         )}
-{progress != null && span && (          <div className="market-clock__bar" data-testid="market-clock-track">            <div className="market-clock__track">              <span className="market-clock__fill" style={{ width: `${(progress * 100).toFixed(2)}%` }} />              {ticks.map((t) => (                <span key={t} className="market-clock__tick" style={{ left: `${(t * 100).toFixed(3)}%` }} />              ))}            </div>            <div className="market-clock__ends">              <span>{open ? formatTime(new Date(span.start), timeZone) : "Last close"}</span>              <span>{bellTime}</span>            </div>          </div>        )}
+        {bellWord && (
+          <div className="market-clock__digits market-clock__digits--word" data-testid="market-clock-word">
+            <span className="market-clock__time">{bellWord}</span>
+          </div>
+        )}
+        {progress != null && span && (
+          <div className="market-clock__bar" data-testid="market-clock-track">
+            <div className="market-clock__track">
+              <span className="market-clock__fill" style={{ width: `${(progress * 100).toFixed(2)}%` }} />
+              {sweeping && <span className="market-clock__sweep" data-testid="market-clock-sweep" />}
+              {ticks.map((t) => (
+                <span key={t} className="market-clock__tick" style={{ left: `${(t * 100).toFixed(3)}%` }} />
+              ))}
+            </div>
+            <div className="market-clock__ends">
+              <span>{open ? formatTime(new Date(span.start), timeZone) : "Last close"}</span>{" "}
+              <span>{bellTime}</span>
+            </div>
+          </div>
+        )}
       </div>
     </section>
   );

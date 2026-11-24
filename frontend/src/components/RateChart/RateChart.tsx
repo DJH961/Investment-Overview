@@ -1,6 +1,7 @@
 import clsx from "clsx";
-import { ArrowDownRight, ArrowUpRight, Eye, EyeOff, Minus, MoveRight, TrendingDown, TrendingUp } from "lucide-react";
-import { useMemo, type ReactNode } from "react";
+import { ArrowDownRight, ArrowUpRight, Eye, EyeOff, Minus, Moon, MoveRight, Sunrise, TrendingDown, TrendingUp } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { forexReopen, useFxMoment } from "./fxWeekend";
 import { Card } from "../Card";
 import { Chart, type ChartMarker, type ChartSeries } from "../Chart";
 import { InfoTip } from "../InfoTip";
@@ -13,8 +14,10 @@ import {
   formatPercent,
   formatShortDay,
   formatTime,
+  formatWeekdayTime,
 } from "../../lib/format";
 import { toNum } from "../../lib/queries/portfolio";
+import { contextUntilMs, windowText } from "../../pages/Currency/numbers";
 import {
   RATE_RANGE_LABELS,
   RATE_RANGES,
@@ -246,7 +249,18 @@ export function RateChart({
   const series = useMemo<ChartSeries[]>(() => {
     if (!data) return [];
     const toPts = (pts: RatePointDto[]) => pts.map((p) => ({ t: p.t, v: pick(p, lens) }));
-    const out: ChartSeries[] = [{ id: "rate", label: pair, points: toPts(data.points ?? []), tone: "primary" }];
+    const all = data.points ?? [];
+    // Max: the part before you started is context, drawn muted and dashed; the line
+    // you lived through (and every figure) starts after it.
+    const ctx = contextUntilMs(data.window);
+    const firstOwn = ctx === null ? -1 : all.findIndex((p) => Date.parse(p.t) > ctx);
+    const out: ChartSeries[] = [];
+    if (ctx !== null && firstOwn > 1) {
+      out.push({ id: "rate-before", label: "Before you started", points: toPts(all.slice(0, firstOwn)), tone: "invested" });
+      out.push({ id: "rate", label: pair, points: toPts(all.slice(firstOwn - 1)), tone: "primary" });
+    } else {
+      out.push({ id: "rate", label: pair, points: toPts(all), tone: "primary" });
+    }
     if (data.ma200?.length) out.push({ id: "ma200", label: "200-day average", points: toPts(data.ma200), tone: "benchmark" });
     return out;
   }, [data, lens, pair]);
@@ -259,7 +273,16 @@ export function RateChart({
   const pts = data?.points ?? [];
   const last = pts.length ? pick(pts[pts.length - 1], lens) : null;
   const change = toNum(lens === "rate" ? data?.change?.rate_pct : data?.change?.inverse_pct);
-  const rangeLabel = shown === "max" ? "since 1999" : shown === "all" ? "since you started" : RATE_RANGE_LABELS[shown];
+  // Max says where the drawn line really starts (a thin history starts later than the window).
+  const firstDrawn = pts.length ? pts[0].t.slice(0, 10) : null;
+  const sinceDrawn = firstDrawn
+    ? new Date(`${firstDrawn}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" })
+    : "1999";
+  const rangeLabel = shown === "max" ? `since ${sinceDrawn}` : shown === "all" ? "since you started" : RATE_RANGE_LABELS[shown];
+  const windowLine = windowText(
+    data?.window && shown === "max" && firstDrawn && firstDrawn > data.window.start ? { ...data.window, start: firstDrawn } : data?.window,
+    shown,
+  );
   const long = shown === "1y" || shown === "all" || shown === "5y" || shown === "10y" || shown === "max";
   const sessions = useMemo(
     () => (shown === "1w" ? (data?.sessions ?? []).map((s) => ({ date: s.close.slice(0, 10), open: s.open, close: s.close })) : []),
@@ -271,6 +294,24 @@ export function RateChart({
     [data, shown],
   );
 
+  // The FX week: Friday's close settles the line (moon, a calm end cap); Sunday's reopen
+  // says so (sunrise), and the first new tick after it draws in with a short line-grow.
+  const { moment: fx, at: fxAt } = useFxMoment();
+  const lastT = pts.length ? pts[pts.length - 1].t : null;
+  const [grownFrom, setGrownFrom] = useState<string | null>(null);
+  const [prevLastT, setPrevLastT] = useState<string | null>(lastT);
+  if (lastT !== prevLastT) {
+    // A new point landed (not the first load): grow it in while FX is just back.
+    if (prevLastT !== null && lastT !== null && fx === "back") setGrownFrom(lastT);
+    setPrevLastT(lastT);
+  }
+  useEffect(() => {
+    if (!grownFrom) return;
+    const id = window.setTimeout(() => setGrownFrom(null), 900);
+    return () => window.clearTimeout(id);
+  }, [grownFrom]);
+  const reopenAt = fx === "weekend" ? formatWeekdayTime(forexReopen(fxAt), timeZone) : null;
+
   const timeFormat = (t: number) =>
     shown === "1d" ? formatTime(new Date(t), timeZone) : shown === "1w" ? formatShortDay(t, timeZone) : formatAxisDate(t, long ? Infinity : 0);
   const tooltipTimeFormat = (t: number) =>
@@ -280,7 +321,7 @@ export function RateChart({
 
   return (
     <Card
-      className={clsx("rate-chart", className)}
+      className={clsx("rate-chart", fx === "weekend" && "rate-chart--fx-weekend", grownFrom && "rate-chart--fx-grow", className)}
       title={
         <span className="rate-chart__title">
           {pair}
@@ -302,12 +343,35 @@ export function RateChart({
             {pct(change)} {shown === "max" || shown === "all" ? rangeLabel : `in ${rangeLabel}`}
           </span>
         ) : null}
+        {fx === "weekend" ? (
+          <span
+            className="rate-chart__fx rate-chart__fx--weekend"
+            data-testid="rate-fx-state"
+            title={reopenAt ? `Spot FX is closed from Friday 17:00 to Sunday 17:00 New York time. Back ${reopenAt}.` : undefined}
+          >
+            <Moon aria-hidden className="rate-chart__fx-icon" />
+            FX market&apos;s off for the weekend
+          </span>
+        ) : fx === "back" ? (
+          <span className="rate-chart__fx rate-chart__fx--back" data-testid="rate-fx-state">
+            <Sunrise aria-hidden className="rate-chart__fx-icon" />
+            FX is back
+          </span>
+        ) : null}
       </p>
+      {windowLine ? (
+        <p className="rate-chart__window" data-testid="rate-window">
+          {windowLine}
+        </p>
+      ) : null}
       <Chart
         series={series}
         // Labelled in the legend, not on the plot, where it would cross the line.
         // Far from a short range's line it becomes an edge marker, so the line keeps its scale.
         referenceLine={avg !== null ? { value: avg, softBounds: true } : undefined}
+        // The weekend's calm end cap on the 1D line: a hollow ring just past Friday's last
+        // rate (the chip above says it in words; a label here would cross the line).
+        nowMarker={fx === "weekend" && shown === "1d" && last !== null ? { v: last } : undefined}
         markers={marks.length ? marks : undefined}
         legendExtra={
           avg !== null || allMarks.length || shade.length ? (

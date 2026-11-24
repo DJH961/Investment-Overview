@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { ChevronDown, Inbox, Search } from "lucide-react";
+import { ChevronDown, Clock, Hourglass, Inbox, Search } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
@@ -8,7 +8,7 @@ import { Card } from "../../components/Card";
 import { type Column, DataTable } from "../../components/DataTable";
 import { hasSplit, HoldingDaySplit } from "../../components/DaySplit";
 import { EmptyState } from "../../components/EmptyState";
-import { foldStamps, formatStamp, holdingMarks, PriceStamps, PriceTick } from "../../components/Freshness";
+import { foldStamps, formatStamp, holdingMarks, PriceStamps, PriceTick, useScreenPhase } from "../../components/Freshness";
 import { ErrorState } from "../../components/ErrorState";
 import { HoldingIdentity } from "../../components/HoldingIdentity";
 import { HoldingPeek } from "../../components/HoldingPeek";
@@ -126,13 +126,15 @@ export function Holdings() {
   const status = query.isPending ? "loading" : query.isError ? "stale" : "closed";
   const timeZone = useTimeZone();
   // The price time is said once (page header + top bar); a row says its own only when it differs.
-  const stamps = useMemo(() => foldStamps(data?.holdings ?? [], { timeZone }), [data, timeZone]);
+  const day = useScreenPhase();
+  const trading = day.live;
+  const stamps = useMemo(() => foldStamps(data?.holdings ?? [], { timeZone, trading }), [data, timeZone, trading]);
   const priceText = stamps.price;
   const marks = useMemo(() => holdingMarks(data?.holdings ?? [], { timeZone }), [data, timeZone]);
   const label = data ? `Prices as of ${priceText ?? formatDate(data.as_of)}` : query.isPending ? "Loading" : "Offline";
   const shortText = useMemo(
-    () => foldStamps(data?.holdings ?? [], { timeZone, weekdays: true }).price,
-    [data, timeZone],
+    () => foldStamps(data?.holdings ?? [], { timeZone, weekdays: true, trading }).price,
+    [data, timeZone, trading],
   );
   const short = data ? (shortText ?? formatAxisDate(Date.parse(data.as_of), 0)) : undefined;
   const updated = stamps.updated ? `Updated ${formatStamp(stamps.updated, { timeZone })}` : undefined;
@@ -205,7 +207,7 @@ export function Holdings() {
               <HoldingIdentity
                 row={r}
                 nameLines={1}
-                live={r.market_open && marks.staleMove(r) === null}
+                live={r.market_open && day.live && marks.staleMove(r) === null}
                 className="holdings-page__holding"
               />
             </span>
@@ -353,7 +355,7 @@ export function Holdings() {
       },
       {
         key: "today",
-        header: "Day",
+        header: day.label,
         group: "Period",
         align: "right",
         sortValue: (r) => toNum(r.today_pct),
@@ -406,7 +408,7 @@ export function Holdings() {
         cell: (r) => <Percent ratio={toNum(r.ytd_growth)} signed colored />,
       },
     ],
-    [currency, maxWeight, stamps, marks, peekId, queryClient],
+    [currency, maxWeight, stamps, marks, peekId, queryClient, day.label, day.live],
   );
 
   if (query.isError && !data) {
@@ -458,6 +460,7 @@ export function Holdings() {
           ccy={currency}
           stamp={stamps.rowPrice(r)}
           tick={marks.tick(r)}
+          liveDot={day.live}
           staleMove={marks.staleMove(r)}
         />
       ))}
@@ -474,6 +477,12 @@ export function Holdings() {
       {!isDesktop && <LookupSearch className="holdings-page__lookup" />}
 
       <HoldingsKpis data={data} currency={currency} />
+      {day.caption && (
+        <p className="holdings-page__phase" data-testid="holdings-phase" data-phase={day.phase ?? undefined}>
+          {day.phase === "closing" || day.phase === "opening" ? <Hourglass aria-hidden size={14} className="holdings-page__phase-icon" /> : <Clock aria-hidden size={14} className="holdings-page__phase-icon" />}
+          {day.caption}
+        </p>
+      )}
       <FlagNotice rows={data?.holdings ?? []} />
 
       <div className="holdings-page__bar">

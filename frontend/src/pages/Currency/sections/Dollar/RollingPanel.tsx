@@ -4,6 +4,7 @@ import { InfoTip } from "../../../../components/InfoTip";
 import { formatDate } from "../../../../lib/format";
 import type { DollarDto, RollingSeriesDto } from "../../../../lib/queries/currencyDollar";
 import { toNum } from "../../../../lib/queries/portfolio";
+import { contextUntilMs } from "../../numbers";
 import { pct } from "./quote";
 
 const WINDOW_LABEL = {
@@ -19,7 +20,7 @@ const H = 88;
  * shaded band is ±the 80th percentile of every move of that length since 1999, the
  * dashed line zero. Plain presentation of the server's series (the view's quote).
  */
-function RollingMini({ s, word, euro }: { s: RollingSeriesDto; word: string | null; euro: boolean }) {
+function RollingMini({ s, word, euro, ctx }: { s: RollingSeriesDto; word: string | null; euro: boolean; ctx: number | null }) {
   const pts = (s.points ?? [])
     .map((p) => ({
       t: Date.parse(p.t),
@@ -37,7 +38,16 @@ function RollingMini({ s, word, euro }: { s: RollingSeriesDto; word: string | nu
   const t1 = pts[pts.length - 1].t;
   const x = (t: number) => ((t - t0) / (t1 - t0 || 1)) * W;
   const y = (v: number) => H / 2 - (v / extent) * (H / 2 - 3);
-  const d = pts.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
+  const path = (list: { t: number; v: number }[]) =>
+    list.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
+  // Max: the days before you started are the rate's context, drawn muted and dashed.
+  const before = ctx === null ? [] : pts.filter((p) => p.t <= ctx);
+  const mine = ctx === null ? pts : pts.filter((p) => p.t > ctx);
+  // The context line runs up to the first own point, so the two join without a gap.
+  const ctxLine = before.length && mine.length ? [...before, mine[0]] : before;
+  const d = path(mine.length >= 2 ? mine : pts);
+  const dCtx = mine.length >= 2 && ctxLine.length >= 2 ? path(ctxLine) : null;
+  const ctxEnd = dCtx ? x(ctxLine[ctxLine.length - 1].t) : 0;
   const last = pts[pts.length - 1].v;
   const outside = limit > 0 && Math.abs(last) > limit;
   const insideShare = limit > 0 ? vals.filter((v) => Math.abs(v) <= limit).length / vals.length : null;
@@ -63,6 +73,12 @@ function RollingMini({ s, word, euro }: { s: RollingSeriesDto; word: string | nu
             </>
           ) : null}
           <line className="dollar-rolling__zero" x1={0} x2={W} y1={y(0)} y2={y(0)} />
+          {dCtx ? (
+            <>
+              <rect className="dollar-rolling__before" x={0} width={ctxEnd} y={0} height={H} />
+              <path className="dollar-rolling__line dollar-rolling__line--context" d={dCtx} />
+            </>
+          ) : null}
           <path className="dollar-rolling__line" d={d} />
         </svg>
         {/* The end dot in HTML: the stretched SVG would draw it as an ellipse. */}
@@ -76,7 +92,10 @@ function RollingMini({ s, word, euro }: { s: RollingSeriesDto; word: string | nu
         />
       </div>
       <p className="dollar-rolling__foot">
-        <span>{formatDate(new Date(t0).toISOString().slice(0, 10))}</span>
+        <span>
+          {formatDate(new Date(t0).toISOString().slice(0, 10))}
+          {dCtx ? <span className="dollar-rolling__before-label"> · dashed: before you started</span> : null}
+        </span>
         <span>{formatDate(new Date(t1).toISOString().slice(0, 10))}</span>
       </p>
       <p className="dollar-rolling__normal">
@@ -100,6 +119,17 @@ export function RollingPanel({ data }: { data: DollarDto }) {
     return r ? NAMES[r.label] : null;
   };
   const series = (data.rolling ?? []).filter((s) => (s.points ?? []).length > 1);
+  const ctx = contextUntilMs(data.window);
+  if (data.rolling_too_short) {
+    // 1D / 1W: a trailing month or year does not fit inside the range; say so calmly.
+    return (
+      <Card className="dollar-rolling" title="Rolling changes">
+        <p className="dollar-rolling__short" data-state="too-short">
+          Too short a range for trailing changes; pick 1M or longer.
+        </p>
+      </Card>
+    );
+  }
   if (series.length === 0) return null;
   return (
     <Card
@@ -117,7 +147,7 @@ export function RollingPanel({ data }: { data: DollarDto }) {
     >
       <div className="dollar-rolling__grid">
         {series.map((s) => (
-          <RollingMini key={s.window} s={s} word={wordFor(s.window)} euro={euro} />
+          <RollingMini key={s.window} s={s} word={wordFor(s.window)} euro={euro} ctx={ctx} />
         ))}
       </div>
     </Card>

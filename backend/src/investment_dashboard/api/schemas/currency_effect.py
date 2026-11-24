@@ -26,11 +26,14 @@ from pydantic import Field
 
 from investment_dashboard.api.deps import Ccy
 from investment_dashboard.api.schemas.common import ApiModel, DecStr
+from investment_dashboard.api.schemas.currency_rate import RangeWindow
 
 #: ``1d|1w|1m|3m|ytd|1y|3y|5y|10y|all`` or a calendar year (``2025``).
-EFFECT_RANGE_PATTERN = r"^(1d|1w|1m|3m|ytd|1y|3y|5y|10y|all|\d{4})$"
+EFFECT_RANGE_PATTERN = r"^(1d|1w|1m|3m|ytd|1y|3y|5y|10y|all|max|\d{4})$"
 
 EffectKind = Literal["tailwind", "headwind", "neutral"]
+#: The headline word: ``mixed`` when the money figure and the gap in points disagree.
+HeadlineKind = Literal["tailwind", "headwind", "neutral", "mixed"]
 EffectGranularity = Literal["intraday", "daily", "weekly"]
 #: How the headline returns were computed, each currency on its own: ``daily_chain``
 #: = the hardened daily time-weighted chain over the lifetime's days, sliced to the
@@ -68,6 +71,17 @@ EffectStatKey = Literal[
 EffectStatUnit = Literal["rate", "fraction", "money", "count"]
 
 
+class OtherLens(ApiModel):
+    """The same rate move read from the other currency, labelled as such."""
+
+    label: str
+    value: DecStr | None = None
+    #: ``fraction`` (a return gap) or ``money``.
+    unit: Literal["fraction", "money"]
+    currency: Ccy | None = None
+    kind: EffectKind
+
+
 class EffectHeadline(ApiModel):
     """EUR return, USD return, the effect between them and the effect in money."""
 
@@ -87,7 +101,7 @@ class EffectHeadline(ApiModel):
     currency_share: DecStr | None = None
     #: Follows the lead figure: the money effect (``lead == "effect"``) or the gap
     #: (``lead == "gap"``: tailwind = the euro result is the higher one).
-    kind: EffectKind
+    kind: HeadlineKind
     lead: HeadlineLead = "effect"
     return_basis: ReturnBasis
     #: Why the money figure and the gap point different ways, when they do.
@@ -96,6 +110,10 @@ class EffectHeadline(ApiModel):
     #: USD view gets the EUR side's own effect: what the gap is in euros).
     other_effect: DecStr | None = None
     other_ccy: Ccy | None = None
+    #: The other lens on the same rate move (USD view: the euro-vs-dollar gap).
+    other_lens: OtherLens | None = None
+    #: One sentence on how the two views relate (USD view).
+    lens_note: str | None = None
 
 
 class EffectPoint(ApiModel):
@@ -124,7 +142,15 @@ class EffectBridge(ApiModel):
     #: Net external flows (deposits minus withdrawals) at their own dates' rates.
     deposits: DecStr
     market: DecStr
+    #: ``revaluation + waiting + conversion_cost`` exactly (as displayed).
     currency: DecStr
+    #: The book revalued day by day at each day's rate.
+    revaluation: DecStr | None = None
+    #: The rate move on deposited dollars between their conversion and the deposit
+    #: (EUR view; 0 for unmatched deposits and in the USD view).
+    waiting: DecStr | None = None
+    #: Spread and fees of the conversions behind the range's deposits (negative = cost).
+    conversion_cost: DecStr | None = None
     end: DecStr
 
 
@@ -228,7 +254,7 @@ class SessionSplit(ApiModel):
 
 
 class EffectBuys(ApiModel):
-    """ "€1,000 buys $X; yesterday $Y" (``domain/session_fx.fx_buying_power_split``)."""
+    """ "The regular amount buys $X; yesterday $Y" (``domain/session_fx.fx_buying_power_split``)."""
 
     amount_eur: DecStr
     usd_now: DecStr
@@ -272,7 +298,7 @@ class DepositEffectRow(ApiModel):
 
 
 class RateOnly(ApiModel):
-    """EUR 1,000 at the range start's rate and at its end's (the rate alone)."""
+    """The regular EUR amount at the range start's rate and at its end's (the rate alone)."""
 
     amount_eur: DecStr
     start_rate: DecStr
@@ -355,8 +381,12 @@ class CurrencyEffectOut(ApiModel):
     missing_deposit_days: int = 0
     #: One plain sentence about those days for a tip; null when there are none.
     book_note: str | None = None
+    #: USD view of an all-dollar book: why the holdings show no currency effect.
+    holdings_note: str | None = None
     #: USD view only: the investing perspective (null without USD deposits).
     investing: InvestingEffect | None = None
+    #: The range as dates (one meaning for the whole page, 7.3.1).
+    window: RangeWindow | None = None
 
 
 __all__ = [

@@ -60,3 +60,23 @@ after a rate move, which give a small gap of the opposite sign.
 
 For each one: the view (EUR/USD), the range, the two figures that contradict each other, and
 a screenshot.
+
+## 4. Confirmed by the 7.3.1 audit, and how each was fixed
+
+| # | Finding | Fix (7.3.1) |
+| --- | --- | --- |
+| 1 | §1: Impact € total and pp gap pointed opposite ways (matched deposits' rate move + spread landed in market) | `carry` on each attribution day: currency = revaluation + waiting + conversion cost; market back to market; EUR return unchanged (`tests/readmodels/test_deposit_carry.py`) |
+| 2 | USD view headline (deposit effect) sat beside the euro-lens pp gap with the opposite sign | Two labelled lenses: `other_lens` "Seen from euros" with its own kind, `lens_note`; `holdings_note` for an all-dollar book |
+| 3 | 1D mixed today live (headline) with yesterday (bridge, months, dates) and skipped holdings | 1D is today's live day part everywhere; every range that ends now includes today |
+| 4 | 1W chart (5 sessions) vs figures (calendar days) vs Conversions (today−7 inclusive) | One range module (`readmodels/currency_range.py`) for every section |
+| 5 | "Effect today" computed three ways | One source: the Overview day split (strip, Impact 1D) |
+| 6 | Five range→dates implementations; All/Max meant different things per section | `currency_range.resolve`; All = investing window only, Max = whole history (pre-investing part `context_until`) |
+| 7 | Exposure rolling on All started in 1999; on 1D/1W it silently showed a month | All starts at the first transaction; `rolling_too_short` on 1D/1W |
+| 8 | Three different start points for "change over the range" | `currency_range.start_rate`: the close the range starts from (All: first fixing in your window) |
+| 9 | Conversions used + = cost; its axis ticks repeated on short ranges | Costs negative everywhere; real time axis (frontend, phase 2) |
+| 10 | Conversions' range ran on the UTC date, a day ahead after midnight UTC | Exchange clock, like every section (caught by the consistency matrix) |
+| 11 | pp printed with 1 or 2 digits, sometimes unsigned | One rule: signed, 1 digit (frontend, phase 2) |
+
+Guard: `tests/api/test_currency_page_consistency.py` checks, for every range, that each
+section reports the same window, that All never quotes a day before the first
+transaction, that the EUR sign, kind and bridge lines agree, and that the USD lens is labelled.

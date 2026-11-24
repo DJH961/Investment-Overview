@@ -122,6 +122,10 @@ class GraphNowPoint(ApiModel):
             "(same base as the hero's day %); null when it cannot be computed"
         ),
     )
+    funds_estimated: bool = Field(
+        default=False,
+        description="A fund's NAV is pending: the value is on the twin-estimated book",
+    )
 
 
 class GraphRangePref(ApiModel):

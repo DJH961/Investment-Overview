@@ -503,3 +503,76 @@ def test_adjacent_windows_chain_into_the_whole(
     right = ce.window_return(life, cut_day, parts[-1].on) or D(0)
     assert whole is not None
     assert abs((1 + left) * (1 + right) - (1 + whole)) < D("1e-20")
+
+
+# -- the headline word never contradicts the figures beside it ---------------------------
+
+
+def _late_deposit_parts() -> tuple[list[fa.DayParts], list[fa.DayParts]]:
+    """The owner's report in numbers: ten small-book days of a -1 % rate, then one big
+    deposit on a +3 % day. Euro book (rate effect only) and a flat dollar book."""
+    eur: list[fa.DayParts] = []
+    usd: list[fa.DayParts] = []
+    book = D(1000)
+    for i in range(10):
+        end = book * D("0.99")
+        eur.append(
+            fa.DayParts(
+                DAY0 + timedelta(i), DAY0 + timedelta(i + 1), book, end, D(0), D(0), end - book
+            )
+        )
+        usd.append(
+            fa.DayParts(
+                DAY0 + timedelta(i), DAY0 + timedelta(i + 1), D(1000), D(1000), D(0), D(0), D(0)
+            )
+        )
+        book = end
+    deposit = D(100000)
+    end = (book + deposit) * D("1.03")
+    day = (DAY0 + timedelta(10), DAY0 + timedelta(11))
+    eur.append(fa.DayParts(*day, book, end, deposit, D(0), end - book - deposit))
+    usd.append(fa.DayParts(*day, D(1000), D(101000), deposit, D(0), D(0)))
+    return eur, usd
+
+
+def test_golden_late_deposit_money_up_points_down_reads_mixed() -> None:
+    eur, usd = _late_deposit_parts()
+    effect = fa.bridge(eur).currency
+    eur_ret, usd_ret = ce.chained_return(eur), ce.chained_return(usd)
+    assert eur_ret is not None
+    assert usd_ret == 0
+    # Money: -95.62 over the quiet days + 3 027.13 on the deposit day = +2 931.51 (a gain).
+    assert D("2931") < effect < D("2932")
+    # Points: 0.99**10 * (1 + 3 027.13 / 50 904.38) - 1 = about -4.2 pp (a loss).
+    assert D("-0.05") < eur_ret - usd_ret < D("-0.03")
+    assert ce.headline_kind(effect, eur_ret - usd_ret) == "mixed"
+    assert ce.mismatch_note(effect, eur_ret - usd_ret) is not None
+
+
+def test_headline_kind_agreeing_signs_keep_the_money_word() -> None:
+    assert ce.headline_kind(D("500"), D("0.02")) == "tailwind"
+    assert ce.headline_kind(D("-500"), D("-0.02")) == "headwind"
+    assert ce.headline_kind(D("-500"), None) == "headwind"
+    assert ce.headline_kind(D("0"), D("0.02")) == "neutral"
+
+
+@given(
+    effect=st.decimals(min_value=D("-1e6"), max_value=D("1e6"), places=4),
+    pp=st.one_of(st.none(), st.decimals(min_value=D("-1"), max_value=D("1"), places=6)),
+)
+def test_property_headline_word_agrees_with_the_printed_figures(
+    effect: Decimal, pp: Decimal | None
+) -> None:
+    kind = ce.headline_kind(effect, pp)
+    money = effect.quantize(D(1))
+    pts = None if pp is None else (pp * 100).quantize(D("0.1"))
+    if kind == "mixed":
+        assert money != 0
+        assert pts is not None
+        assert pts != 0
+        assert (money > 0) != (pts > 0)
+    else:
+        assert kind == ce.kind_of(effect)
+        # A tailwind / headwind is never shown beside a gap that prints the opposite.
+        if pts is not None and pts != 0 and money != 0:
+            assert (kind == "tailwind") == (pts > 0)

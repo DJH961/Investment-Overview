@@ -257,3 +257,6 @@ audit-export-*.json
 
 # Subagent git worktrees (never committed).
 .claude/worktrees/
+
+# UI review screenshots (AGENTS.md "UI feedback loop"); shared in chat, never committed
+.claude/ui-shots/

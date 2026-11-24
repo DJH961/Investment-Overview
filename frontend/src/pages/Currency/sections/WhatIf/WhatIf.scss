@@ -13,6 +13,10 @@
     @include m.desktop { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
 
+  &__pair--stacked {
+    @include m.desktop { grid-template-columns: minmax(0, 1fr); }
+  }
+
   &__try {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -50,6 +54,12 @@
     justify-content: space-between;
     gap: var(--space-4);
     height: 100%;
+  }
+
+  // Too short a range: intro and the reason sit together at the top, no stretched gap.
+  &__groups--short {
+    justify-content: flex-start;
+    gap: var(--space-2);
   }
 
   &__note { margin: 0; color: var(--color-muted); font-size: var(--font-size-xs); line-height: var(--line-height-base); }

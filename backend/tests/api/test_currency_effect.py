@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from datetime import date, timedelta
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -20,6 +20,9 @@ from investment_dashboard.repositories import fx_repo
 from investment_dashboard.services import fx_service
 
 from ._seed import FIRST_DAY, seed_ledger
+
+if TYPE_CHECKING:
+    from tests.conftest import MarketClock
 
 
 def _history(today: date, existing: set[date]) -> dict[date, Decimal]:
@@ -95,7 +98,12 @@ def test_views_lead_with_what_answers_them(api_client: TestClient, seeded: None,
     eur, usd = body["EUR"]["headline"], body["USD"]["headline"]
     assert eur["lead"] == "effect"
     effect = D(eur["effect"])
-    assert eur["kind"] == ("tailwind" if effect > 0 else "headwind" if effect < 0 else "neutral")
+    if eur["note"] is not None:  # money and gap print opposite signs: say "mixed", not one word
+        assert eur["kind"] == "mixed"
+    else:
+        assert eur["kind"] == (
+            "tailwind" if effect > 0 else "headwind" if effect < 0 else "neutral"
+        )
     assert usd["lead"] == "deposits"
     inv = body["USD"]["investing"]
     assert inv is not None
@@ -161,13 +169,35 @@ def test_strip_tiles_present(api_client: TestClient, seeded: None) -> None:
     assert old["value"] == body["EUR"]["lifetime"]["fx_pnl_eur"]
 
 
-def test_today_equals_day_split(api_client: TestClient, seeded: None) -> None:
+def test_today_equals_day_split(
+    api_client: TestClient, seeded: None, market_clock: MarketClock
+) -> None:
+    market_clock("open")
     body = _get(api_client, "1d")
     overview = api_client.get("/api/overview/both").json()
+    checked = 0
     for ccy in ("EUR", "USD"):
         split = overview[ccy].get("day_split")
         if split is None:
             continue
+        assert not split.get("overnight")
         assert D(body[ccy]["headline"]["effect"]) == D(split["currency_move"]).quantize(
             Decimal("0.000001")
         )
+        checked += 1
+    assert checked
+
+
+def test_overnight_day_split_is_flagged(
+    api_client: TestClient, seeded: None, market_clock: MarketClock
+) -> None:
+    """Overnight the split's currency leg is the move *since the close*, shown beside the
+    total and not added, so 1D (the last session) need not equal it."""
+    market_clock("closed")
+    body = _get(api_client, "1d")
+    overview = api_client.get("/api/overview/both").json()
+    splits = [overview[c].get("day_split") for c in ("EUR", "USD")]
+    splits = [s for s in splits if s is not None]
+    assert splits
+    assert all(s.get("overnight") for s in splits)
+    assert D(body["EUR"]["headline"]["effect"]) is not None

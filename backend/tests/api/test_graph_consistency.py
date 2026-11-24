@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from datetime import date, datetime
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 import pytest
 from fastapi.testclient import TestClient
@@ -21,6 +22,9 @@ from investment_dashboard.domain.market_hours import exchange_today, is_trading_
 from investment_dashboard.services import intraday_snapshots_service
 
 from ._seed import seed_ledger
+
+if TYPE_CHECKING:
+    from tests.conftest import MarketClock
 
 ALL_RANGES = ["1d", "1w", "1m", "3m", "6m", "ytd", "1y", "all"]
 DAILY_RANGES = ["1m", "3m", "6m", "ytd", "1y", "all"]
@@ -81,17 +85,21 @@ def test_daily_ranges_agree_on_shared_dates(api_client: TestClient, seeded: None
 
 @pytest.mark.parametrize("ccy", CCYS)
 def test_intraday_ranges_end_at_the_hero_total(
-    api_client: TestClient, seeded: None, offline_intraday: None, ccy: str
+    api_client: TestClient,
+    seeded: None,
+    offline_intraday: None,
+    market_clock: MarketClock,
+    ccy: str,
 ) -> None:
+    market_clock("open")
     total = Decimal(get_one(api_client, f"/api/overview?ccy={ccy}")["kpis"]["total_value"])
     day, week = _graph(api_client, "1d", ccy), _graph(api_client, "1w", ccy)
     if not day["points"]:
         pytest.skip("no live tip without a priced book")
-    # The live tip is the hero figure. After the close the EUR tip is frozen at
-    # the session-close FX by design (the 1D market-day trajectory must not slide
-    # with overnight FX), so off-hours only the FX-free USD line must match.
-    if ccy == "USD" or day["market_open"]:
-        assert _last(day) == pytest.approx(total, rel=Decimal("1e-9"))
+    # The live tip is the hero figure (pinned open; after the close the EUR tip is
+    # frozen at the session-close FX by design, so only USD would match then).
+    assert day["market_open"]
+    assert _last(day) == pytest.approx(total, rel=Decimal("1e-9"))
     if week["intraday"]:
         assert _last(week) == _last(day)
 

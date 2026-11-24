@@ -110,7 +110,11 @@ def test_daily_and_weekly_ranges(
     assert points
     today = exchange_today()
     start = rate_rm.range_start(rng, today)
-    assert date.fromisoformat(points[0]["t"]) >= start
+    # The line starts at the close the range is measured from: that day's fixing, or
+    # the last one before it when the range starts on a weekend (7.3.1).
+    first_t = date.fromisoformat(points[0]["t"])
+    assert start - timedelta(days=4) <= first_t
+    assert len([p for p in points if date.fromisoformat(p["t"]) < start]) <= 1
     for p in points:
         assert Decimal(p["inverse"]) == (1 / Decimal(p["rate"])).quantize(Decimal("0.000001"))
     if granularity == "weekly":

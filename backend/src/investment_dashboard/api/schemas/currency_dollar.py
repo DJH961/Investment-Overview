@@ -25,6 +25,7 @@ from pydantic import Field
 from investment_dashboard.api.deps import Ccy
 from investment_dashboard.api.schemas.common import ApiModel, DecStr
 from investment_dashboard.api.schemas.currency_rate import (
+    RangeWindow,
     RateChange,
     RateHistoryPoint,
     RatePercentiles,
@@ -89,8 +90,31 @@ class NextEuroPoint(ApiModel):
     usd: DecStr
 
 
+class NextEuroDollarPoint(ApiModel):
+    """One weekly point of the book-lens sparkline: what ``usd_amount`` was worth in euros."""
+
+    t: str
+    eur: DecStr
+
+
+class NextEuroDollar(ApiModel):
+    """The EUR view of the card ("your dollars in euros"): the dollars the regular amount
+    buys today (a native dollar figure) valued in euros at a single rate each."""
+
+    usd_amount: DecStr
+    eur_now: DecStr
+    eur_year_ago: DecStr | None = None
+    year_ago_date: str | None = None
+    #: ``eur_now / eur_year_ago - 1``: the same dollars' value in euros, then to now.
+    change_pct: DecStr | None = None
+    #: Share of days since your first transaction on which these dollars were worth
+    #: fewer euros than now (0..1).
+    better_than_share: DecStr | None = None
+    spark: list[NextEuroDollarPoint] = Field(default_factory=list)
+
+
 class NextEuro(ApiModel):
-    """ "€1,000 buys $X now; $Y a year ago" (a euro notional at one rate each)."""
+    """ "The regular amount buys $X now; $Y a year ago" (a euro notional at one rate each)."""
 
     amount_eur: DecStr
     usd_now: DecStr
@@ -104,6 +128,8 @@ class NextEuro(ApiModel):
     better_than_share: DecStr | None = None
     #: The last year of ``usd_now``-style values, weekly, oldest first.
     spark: list[NextEuroPoint] = Field(default_factory=list)
+    #: The book lens of the same card (the EUR view reads this one).
+    dollar_lens: NextEuroDollar | None = None
 
 
 class DollarRegime(ApiModel):
@@ -300,6 +326,10 @@ class DollarOut(ApiModel):
     trend: DollarTrend = Field(default_factory=DollarTrend)
     rolling: list[RollingSeries] = Field(default_factory=list)
     stats: list[DollarStat] = Field(default_factory=list)
+    #: 1D / 1W: trailing month-plus changes say nothing about so short a range.
+    rolling_too_short: bool = False
+    #: The range as dates (one meaning for the whole page, 7.3.1).
+    window: RangeWindow | None = None
 
 
 # -- GET /currency/scenarios/both ---------------------------------------------
@@ -367,7 +397,7 @@ class StressRow(ApiModel):
 class InvestAmounts(ApiModel):
     """The euros the invest view prices (the USD Scenarios)."""
 
-    #: A round unit: "what does EUR 1,000 buy".
+    #: A round unit: "what does the regular amount buy".
     unit_eur: DecStr
     #: The owner's regular amount (``investing_power.amount_eur``).
     monthly_eur: DecStr
@@ -420,7 +450,7 @@ class ScenariosOut(ApiModel):
     #: ``value`` (EUR view: today's holdings at other rates, a strong dollar is good) or
     #: ``invest`` (USD view: what the euros you send in buy, a strong euro is good).
     perspective: Literal["value", "invest"] = "value"
-    #: ``invest`` only: the euro unit ("what does EUR 1,000 buy") and the regular amount.
+    #: ``invest`` only: the euro unit (the regular amount) and the regular amount (equal today).
     invest: InvestAmounts | None = None
     other_ccy: Ccy = "USD"
     #: The book in ``other_ccy`` at today's rate (the secondary line of the invest view).
@@ -441,6 +471,8 @@ class ScenariosOut(ApiModel):
     sensitivity: Sensitivity | None = None
     cushion: Cushion | None = None
     stats: list[ScenarioStat] = Field(default_factory=list)
+    #: The range as dates (one meaning for the whole page, 7.3.1).
+    window: RangeWindow | None = None
 
 
 __all__ = [

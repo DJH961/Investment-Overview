@@ -22,10 +22,14 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, time, timedelta, tzinfo
 from zoneinfo import ZoneInfo
 
+from investment_dashboard.domain import clock
+
 #: The exchange whose regular session defines "the market is open" for the
 #: dashboard. The portfolio is US-equity heavy, so NYSE/Nasdaq hours are the
 #: relevant clock for intraday vs. settled wording.
 _MARKET_TZ = ZoneInfo("America/New_York")
+#: The exchange time zone (public alias).
+MARKET_TZ = _MARKET_TZ
 
 #: Regular cash session bounds (local exchange time). Half days close at
 #: :data:`_EARLY_CLOSE` instead (see :data:`EARLY_CLOSE_DAYS`).
@@ -276,7 +280,7 @@ def is_us_market_holiday_at(now: datetime | None = None) -> bool:
     exchange time) or timezone-aware (converted to exchange time first).
     """
     if now is None:
-        now = datetime.now(UTC)
+        now = clock.now()
     local = now.astimezone(_MARKET_TZ) if now.tzinfo is not None else now
     return is_us_market_holiday(local.date())
 
@@ -296,7 +300,7 @@ def is_us_trading_day(now: datetime | None = None) -> bool:
     exchange time) or timezone-aware (converted to exchange time first).
     """
     if now is None:
-        now = datetime.now(UTC)
+        now = clock.now()
     local = now.astimezone(_MARKET_TZ) if now.tzinfo is not None else now
     return is_trading_day(local.date())
 
@@ -312,7 +316,7 @@ def is_us_market_open(now: datetime | None = None) -> bool:
     half day, :func:`session_close`).
     """
     if now is None:
-        now = datetime.now(UTC)
+        now = clock.now()
     local = now.astimezone(_MARKET_TZ) if now.tzinfo is not None else now
     if local.weekday() >= _SATURDAY:
         return False
@@ -335,7 +339,7 @@ def latest_settled_session_date(now: datetime | None = None) -> date:
     as exchange time) or timezone-aware (converted to exchange time first).
     """
     if now is None:
-        now = datetime.now(UTC)
+        now = clock.now()
     local = now.astimezone(_MARKET_TZ) if now.tzinfo is not None else now
     day = local.date()
     settled_today = (
@@ -368,7 +372,7 @@ def exchange_today(now: datetime | None = None) -> date:
     exchange time already) or timezone-aware (converted to exchange time first).
     """
     if now is None:
-        now = datetime.now(UTC)
+        now = clock.now()
     local = now.astimezone(_MARKET_TZ) if now.tzinfo is not None else now
     return local.date()
 
@@ -455,7 +459,7 @@ def is_forex_market_open(now: datetime | None = None) -> bool:
     exchange time, aware ones are converted to it first.
     """
     if now is None:
-        now = datetime.now(UTC)
+        now = clock.now()
     local = now.astimezone(_MARKET_TZ) if now.tzinfo is not None else now
     weekday = local.weekday()
     if weekday == _SATURDAY:
@@ -479,7 +483,7 @@ def forex_market_reopen(now: datetime | None = None, *, tz: tzinfo | None = None
     caption reads on the user's own clock); otherwise it stays in exchange time.
     """
     if now is None:
-        now = datetime.now(UTC)
+        now = clock.now()
     local = now.astimezone(_MARKET_TZ) if now.tzinfo is not None else now
     day = local.date()
     while day.weekday() != _SUNDAY:
@@ -505,7 +509,7 @@ def last_forex_reopen(now: datetime | None = None) -> datetime:
     instant.
     """
     if now is None:
-        now = datetime.now(UTC)
+        now = clock.now()
     local = now.astimezone(_MARKET_TZ) if now.tzinfo is not None else now
     day = local.date()
     while day.weekday() != _SUNDAY:
@@ -522,7 +526,7 @@ def last_forex_close(now: datetime | None = None) -> datetime:
     exchange-time instant.
     """
     if now is None:
-        now = datetime.now(UTC)
+        now = clock.now()
     local = now.astimezone(_MARKET_TZ) if now.tzinfo is not None else now
     day = local.date()
     while day.weekday() != _FRIDAY:
@@ -604,7 +608,7 @@ def forex_sessions(now: datetime | None = None, count: int = 5) -> list[tuple[da
     are timezone-aware UTC.
     """
     if now is None:
-        now = datetime.now(UTC)
+        now = clock.now()
     local = now.astimezone(_MARKET_TZ) if now.tzinfo is not None else now.replace(tzinfo=_MARKET_TZ)
     day = local.date() + timedelta(
         days=1

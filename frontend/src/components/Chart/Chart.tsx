@@ -801,6 +801,8 @@ export function Chart({
           {yTicks.map((v) => (
             <g key={v}>
               <line className="chart__grid" x1={PAD.left} x2={width - PAD.right} y1={scales.y(v)} y2={scales.y(v)} />
+              {!compact && (
+                <>
               <text
                 className={clsx("chart__axis-label", compact ? "chart__axis-label--inset" : "chart__axis-label--y")}
                 x={compact ? PAD.left + 2 : PAD.left - 8}
@@ -822,6 +824,8 @@ export function Chart({
                 >
                   {rightFmt(v * rightScale, yStep && yStep * rightScale)}
                 </text>
+              )}
+                </>
               )}
             </g>
           ))}
@@ -1066,6 +1070,35 @@ export function Chart({
               ))}
             </g>
           )}
+          {/* Phone: the inset labels sit above the lines (with their card-colour halo),
+              so a line passing through the plot never crosses the figures. */}
+          {compact &&
+            yTicks.map((v) => (
+              <g key={`label-${v}`} className="chart__inset-labels">
+              <text
+                className={clsx("chart__axis-label", compact ? "chart__axis-label--inset" : "chart__axis-label--y")}
+                x={compact ? PAD.left + 2 : PAD.left - 8}
+                y={compact ? scales.y(v) - 4 : scales.y(v)}
+                dy={compact ? undefined : "0.32em"}
+              >
+                {valueFormat(v, yStep)}
+              </text>
+              {showRightAxis && rightFmt && (
+                <text
+                  className={clsx(
+                    "chart__axis-label",
+                    compact ? "chart__axis-label--inset chart__axis-label--inset-end" : "chart__axis-label--right",
+                    `chart__axis-label--${rightSeries?.toneCls ?? "estimate"}`,
+                  )}
+                  x={compact ? width - PAD.right - 2 : width - PAD.right + 8}
+                  y={compact ? scales.y(v) - 4 : scales.y(v)}
+                  dy={compact ? undefined : "0.32em"}
+                >
+                  {rightFmt(v * rightScale, yStep && yStep * rightScale)}
+                </text>
+              )}
+              </g>
+            ))}
         </svg>
         {!compact && cursorX !== null && cursorT !== null && (
           <output

@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import logging
 import math
-from collections.abc import Collection
+from collections.abc import Collection, Mapping, MutableMapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -73,6 +74,11 @@ _FALLBACK_LOOKBACK_DAYS = 10
 #: for a full-portfolio refresh.
 _STATUS_SYMBOL_LIMIT = 12
 
+#: Parallel chart requests for one batch (yfinance's own ``threads=True`` uses a
+#: similar pool). Yahoo serves each symbol's window as its own request, so a
+#: serial batch costs one round trip per symbol; this caps it at a few.
+_FETCH_WORKERS = 8
+
 
 def _format_symbols(symbols: list[str]) -> str:
     """Render a tickers list for a status message (sorted, capped, deduped).
@@ -109,12 +115,20 @@ def fetch_closes(
     downloader: Any = None,
     adjusted: bool = False,
     expected_gaps: Collection[str] = (),
+    market_times: MutableMapping[str, datetime] | None = None,
 ) -> dict[str, dict[date, Decimal]]:
     """Return ``{symbol: {date: close_decimal}}`` for the half-open range.
 
     ``expected_gaps`` names symbols the caller expects may legitimately return
     nothing yet (mutual funds before their NAV posts); an empty answer for them
-    is logged at INFO and never marks the provider status as partial/error.
+    is logged at INFO and never marks the provider status as partial/error, and
+    they skip the wider last-close retry (waiting for a NAV is not a hiccup).
+
+    ``market_times``, when given, is filled with ``{symbol: market_time}`` (naive
+    UTC) from the same chart responses that carry the closes, so the caller does
+    not need a second, per-symbol ``Ticker.info`` round trip for it (see
+    :func:`fetch_market_times`). Only the default (real yfinance) path fills it;
+    an injected ``downloader`` leaves it untouched.
 
     ``end`` follows yfinance's exclusive convention; we pass it through as-is.
     Symbols absent from the result are returned with empty dicts so callers
@@ -144,7 +158,7 @@ def fetch_closes(
     if not symbols:
         return {}
 
-    download = downloader or yf.download
+    download = downloader or _history_downloader(market_times)
 
     try:
         result = _download_window(
@@ -162,7 +176,7 @@ def fetch_closes(
     # retry just those symbols with a wider lookback so the caller always
     # gets the most recent available close instead of nothing. Skip the
     # retry if the original window was already wider than the fallback.
-    missing = [s for s in symbols if not result.get(s)]
+    missing = [s for s in symbols if not result.get(s) and s not in expected_gaps]
     used_fallback = False
     if missing:
         fallback_start = end - timedelta(days=_FALLBACK_LOOKBACK_DAYS)
@@ -219,6 +233,93 @@ def fetch_closes(
     return result
 
 
+def _history_downloader(market_times: MutableMapping[str, datetime] | None) -> Any:
+    """A ``yfinance.download``-compatible callable that also records market times.
+
+    ``yfinance.download`` asks Yahoo's chart endpoint once per symbol and throws
+    the response's ``meta`` away. That ``meta`` carries ``regularMarketTime`` (when
+    the price was struck), which we used to fetch again per symbol through
+    ``Ticker.info``, serially, on every tick. This does the same per-symbol chart
+    requests through ``Ticker.history`` on a small thread pool and keeps the
+    market time from each answer.
+    """
+
+    def download(**kwargs: Any) -> Any:
+        return _history_download(market_times=market_times, **kwargs)
+
+    return download
+
+
+def _history_download(
+    *,
+    tickers: list[str],
+    start: str,
+    end: str,
+    auto_adjust: bool = False,
+    actions: bool = False,
+    interval: str = "1d",
+    market_times: MutableMapping[str, datetime] | None = None,
+    ticker_factory: Any = None,
+    **_ignored: Any,
+) -> Any:
+    """Per-symbol ``Ticker.history`` calls in parallel, assembled like ``yf.download``.
+
+    Returns a ``(symbol, field)`` column ``MultiIndex`` frame (empty when nothing
+    came back). Daily bars are re-indexed to naive exchange-local dates, as
+    ``yf.download`` does for daily intervals, so symbols on different exchanges
+    line up by trading date. A symbol that errors is simply absent, as with
+    ``yf.download``, which never raises for one symbol's failure either.
+    """
+    import pandas as pd  # noqa: PLC0415
+
+    factory = ticker_factory or yf.Ticker
+    symbols = list(dict.fromkeys(tickers))
+
+    def one(symbol: str) -> tuple[Any, datetime | None]:
+        ticker = factory(symbol)
+        frame = ticker.history(
+            start=start,
+            end=end,
+            interval=interval,
+            auto_adjust=auto_adjust,
+            actions=actions,
+            raise_errors=False,
+        )
+        meta = getattr(getattr(ticker, "_price_history", None), "_history_metadata", None)
+        when = (
+            _coerce_market_time(meta.get("regularMarketTime")) if isinstance(meta, dict) else None
+        )
+        return frame, when
+
+    def guarded(symbol: str) -> tuple[Any, datetime | None]:
+        try:
+            return one(symbol)
+        except Exception as exc:  # one bad symbol must not sink the batch
+            log.debug("yfinance chart request failed for %s: %s", symbol, exc)
+            return None, None
+
+    if not symbols:
+        return pd.DataFrame()
+    workers = max(1, min(_FETCH_WORKERS, len(symbols)))
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="yf-chart") as pool:
+        answers = list(pool.map(guarded, symbols))
+
+    parts: dict[str, Any] = {}
+    for symbol, (answer, when) in zip(symbols, answers, strict=True):
+        if when is not None and market_times is not None:
+            market_times[symbol] = when
+        if answer is None or getattr(answer, "empty", True):
+            continue
+        frame = answer
+        if interval[-1] not in ("m", "h") and getattr(frame.index, "tz", None) is not None:
+            frame = frame.copy()
+            frame.index = frame.index.tz_localize(None)
+        parts[symbol] = frame
+    if not parts:
+        return pd.DataFrame()
+    return pd.concat(parts, axis=1)
+
+
 def _download_window(
     download: Any,
     symbols: list[str],
@@ -239,7 +340,7 @@ def _download_window(
                 actions=False,
                 progress=False,
                 group_by="ticker",
-                threads=False,
+                threads=True,
             ),
             attempts=_DOWNLOAD_ATTEMPTS,
             backoff_seconds=_DOWNLOAD_BACKOFF_SECONDS,
@@ -321,7 +422,7 @@ def fetch_splits(
                 actions=True,
                 progress=False,
                 group_by="ticker",
-                threads=False,
+                threads=True,
             ),
             attempts=_DOWNLOAD_ATTEMPTS,
             backoff_seconds=_DOWNLOAD_BACKOFF_SECONDS,
@@ -381,7 +482,7 @@ def fetch_ex_dividend_dates(
                 actions=True,
                 progress=False,
                 group_by="ticker",
-                threads=False,
+                threads=True,
             ),
             attempts=_DOWNLOAD_ATTEMPTS,
             backoff_seconds=_DOWNLOAD_BACKOFF_SECONDS,
@@ -468,7 +569,7 @@ def fetch_intraday_closes_range(
                 actions=False,
                 progress=False,
                 group_by="ticker",
-                threads=False,
+                threads=True,
             ),
             attempts=_DOWNLOAD_ATTEMPTS,
             backoff_seconds=_DOWNLOAD_BACKOFF_SECONDS,
@@ -631,6 +732,7 @@ def _regular_market_time(symbol: str, *, ticker_factory: Any = None) -> datetime
 def fetch_market_times(
     symbols: list[str],
     *,
+    known: Mapping[str, datetime] | None = None,
     quoter: Any = None,
 ) -> dict[str, datetime]:
     """Return ``{symbol: market_time}`` — *when each price is from* (naive UTC).
@@ -640,6 +742,10 @@ def fetch_market_times(
     opposed to *when we pulled it*. For a mutual fund it is the instant the day's
     NAV was published, which is exactly the stamp the user wants to watch for.
 
+    ``known`` holds the times the price download already returned (see
+    ``fetch_closes(market_times=...)``); only the symbols missing from it are
+    asked for one by one through ``Ticker.info``, in parallel.
+
     Best-effort and isolated: any symbol the provider can't time (or that errors)
     is simply absent from the result, so callers transparently fall back to the
     pull time or the modelled regular-session close. ``quoter`` injects a
@@ -647,16 +753,28 @@ def fetch_market_times(
     """
     if not symbols:
         return {}
-    quote = quoter or _regular_market_time
     out: dict[str, datetime] = {}
-    for symbol in symbols:
+    for symbol, when in (known or {}).items():
+        coerced = _coerce_market_time(when)
+        if symbol in symbols and coerced is not None:
+            out[symbol] = coerced
+    rest = [s for s in dict.fromkeys(symbols) if s not in out]
+    if not rest:
+        return out
+    quote = quoter or _regular_market_time
+
+    def one(symbol: str) -> datetime | None:
         try:
-            when = _coerce_market_time(quote(symbol))
+            return _coerce_market_time(quote(symbol))
         except Exception as exc:  # pragma: no cover - network/yfinance churn
             log.debug("market-time fetch failed for %s: %s", symbol, exc)
-            continue
-        if when is not None:
-            out[symbol] = when
+            return None
+
+    workers = max(1, min(_FETCH_WORKERS, len(rest)))
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="yf-info") as pool:
+        for symbol, quoted in zip(rest, pool.map(one, rest), strict=True):
+            if quoted is not None:
+                out[symbol] = quoted
     return out
 
 

@@ -147,6 +147,13 @@
     font-size: var(--font-size-sm);
   }
 
+  // Under the day move while it is not today's live one: "closing" / "last session".
+  &__today-note {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    white-space: nowrap;
+  }
+
   // One line: the account chip gives way (ellipsis, full name in its title), never a wrap.
   &__chips {
     display: flex;

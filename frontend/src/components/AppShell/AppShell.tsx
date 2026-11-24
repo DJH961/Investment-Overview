@@ -80,17 +80,18 @@ export function AppShell() {
   const desktop = useIsDesktop();
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const { freshness: pageFreshness, refreshing: pageRefreshing } = useShell();
+  const { freshness: pageFreshness } = useShell();
   const summary = usePortfolioSummary(currency, PREFETCH_DELAY_MS);
   useTabTitle(currency);
   // The top-bar refresh is always a real server pull (prices, FX, intraday sample).
   const server = useServerRefresh();
   const refresh = server.state;
-  const updateMode = useUpdateMode(pageRefreshing);
+  // Only a server price run is an update; the pages' own background refetches are not.
+  const updateMode = useUpdateMode();
   // One chip for every view (the same server freshness everywhere); a page's own
   // status wins only while that page cannot load its data (offline / failed).
   const globalFreshness = useGlobalFreshness(currency, PREFETCH_DELAY_MS);
-  const loudRefresh = refresh.running && updateMode !== "quiet";
+  const loudRefresh = updateMode === "loud";
   const freshness = loudRefresh
     ? updatingView(refresh)
     : pageFreshness.status !== "stale" && globalFreshness
@@ -109,8 +110,8 @@ export function AppShell() {
   }, [startRefresh, toast]);
   const health = useShellHealth();
   const { hide, toggle: toggleHide } = useHideAmounts();
-  // Quiet updates never disable the button or draw the bar; everything else is as before.
-  const refreshing = (refresh.running || pageRefreshing) && updateMode !== "quiet";
+  // Quiet (automatic) updates never disable the button, spin it or draw the bar.
+  const refreshing = loudRefresh;
   const determinate = refresh.historical && refresh.total > 0;
   const [userRail, setUserRail] = useState(readRail);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -171,6 +172,7 @@ export function AppShell() {
           onRefresh={onRefresh}
           refreshing={refreshing}
           quietUpdating={updateMode === "quiet"}
+          landed={refresh.landed}
           onLogout={logout}
           health={health}
           summary={summary}

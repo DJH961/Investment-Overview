@@ -15,8 +15,21 @@
 > The technical companion, with build notes per push, is
 > [`v7_implementation_notes.md`](v7_implementation_notes.md).
 >
-> **Status (2026-11-23): 7.3.0 is released from `feat/v7.3.0`. Push 7 (7.3, conversions) is
-> done:**
+> **Status (2026-11-25): 7.3.1 is released.** It brings money-maths consistency on the
+> Currency page (deposit carry counted as currency, one range meaning, EUR | USD side by
+> side, an honest "Mixed", your regular amount instead of €1,000), market open and close
+> end to end, and the dev tools (`npm run shots`, fixture URL switches incl. `?at=` and
+> `?fixtures=nice`, `tools.release`, `scripts/test_changed.py`, `market_clock`).
+> **Next: push 8 (7.4, one rate everywhere).** Owner is on a short break; loose ends to
+> pick up with 7.4:
+> - Transactions' EUR column and per-holding EUR cost still use ECB rates (7.4 scope).
+> - One UI sentence on how the Overview currency card relates to Impact (7.4).
+> - Market moments: no exchange holidays or half days in `?at=` yet.
+> - The scheduler, price/FX services and intraday snapshots still read the real clock
+>   (list in the 7.3.1 handover branch history); route them through `clock.now()` when a
+>   test needs it.
+>
+> **7.3.0 (2026-11-23), push 7 (7.3, conversions), done:**
 > - **Conversion costs** and the Currency page's **Conversions** section;
 > - **smart import matching** (P15);
 > - **recurring plans** for conversions, deposits and multi-fund buys, with est. rows, a

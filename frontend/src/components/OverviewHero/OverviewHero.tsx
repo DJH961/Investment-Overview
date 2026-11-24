@@ -6,7 +6,9 @@ import { DeltaBadge } from "../DeltaBadge";
 import { InfoTip } from "../InfoTip";
 import { useFitWidth } from "../KpiTile/useFitWidth";
 import { Money } from "../Money";
-import { MarketChip, MarketClock } from "../MarketClock";
+import { MarketChip, MarketClock, type ClockFreshness } from "../MarketClock";
+import { JUST_CLOSED, useBlip, useMarketPhase, usePrevious } from "../MarketClock/marketPhase";
+import { parseInstant } from "../../lib/format";
 import { useMediaQuery } from "../../lib/useMediaQuery";
 import { Percent } from "../Percent";
 import { Skeleton } from "../Skeleton";
@@ -72,6 +74,32 @@ function moveTip(ccy: string, ccy2: string, closed: boolean, lastSession: boolea
   );
 }
 
+/**
+ * The hero's corner word for the US session, from the bell to the first tick:
+ * "Live" (a dot that pulses once when the open's first tick lands), "Closing…" while the
+ * close is settling, "Closed" for an hour after it, "Opening" until the first tick.
+ * Nothing otherwise (the clock says the rest). A word every time, never colour alone.
+ */
+export function HeroMarketCorner({ freshness, live, now }: { freshness: ClockFreshness | null | undefined; live: boolean; now?: Date }) {
+  const { phase, now: at } = useMarketPhase(freshness, live, now);
+  const prev = usePrevious(phase);
+  const pulse = useBlip(phase === "live" && prev === "opening", 1400);
+  if (!phase || !freshness) return null;
+  const closedAt = freshness.last_close_at ? parseInstant(freshness.last_close_at).getTime() : Number.NaN;
+  const justClosed = phase === "closed" && (prev === "closing" || (at.getTime() >= closedAt && at.getTime() - closedAt < JUST_CLOSED));
+  const word = phase === "live" ? "Live" : phase === "closing" ? "Closing…" : phase === "opening" ? "Opening" : justClosed ? "Closed" : null;
+  if (!word) return null;
+  return (
+    <span
+      className={clsx("overview-hero__corner", `overview-hero__corner--${phase}`, pulse && "overview-hero__corner--pulse")}
+      data-testid="hero-market-corner"
+    >
+      <span className="overview-hero__dot" aria-hidden />
+      {word}
+    </span>
+  );
+}
+
 /** "Today" for today's move, else "Last session · Tue" (days in the Settings timezone). */
 export function dayMoveLabel(asOf: string | null | undefined, opts: StampOptions = {}): string {
   return lastSessionLabel(asOf, opts) ?? "Today";
@@ -114,7 +142,12 @@ export function OverviewHero({ data, currency, loading, now, aside, onClockBound
       </>
     ) : null;
   const side = asideNode ? <div className="overview-hero__aside">{asideNode}</div> : null;
-  const cls = clsx("overview-hero", side && "overview-hero--split", embedded && "overview-hero--embedded");
+  // The first tick after the opening bell: the figures ease in once.
+  const { phase } = useMarketPhase(data?.freshness, data?.daily_caption?.live ?? false, now);
+  const prevPhase = usePrevious(phase);
+  const firstTick = useBlip(phase === "live" && prevPhase === "opening", 1400);
+  const trading = phase === null || phase === "live" || phase === "open";
+  const cls = clsx("overview-hero", side && "overview-hero--split", embedded && "overview-hero--embedded", firstTick && "overview-hero--first-tick");
   if (loading || !data) {
     return (
       <section className={cls} aria-label="Portfolio value">
@@ -189,11 +222,8 @@ export function OverviewHero({ data, currency, loading, now, aside, onClockBound
           </span>
           {phone && f ? (
             <MarketChip freshness={f} live={live} currency={currency} now={now} />
-          ) : live && (
-            <span className="overview-hero__corner overview-hero__corner--live">
-              <span className="overview-hero__dot" aria-hidden />
-              Live
-            </span>
+          ) : (
+            <HeroMarketCorner freshness={f} live={live} now={now} />
           )}
         </div>
         <div className="overview-hero__values" ref={valuesRef}>
@@ -211,10 +241,10 @@ export function OverviewHero({ data, currency, loading, now, aside, onClockBound
             )}
             <PriceStamps
               className="overview-hero__stamps"
-              price={heroPriceTime(data)}
+              price={trading ? heroPriceTime(data) : { ...heroPriceTime(data), marketOpen: false }}
               updated={fetched}
               compact
-              options={opts}
+              options={{ ...opts, weekdays: true }}
             />
           </span>
         </div>

@@ -4,9 +4,10 @@ import { Card } from "../../../../components/Card";
 import { KindTag } from "../../../../components/CurrencySection";
 import { InfoTip } from "../../../../components/InfoTip";
 import { Money } from "../../../../components/Money";
-import { formatDate } from "../../../../lib/format";
+import { formatDate, formatMoney } from "../../../../lib/format";
 import { quoteOf, type DollarDto } from "../../../../lib/queries/currencyDollar";
 import { toNum } from "../../../../lib/queries/portfolio";
+import { euroText, investDigits } from "../../numbers";
 import { leanOf, pct, quoteWords, rateText, share } from "./quote";
 import { SinceStarted } from "./RangeCard";
 
@@ -111,7 +112,7 @@ export function PositionCard({ data }: { data: DollarDto }) {
           visual={<SinceStarted data={data} lean={holdingsLean} />}
           figs={[
             { key: "bought", label: "Bought at", value: rateText(bought, field), note: "your average" },
-            { key: "now", label: "Now", value: rateText(nowRate, field), note: `${pct(today, 2)} today` },
+            { key: "now", label: "Now", value: rateText(nowRate, field), note: `${pct(today)} today` },
             {
               key: "since",
               label: "Since buying",
@@ -152,7 +153,11 @@ function BuyingPower({ data }: { data: DollarDto }) {
       value: rateText(q(pos.avg_rate), field),
       note: "euros into dollars",
     },
-    { key: "now", label: "Now", value: rateText(q(pos.rate_now), field), note: `${pct(today, 2)} today` },
+    { key: "now", label: "Now", value: rateText(q(pos.rate_now), field), note: `${pct(today)} today` },
+    // 1D has no settled change of its own ("Now … today" already says it): no empty tile.
+    ...(overRange === null
+      ? []
+      : [
     {
       key: "range",
       label: "Over this range",
@@ -160,6 +165,7 @@ function BuyingPower({ data }: { data: DollarDto }) {
       value: pct(overRange),
       note: <KindTag kind={leanOf(overRange)} />,
     },
+        ]),
   ];
   if (other !== null && Math.round(other) !== 0) {
     figs.push({
@@ -205,7 +211,20 @@ type Extreme = { t: number; v: number; kind: "best" | "worst" };
  * EUR 1,000 x EUR/USD: linear presentation only) sit on it as small labelled points;
  * when the two are close, their labels lean apart so they never overlap.
  */
-function WeekColumns({ pts, extremes }: { pts: { t: number; v: number }[]; extremes: Extreme[] }) {
+function WeekColumns({
+  pts,
+  extremes,
+  amount,
+  currency = "USD",
+  what,
+}: {
+  pts: { t: number; v: number }[];
+  extremes: Extreme[];
+  amount: number;
+  currency?: "USD" | "EUR";
+  what?: string;
+}) {
+  const dg = investDigits(amount);
   const vs = [...pts.map((p) => p.v), ...extremes.map((e) => e.v)];
   const max = Math.max(...vs);
   const min = Math.min(...vs);
@@ -241,13 +260,13 @@ function WeekColumns({ pts, extremes }: { pts: { t: number; v: number }[]; extre
     <div className="next-cols">
       <p className="next-cols__caption">Each week of the past year</p>
       <div className="next-cols__frame">
-        <ol className="next-cols__plot" aria-label="What 1,000 euros bought each week of the past year">
+        <ol className="next-cols__plot" aria-label={what ?? `What ${euroText(amount)} bought each week of the past year`}>
           {pts.map((p, i) => (
             <li
               key={p.t}
               className={clsx("next-cols__col", i === pts.length - 1 && "next-cols__col--today", i === 0 && "next-cols__col--then")}
               style={{ height: `${h(p.v)}%` }}
-              title={`${formatDate(new Date(p.t).toISOString().slice(0, 10))}: $${Math.round(p.v)}`}
+              title={`${formatDate(new Date(p.t).toISOString().slice(0, 10))}: ${currency === "USD" ? "$" : "€"}${p.v.toFixed(dg)}`}
             />
           ))}
         </ol>
@@ -263,7 +282,7 @@ function WeekColumns({ pts, extremes }: { pts: { t: number; v: number }[]; extre
                 className={clsx("next-cols__point-label", `next-cols__point-label--${anchor(e)}`)}
                 style={{ left: `${e.x}%`, bottom: `${top}%` }}
               >
-                {e.kind === "best" ? "best" : "worst"} <Money amount={e.v} currency="USD" digits={0} />
+                {e.kind === "best" ? "best" : "worst"} <Money amount={e.v} currency={currency} digits={dg} />
               </span>
             </span>
           );
@@ -277,12 +296,94 @@ function WeekColumns({ pts, extremes }: { pts: { t: number; v: number }[]; extre
   );
 }
 
+/**
+ * The EUR view of the same card (the book lens): your dollars valued in euros, mirroring
+ * "Your holdings". The dollar figure is the server's native-dollar notional (what the regular
+ * amount buys today); each euro value is that one figure over a single rate. Same layout as
+ * the dollar view, so switching currency moves nothing.
+ */
+function DollarsInEuros({ next, data }: { next: NextDto; data: DollarDto }) {
+  const lens = next.dollar_lens;
+  if (!lens) return null;
+  const usd = toNum(lens.usd_amount);
+  const now = toNum(lens.eur_now);
+  const ago = toNum(lens.eur_year_ago ?? null);
+  const change = toNum(lens.change_pct ?? null);
+  const better = toNum(lens.better_than_share ?? null);
+  const amount = toNum(next.amount_eur) ?? 100;
+  const dg = investDigits(amount);
+  const pts = (lens.spark ?? [])
+    .map((p) => ({ t: Date.parse(p.t), v: toNum(p.eur) }))
+    .filter((p): p is { t: number; v: number } => p.v !== null && Number.isFinite(p.t));
+  if (now !== null && pts.length) pts.push({ t: pts[pts.length - 1].t + 86_400_000, v: now });
+  // The year's best and worst day for your dollars: the 52-week low and high of EUR/USD
+  // (a low rate = a dollar worth more euros); the same native dollars over one rate each.
+  const w = data.trend?.week52;
+  const extremes: Extreme[] = [];
+  for (const pt of w ? [w.low, w.high] : []) {
+    const rate = toNum(pt.rate);
+    const t = Date.parse(pt.t.length === 10 ? `${pt.t}T12:00:00Z` : pt.t);
+    if (rate !== null && rate > 0 && usd !== null && Number.isFinite(t)) extremes.push({ t, v: usd / rate, kind: "worst" });
+  }
+  if (extremes.length === 2) {
+    extremes.sort((p, q) => p.v - q.v);
+    extremes[1].kind = "best";
+  }
+  return (
+    <Lens
+      next
+      name="Your dollars in euros"
+      hint="a stronger dollar helps"
+      headline={
+        <>
+          <Money amount={usd} currency="USD" digits={dg} /> is worth <Money amount={now} currency="EUR" digits={Number.isInteger(amount) ? 0 : 2} />
+        </>
+      }
+      note="at today's rate"
+      visual={
+        pts.length > 2 ? (
+          <WeekColumns
+            pts={pts}
+            extremes={extremes.length === 2 ? extremes : []}
+            amount={amount}
+            currency="EUR"
+            what={`What ${formatMoney(usd, "USD", { digits: dg })} was worth in euros each week of the past year`}
+          />
+        ) : null
+      }
+      figs={[
+        {
+          key: "ago",
+          label: "A year ago",
+          value: ago !== null ? <Money amount={ago} currency="EUR" digits={dg} /> : "–",
+          note: `for the same ${formatMoney(usd, "USD", { digits: dg })}`,
+        },
+        {
+          key: "change",
+          label: "Change",
+          value: pct(change),
+          note: <KindTag kind={leanOf(change)} />,
+        },
+        {
+          key: "better",
+          label: "Better than",
+          tip: "On how many days since your first transaction these dollars were worth fewer euros than they are today.",
+          value: better !== null ? share(better) : "–",
+          note: "of days since start",
+        },
+      ]}
+    />
+  );
+}
+
 function NextEuro({ next, data }: { next: NextDto; data: DollarDto }) {
+  if (data.ccy === "EUR" && next.dollar_lens) return <DollarsInEuros next={next} data={data} />;
   const now = toNum(next.usd_now);
   const ago = toNum(next.usd_year_ago ?? null);
   const change = toNum(next.change_pct ?? null);
   const better = toNum(next.better_than_share ?? null);
-  const amount = toNum(next.amount_eur) ?? 1000;
+  const amount = toNum(next.amount_eur) ?? 100;
+  const dg = investDigits(amount);
   const pts = (next.spark ?? [])
     .map((p) => ({ t: Date.parse(p.t), v: toNum(p.usd) }))
     .filter((p): p is { t: number; v: number } => p.v !== null && Number.isFinite(p.t));
@@ -306,17 +407,17 @@ function NextEuro({ next, data }: { next: NextDto; data: DollarDto }) {
       hint="a stronger euro helps"
       headline={
         <>
-          <Money amount={toNum(next.amount_eur)} currency="EUR" digits={0} /> buys <Money amount={now} currency="USD" digits={0} />
+          <Money amount={toNum(next.amount_eur)} currency="EUR" digits={Number.isInteger(amount) ? 0 : 2} /> buys <Money amount={now} currency="USD" digits={dg} />
         </>
       }
       note="at today's rate"
-      visual={pts.length > 2 ? <WeekColumns pts={pts} extremes={extremes.length === 2 ? extremes : []} /> : null}
+      visual={pts.length > 2 ? <WeekColumns pts={pts} extremes={extremes.length === 2 ? extremes : []} amount={amount} /> : null}
       figs={[
         {
           key: "ago",
           label: "A year ago",
-          value: ago !== null ? <Money amount={ago} currency="USD" digits={0} /> : "–",
-          note: "for the same €1,000",
+          value: ago !== null ? <Money amount={ago} currency="USD" digits={dg} /> : "–",
+          note: `for the same ${euroText(amount)}`,
         },
         {
           key: "change",

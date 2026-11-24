@@ -1,4 +1,4 @@
-import { formatDate, formatMoney, formatNumber, getFormatPrefs, todayIn } from "../../lib/format";
+import { formatDate, formatMoney, formatNumber, formatPercent, getFormatPrefs, todayIn } from "../../lib/format";
 import type { DepositMatch, DepositStatus, FxConversion } from "../../lib/queries/manage";
 
 /** A deposit may be paid by a conversion dated up to this many days after it (contract). */
@@ -42,10 +42,10 @@ export function weekdayDate(iso: string): string {
 /** The "vs ECB" figure: "−0.56 %" (a plain number, neutral text, no pos/neg color). */
 export function offPctText(offPct: string | null | undefined): string {
   if (offPct === null || offPct === undefined) return "–";
-  const pct = Number(offPct) * 100;
-  if (!Number.isFinite(pct)) return "–";
-  if (Math.abs(pct) < 0.005) return "0.00 %";
-  return `${pct < 0 ? "−" : "+"}${formatNumber(Math.abs(pct), 2)} %`;
+  const ratio = Number(offPct);
+  if (!Number.isFinite(ratio)) return "–";
+  // The app's one percent format (same sign glyph and spacing as every other figure).
+  return formatPercent(ratio, { signed: true, digits: 2 });
 }
 
 /** "0.56 % below ECB" for the phone line; null without a figure. */

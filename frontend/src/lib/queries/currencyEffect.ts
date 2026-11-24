@@ -24,18 +24,15 @@ export type EffectBuysDto = S["EffectBuys"];
 export type EffectStatDto = S["EffectStat"];
 export type EffectBridgeDto = S["EffectBridge"];
 
-/** `1d|1w|1m|3m|ytd|1y|3y|5y|10y|all` or a calendar year. */
-export type EffectRange = string;
+export type RangeWindowDto = S["RangeWindow"];
+export type OtherLensDto = S["OtherLens"];
 
 /**
- * The page range (the rate chart's picker) in the effect endpoint's terms: the same
- * window, except that Max and All (since your first transaction) are your whole time
- * (`all`, the Overview's lifetime returns). A window longer than your history starts at
- * your first transaction; the section says so with the dates the server sends.
+ * `1d|1w|1m|3m|ytd|1y|3y|5y|10y|all|max` or a calendar year: the page range as is
+ * (7.3.1). All is your investing window, Max the whole history with the part before
+ * you started as context (`window.context_until`); the server resolves both.
  */
-export function effectRangeFor(range: RateRange | "all"): EffectRange {
-  return range === "max" || range === "all" ? "all" : range;
-}
+export type EffectRange = RateRange | string;
 
 export const currencyEffectQuery = (range: EffectRange) =>
   queryOptions({
@@ -45,6 +42,11 @@ export const currencyEffectQuery = (range: EffectRange) =>
     placeholderData: keepPreviousData,
     staleTime: 60_000,
   });
+
+/** Both sides of the same cached entry, for panels that set EUR next to USD. */
+export function useCurrencyEffectBoth(range: EffectRange) {
+  return useQuery(currencyEffectQuery(range));
+}
 
 export function useCurrencyEffect(range: EffectRange, ccy: ReportingCurrency) {
   return useQuery({ ...currencyEffectQuery(range), select: (d) => d[ccy] });

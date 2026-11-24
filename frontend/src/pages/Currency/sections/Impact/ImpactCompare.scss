@@ -1,0 +1,80 @@
+.impact-compare {
+  min-width: 0;
+
+  &__title {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  // Two lens tiles side by side, each its own currency; they share one row so the
+  // card is as wide as its content needs, never a figure stranded at the far edge.
+  &__tiles {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-5);
+  }
+
+  &__tile {
+    display: grid;
+    align-content: start;
+    gap: var(--space-1);
+    min-width: 0;
+    // The figure shrinks with its tile (360 px phones, seven-figure books).
+    container-type: inline-size;
+
+    & + & {
+      padding-left: var(--space-5);
+      border-left: var(--border-width) solid var(--color-border);
+    }
+  }
+
+  &__eyebrow,
+  &__figure,
+  &__tag,
+  &__basis {
+    margin: 0;
+  }
+
+  &__eyebrow {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+  }
+
+  &__lens {
+    display: block;
+    font-weight: var(--font-weight-regular);
+  }
+
+  &__figure {
+    font-size: clamp(var(--font-size-md), 14cqi, var(--font-size-2xl));
+    font-weight: var(--font-weight-figure);
+    overflow-wrap: anywhere;
+    font-variant-numeric: tabular-nums;
+    line-height: var(--line-height-tight);
+    letter-spacing: -0.02em;
+  }
+
+  &__tag { font-size: var(--font-size-sm); }
+
+  &__basis {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  &__mixed {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-1) var(--space-3);
+    margin: var(--space-4) 0 0;
+    padding-top: var(--space-3);
+    border-top: var(--border-width) solid var(--color-border);
+    color: var(--color-fg);
+    font-size: var(--font-size-sm);
+    line-height: var(--line-height-base);
+
+    > span:last-child { flex: 1 1 16rem; min-width: 0; }
+  }
+}

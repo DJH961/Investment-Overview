@@ -1,6 +1,6 @@
 import clsx from "clsx";
 import { CircleHelp, HeartPulse, ListChecks, LogOut, Monitor, Moon, RefreshCw, Settings, Sun, TriangleAlert, UserRound } from "lucide-react";
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
 import { restartSetupGuide } from "../../lib/setupGuide";
 import { usePrefs, type ReportingCurrency } from "../../lib/prefs";
@@ -38,10 +38,15 @@ export interface TopBarProps {
   onRefresh: () => void;
   refreshing?: boolean;
   /**
-   * The app is updating by itself (a tick, a scheduled pull): only the refresh icon
-   * spins; the button's accessible name announces the state.
+   * The server is updating by itself (a scheduled pull): the refresh icon stays still
+   * with a soft pulse ring; the button's accessible name announces the state.
    */
   quietUpdating?: boolean;
+  /**
+   * Counts the automatic updates that landed. Each new value turns the icon once and
+   * flips the "Updated" stamp: a short "done" cue (a manual refresh spins instead).
+   */
+  landed?: number;
   onLogout: () => void;
   /** Data-health badge. On phone it only shows when something is wrong. */
   health?: HealthSummary;
@@ -81,6 +86,24 @@ function EstMark() {
   );
 }
 
+/**
+ * True from each new `landed` value until the icon's one-turn animation ends. The value
+ * it mounts with (an earlier session's count) plays nothing.
+ */
+function useLandedTurn(landed: number): { turning: boolean; endTurn: () => void; flips: boolean } {
+  const seen = useRef(landed);
+  const [atMount] = useState(landed);
+  const [turning, setTurning] = useState(false);
+  useEffect(() => {
+    if (landed === seen.current) return;
+    seen.current = landed;
+    setTurning(true);
+  }, [landed]);
+  const endTurn = useCallback(() => setTurning(false), []);
+  // The "Updated" stamp flips on its changes only once an update has landed here.
+  return { turning, endTurn, flips: landed !== atMount };
+}
+
 function summaryLabel(estimated: boolean): string {
   return estimated ? "Portfolio summary, estimated" : "Portfolio summary";
 }
@@ -113,6 +136,7 @@ export function TopBar({
   onRefresh,
   refreshing = false,
   quietUpdating = false,
+  landed = 0,
   onLogout,
   health,
   privacyToggle,
@@ -131,6 +155,7 @@ export function TopBar({
   // The lookup box only fits beside the summary and the actions on desktop; below that it
   // lives in the Holdings page header instead (the tablet top bar must not overflow).
   const isDesktop = useMediaQuery(DESKTOP_QUERY);
+  const { turning, endTurn, flips } = useLandedTurn(landed);
 
   const accountItems: MenuItem[] = [
     ...(compact ? [{ label: `Theme: ${theme}`, icon: <ThemeIcon aria-hidden />, onSelect: cycleTheme }] : []),
@@ -180,7 +205,13 @@ export function TopBar({
         {!compact && freshness.updated && (
           <span className="top-bar__updated" title="When the app last fetched prices">
             <RefreshCw aria-hidden className="top-bar__updated-icon" />
-            {freshness.updated}
+            {/* Re-mounted when the stamp changes after an update landed, so it flips in once. */}
+            <span
+              key={flips ? freshness.updated : "initial"}
+              className={clsx("top-bar__updated-text", flips && "top-bar__updated-text--flip")}
+            >
+              {freshness.updated}
+            </span>
           </span>
         )}
       </div>
@@ -214,10 +245,18 @@ export function TopBar({
       {!compact && isDesktop && <LookupSearch className="top-bar__lookup" />}
       <div className="top-bar__actions">
         {/* First, so it is the quickest action to reach. */}
-        <span className="top-bar__refresh">
+        {/* Manual: spins the whole time. Automatic: a soft pulse ring while it runs, then
+            one turn when it lands. */}
+        <span className={clsx("top-bar__refresh", quietUpdating && !refreshing && "top-bar__refresh--pulse")}>
           <IconButton
             label={quietUpdating && !refreshing ? "Updating prices" : "Refresh data"}
-            icon={<RefreshCw aria-hidden className={clsx((refreshing || quietUpdating) && "top-bar__spin")} />}
+            icon={
+              <RefreshCw
+                aria-hidden
+                className={clsx(refreshing ? "top-bar__spin" : turning && "top-bar__landed")}
+                onAnimationEnd={endTurn}
+              />
+            }
             onClick={onRefresh}
             disabled={refreshing}
             aria-busy={refreshing || quietUpdating || undefined}

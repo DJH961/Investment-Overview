@@ -17,20 +17,20 @@ no portfolio return is involved or converted. All maths is in
 from __future__ import annotations
 
 from bisect import bisect_right
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
 from sqlalchemy.orm import Session
 
-from investment_dashboard.domain import fx_trend
+from investment_dashboard.domain import clock, fx_trend
 from investment_dashboard.domain.fx_scenarios import book_from_holdings, value_at
 from investment_dashboard.domain.late_data import Holding
 from investment_dashboard.domain.market_hours import exchange_today
+from investment_dashboard.readmodels import currency_range
 from investment_dashboard.readmodels._serialize import dec
-from investment_dashboard.readmodels.currency_rate import range_start
 from investment_dashboard.repositories import transactions_repo
-from investment_dashboard.services import fx_service, positions_service
+from investment_dashboard.services import fx_service, investing_power_service, positions_service
 
 QUOTES: dict[str, dict[str, str]] = {
     "EUR": {"pair": "USD/EUR", "field": "inverse"},
@@ -38,7 +38,6 @@ QUOTES: dict[str, dict[str, str]] = {
 }
 ONE = Decimal(1)
 SIX_DP = Decimal("0.000001")
-NEXT_EURO_AMOUNT = Decimal(1000)
 INTRADAY_RANGES = frozenset({"1d", "1w"})
 WEEKLY_RANGES = frozenset({"10y", "max"})
 ROLLING_WINDOWS: tuple[tuple[str, int], ...] = (
@@ -80,15 +79,7 @@ def _change(start: Decimal | None, end: Decimal | None) -> dict[str, Any] | None
     }
 
 
-def _minus_months(day: date, months: int) -> date:
-    total = day.year * 12 + (day.month - 1) - months
-    year, month = divmod(total, 12)
-    for dd in (day.day, 30, 29, 28):
-        try:
-            return date(year, month + 1, dd)
-        except ValueError:
-            continue
-    return date(year, month + 1, 28)  # pragma: no cover - unreachable
+_minus_months = currency_range.minus_months
 
 
 def _on_or_before(daily: list[tuple[date, Decimal]], day: date) -> tuple[date, Decimal] | None:
@@ -148,31 +139,76 @@ def _position(
 
 
 def _next_euro(
-    daily: list[tuple[date, Decimal]], spot: Decimal | None, today: date, first: date | None
+    amount: Decimal,
+    daily: list[tuple[date, Decimal]],
+    spot: Decimal | None,
+    today: date,
+    first: date | None,
 ) -> dict[str, Any] | None:
     if spot is None or spot <= 0:
         return None
-    usd_now = NEXT_EURO_AMOUNT * spot
+    usd_now = amount * spot
     out: dict[str, Any] = {
-        "amount_eur": dec(NEXT_EURO_AMOUNT),
+        "amount_eur": dec(amount),
         "usd_now": dec(usd_now),
         "better_than_share": (
             dec(fx_trend.share_below(daily, spot, first)) if first is not None else None
         ),
     }
     year_ago = today - timedelta(days=365)
-    # "Dollars per €1,000" over the last year, weekly: the sparkline beside the headline.
+    # "Dollars per the regular amount" over the last year, weekly: the sparkline beside the headline.
     out["spark"] = [
-        {"t": d.isoformat(), "usd": dec(NEXT_EURO_AMOUNT * r)}
+        {"t": d.isoformat(), "usd": dec(amount * r)}
         for d, r in _thin_weekly([(d, r) for d, r in daily if d >= year_ago])
     ]
     row = _on_or_before(daily, year_ago)
     if row is not None and daily and daily[0][0] <= year_ago:
-        usd_then = NEXT_EURO_AMOUNT * row[1]
+        usd_then = amount * row[1]
         out |= {
             "usd_year_ago": dec(usd_then),
             "year_ago_date": row[0].isoformat(),
             "change_pct": dec(usd_now / usd_then - ONE),
+        }
+    out["dollar_lens"] = _dollar_lens(usd_now, daily, spot, year_ago, first)
+    return out
+
+
+def _dollar_lens(
+    usd_amount: Decimal,
+    daily: list[tuple[date, Decimal]],
+    spot: Decimal,
+    year_ago: date,
+    first: date | None,
+) -> dict[str, Any]:
+    """The book lens of the same card: a native-dollar notional valued in euros.
+
+    ``usd_amount`` is the dollars the regular euro amount buys today (a native dollar
+    figure, never derived back from euros). Each value is that one dollar amount at one
+    rate (``usd / fx`` at a single instant): today's spot, the settled rate a year ago
+    and each week in between. No return is converted; the change is the ratio of two
+    euro values of the same dollars.
+    """
+    eur_now = usd_amount / spot
+    out: dict[str, Any] = {
+        "usd_amount": dec(usd_amount),
+        "eur_now": dec(eur_now),
+        # Share of days since you started on which these dollars were worth fewer euros
+        # than now (a rate above today's spot).
+        "better_than_share": (
+            dec(fx_trend.share_above(daily, spot, first)) if first is not None else None
+        ),
+        "spark": [
+            {"t": d.isoformat(), "eur": dec(usd_amount / r)}
+            for d, r in _thin_weekly([(d, r) for d, r in daily if d >= year_ago])
+        ],
+    }
+    row = _on_or_before(daily, year_ago)
+    if row is not None and daily and daily[0][0] <= year_ago:
+        eur_then = usd_amount / row[1]
+        out |= {
+            "eur_year_ago": dec(eur_then),
+            "year_ago_date": row[0].isoformat(),
+            "change_pct": dec(eur_now / eur_then - ONE),
         }
     return out
 
@@ -340,9 +376,14 @@ def _rolling(
     range_key: str,
     today: date,
     of: fx_trend.Asset = "dollar",
+    first: date | None = None,
 ) -> list[dict[str, Any]]:
     """Trailing changes and their normal band, in ``of``'s terms (each side its own)."""
-    start = range_start("1m" if range_key in INTRADAY_RANGES else range_key, today)
+    if range_key in INTRADAY_RANGES:
+        # A month-long trailing change says nothing about one day or week: the card
+        # says the range is too short instead of quietly showing a month (7.3.1).
+        return []
+    start = currency_range.resolve(range_key, today, first).start_on
     out: list[dict[str, Any]] = []
     for window, rows in ROLLING_WINDOWS:
         moves = fx_trend.trailing_moves(daily, rows, of=of)
@@ -464,22 +505,17 @@ def _stats(
 def _range_change(
     daily: list[tuple[date, Decimal]], range_key: str, today: date, first: date | None
 ) -> dict[str, Any] | None:
-    """The settled rate from the page range's start to the last settled close."""
-    if range_key == "1d" or not daily:
+    """The settled rate from the range's start rate to the last settled close.
+
+    The same start as the rate chart (:func:`currency_range.start_rate`). 1D has no
+    settled change (it is today's live move, shown by the rate chip).
+    """
+    if range_key == "1d" or not daily or (range_key == "all" and first is None):
         return None
-    if range_key == "1w":
-        start = today - timedelta(days=7)
-    elif range_key == "all":
-        if first is None:
-            return None
-        start = first
-    else:
-        try:
-            start = range_start(range_key, today)
-        except KeyError:
-            return None
-    row = _on_or_before(daily, start) or daily[0]
-    return _change(row[1], daily[-1][1])
+    start = currency_range.start_rate(daily, currency_range.resolve(range_key, today, first))
+    if start is None:
+        return None
+    return _change(start[1], daily[-1][1])
 
 
 def build_dollar_both(
@@ -490,17 +526,18 @@ def build_dollar_both(
     now: datetime | None = None,
 ) -> dict[str, dict[str, Any]]:
     """``{"EUR": DollarOut, "USD": DollarOut}`` payloads (plain dicts)."""
-    now = now or datetime.now(UTC)
+    now = now or clock.now()
     today = exchange_today(now)
     daily = sorted(
         (d, r) for d, r in fx_service.get_settled_rates(session).items() if r > 0 and d <= today
     )
     first = transactions_repo.earliest_transaction_date(session)
+    amount = investing_power_service.get_amount_eur(session)
     on_raw = overview["EUR"].get("kpis", {}).get("daily_growth_as_of")
     on = date.fromisoformat(str(on_raw)[:10]) if on_raw else today
     positions = positions_service.compute_positions(session, as_of=on)
     assets: tuple[fx_trend.Asset, ...] = ("dollar", "euro")
-    rolling = {of: _rolling(daily, range_key, today, of) for of in assets}
+    rolling = {of: _rolling(daily, range_key, today, of, first) for of in assets}
     range_change = _range_change(daily, range_key, today, first)
     out: dict[str, dict[str, Any]] = {}
     # Both sides normally share the spot and the average rate: compute the block once.
@@ -522,9 +559,11 @@ def build_dollar_both(
             "quote": QUOTES[ccy],
             "position": _position(_exposure(positions, spot, ccy), life, today_block)
             | {"range_change": range_change},
-            "next_euro": _next_euro(daily, spot, today, first),
+            "next_euro": _next_euro(amount, daily, spot, today, first),
             "trend": trend,
             "rolling": rolling[of],
+            "rolling_too_short": range_key in INTRADAY_RANGES,
+            "window": currency_range.resolve(range_key, today, first).to_dict(),
             "stats": _stats(ccy, daily, trend, first, avg),
         }
     return out

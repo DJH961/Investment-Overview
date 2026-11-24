@@ -21,6 +21,8 @@ export interface StatStripProps {
   className?: string;
   /** Phone: three narrow columns instead of two (a strip of exactly three figures). */
   phoneColumns?: 2 | 3;
+  /** Six figures: one row of six on desktop, 3 × 2 on tablets, 2 × 3 on phones. */
+  six?: boolean;
 }
 
 /**
@@ -28,15 +30,30 @@ export interface StatStripProps {
  * page's always-visible tile strip). Wraps to two columns on phones, never clips;
  * tiles that have no figure yet are simply left out by the caller.
  */
-export function StatStrip({ items, label, className, phoneColumns = 2 }: StatStripProps) {
+export function StatStrip({ items, label, className, phoneColumns = 2, six = false }: StatStripProps) {
+  // Phones: a short last row stretches across the width instead of leaving an empty
+  // cell (5 figures in 3 columns = 3 + 2 wide; 3 in 2 = 2 + 1 full).
+  const rest = items.length % phoneColumns;
+  const fillFrom = rest === 0 ? items.length : items.length - rest;
+  const fill = rest === 1 ? "full" : "half";
   return (
-    <section className={clsx("stat-strip", phoneColumns === 3 && "stat-strip--phone-3", className)} aria-label={label}>
+    <section
+      className={clsx(
+        "stat-strip",
+        phoneColumns === 3 && "stat-strip--phone-3",
+        six && items.length === 6 && "stat-strip--six",
+        className,
+      )}
+      aria-label={label}
+    >
       <dl className="stat-strip__list">
-        {items.map((s) => (
-          <div key={s.key} className="stat-strip__item">
+        {items.map((s, i) => (
+          <div
+            key={s.key}
+            className={clsx("stat-strip__item", i >= fillFrom && `stat-strip__item--fill-${fill}`)}
+          >
             <dt className="stat-strip__label">
-              {s.label}
-              {s.tip ? <InfoTip label={s.label} content={s.tip} /> : null}
+              {s.tip ? <LabelWithTip label={s.label} tip={s.tip} /> : s.label}
             </dt>
             <dd className="stat-strip__value">{s.value}</dd>
             {s.note && <dd className="stat-strip__note">{s.note}</dd>}
@@ -44,5 +61,18 @@ export function StatStrip({ items, label, className, phoneColumns = 2 }: StatStr
         ))}
       </dl>
     </section>
+  );
+}
+
+/** The label with its (i) glued to the last word (a CSS word joiner, so the label
+ *  text stays as it is), so a wrap never strands the icon on a line of its own. */
+function LabelWithTip({ label, tip }: { label: string; tip: string }) {
+  return (
+    <>
+      {label}
+      <span className="stat-strip__tip">
+        <InfoTip label={label} content={tip} />
+      </span>
+    </>
   );
 }

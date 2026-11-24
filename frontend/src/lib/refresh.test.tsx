@@ -64,6 +64,19 @@ describe("useServerRefresh", () => {
     expect(screen.getByText("A refresh is already running")).toBeInTheDocument();
   });
 
+  it("a 409 while the close settles is a calm note, never an error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(json(409, { detail: { reason: "settling_close", message: "Closing prices are being settled" } })),
+    );
+    const { result } = renderHook(() => useServerRefresh(), { wrapper });
+    await act(async () => result.current.start());
+    expect(result.current.state.running).toBe(true);
+    expect(screen.getByText("Closing prices are being settled…")).toBeInTheDocument();
+    expect(screen.queryByText("Couldn't start a refresh")).toBeNull();
+    expect(screen.queryByText("A refresh is already running")).toBeNull();
+  });
+
   it("clears the running state when the POST fails", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(500, { detail: "boom" })));
     const { result } = renderHook(() => useServerRefresh(), { wrapper });

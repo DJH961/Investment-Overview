@@ -5,7 +5,7 @@ import { Card } from "../Card";
 import { DaySplit } from "../DaySplit";
 import { Chart, type ChartSeries, type ChartXMode } from "../Chart";
 import { ErrorState } from "../ErrorState";
-import { formatStamp } from "../Freshness";
+import { formatStamp, useScreenPhase } from "../Freshness";
 import { IconButton } from "../IconButton";
 import { InfoTip } from "../InfoTip";
 import { Percent } from "../Percent";
@@ -165,7 +165,15 @@ export function ValueChartCard({
   const { hide } = useHideAmounts();
   // Same points, scale and baseline in both modes; hide mode only masks labels.
   const built = useMemo(() => (g ? buildValueSeries(g, { hide, showSecondary }) : null), [g, showSecondary, hide]);
-  const series = useMemo<ChartSeries[]>(() => built?.series ?? [], [built]);
+  // The open before the first prices: the line (the previous close, flat) stops at "now" and the
+  // time axis still runs to the closing bell, so the day reads as a day that has just begun.
+  const stubEnd = shown === "1d" && g?.market_open && g.points.length <= 2 ? (g.sessions?.[0]?.close ?? null) : null;
+  const stub = stubEnd !== null;
+  const day = useScreenPhase();
+  const series = useMemo<ChartSeries[]>(() => {
+    const s = built?.series ?? [];
+    return stubEnd ? s.map((x) => ({ ...x, points: [...x.points, { t: stubEnd, v: null }] })) : s;
+  }, [built, stubEnd]);
 
   const intraday = shown === "1d" || shown === "1w";
   const sessions = shown === "1w" ? (g?.sessions ?? []) : [];
@@ -186,6 +194,8 @@ export function ValueChartCard({
   if (shown === "1d" && g?.session_date) {
     subtitle = g.session_date === todayIn(timeZone) ? "Today" : formatDayLabel(g.session_date);
   }
+  // Until the first prices land the % is still the last session's: say so, in the hero's words.
+  if (stub && day.label === "Last session") subtitle = day.earlier ?? "Last session";
   const growth = g?.growth ? toNum(g.growth.pct) : null;
   const coverage = intraday && g?.coverage && !g.coverage.complete ? g.coverage : null;
   const other = g?.secondary?.ccy ?? (currency === "EUR" ? "USD" : "EUR");
@@ -203,12 +213,14 @@ export function ValueChartCard({
   const overnightPct = toNum(now?.overnight_pct ?? lastSession?.overnight_pct);
   const moved =
     overnightPct !== null ? Math.abs(overnightPct) >= 0.00005 : overnight !== null && Math.abs(overnight) >= 0.005;
+  // "≈ Now" while a fund's NAV is pending: the dot sits on the twin-estimated book.
+  const nowWord = now?.funds_estimated ? "≈ Now" : "Now";
   const nowLabel = hide
     ? growth !== null
-      ? `Now ${formatPercent(growth, { signed: true })}`
+      ? `${nowWord} ${formatPercent(growth, { signed: true })}`
       : null
     : nowV !== null
-      ? `Now ${tipFormat(nowV)}`
+      ? `${nowWord} ${tipFormat(nowV)}`
       : null;
   const nowMarker = now && moved && nowV !== null ? { v: nowV, lines: nowLabel ? [nowLabel] : [] } : undefined;
   // The split explains the 1D figure only; 1W's header is the week, not a session.
@@ -257,7 +269,12 @@ export function ValueChartCard({
       {graph.isError && !g ? (
         <ErrorState message={graph.error.message} onRetry={() => void graph.refetch()} />
       ) : (
-        <>
+        <div className="value-chart-card__stage">
+          {stub && (g?.points ?? []).every((p) => p.v === g?.reference) && (
+            <p className="value-chart-card__first" data-testid="chart-first-prices">
+              First prices in a moment
+            </p>
+          )}
           <Chart
             headerExtra={split}
             // On the legend row, right-aligned: no extra line under the chart.
@@ -308,7 +325,7 @@ export function ValueChartCard({
               Intraday shape complete for {coverage.covered} of {coverage.total} sessions.
             </p>
           )}
-        </>
+        </div>
       )}
     </Card>
   );

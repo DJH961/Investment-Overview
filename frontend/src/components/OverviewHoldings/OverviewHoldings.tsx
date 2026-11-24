@@ -6,7 +6,7 @@ import { Card } from "../Card";
 import { DaySplitLegend, hasSplit } from "../DaySplit";
 import { InfoTip } from "../InfoTip";
 import { ErrorState } from "../ErrorState";
-import { foldStamps, formatStamp, holdingMarks, PriceStamps, PriceTick, sentenceCase } from "../Freshness";
+import { foldStamps, formatStamp, holdingMarks, PriceStamps, PriceTick, sentenceCase, useScreenPhase } from "../Freshness";
 import { HoldingPills } from "../HoldingIdentity";
 import { Money } from "../Money";
 import { Percent } from "../Percent";
@@ -249,7 +249,8 @@ function Row({
 }) {
   const stale = staleMove !== null;
   const weight = toNum(row.weight_pct);
-  const live = row.market_open && !stale;
+  const day = useScreenPhase();
+  const live = row.market_open && day.live && !stale;
   return (
     <li className={clsx("overview-holdings__row", hasTwinLine(row, watch) && "overview-holdings__row--twin")} data-symbol={row.symbol}>
       <span className="overview-holdings__who">
@@ -396,13 +397,15 @@ export function OverviewHoldings({ currency, movers }: OverviewHoldingsProps) {
   // `weekdays` renders an older session as "Fri" rather than "Yesterday": shorter
   // for the header's corner, and it does not quietly mislead after a long weekend,
   // when the previous session is three days back.
-  const stampOpts = useMemo(() => ({ timeZone, weekdays: true }) as const, [timeZone]);
+  const screen = useScreenPhase();
+  const trading = screen.live;
+  const stampOpts = useMemo(() => ({ timeZone, weekdays: true, trading }) as const, [timeZone, trading]);
   const stamps = useMemo(() => foldStamps(q.data?.holdings ?? [], stampOpts), [q.data, stampOpts]);
   const marks = useMemo(() => holdingMarks(q.data?.holdings ?? [], { timeZone }), [q.data, timeZone]);
   // ☾ once for the card: the night (currency) move is the same for every dollar holding,
   // so it is read from the first row that carries a split (server figure) and said here,
   // not on each row. EUR view only; a euro-priced holding simply has no split.
-  const nightRow = currency === "EUR" ? all.find((r) => hasSplit(r, currency) && !marks.staleMove(r)) : undefined;
+  const nightRow = currency === "EUR" && screen.night ? all.find((r) => hasSplit(r, currency) && !marks.staleMove(r)) : undefined;
   const night = nightRow ? (
     <span
       className="overview-holdings__night"

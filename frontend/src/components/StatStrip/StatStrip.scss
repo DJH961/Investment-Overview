@@ -12,8 +12,22 @@
     grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
     margin: calc(-1 * var(--border-width)) 0 0 calc(-1 * var(--border-width));
 
+    // Six tracks on phones: an item spans 3 (two columns) or 2 (three columns), and
+    // a short last row spans the rest, so the strip never shows an empty cell.
     @include m.phone {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+  }
+
+  &__item {
+    @include m.phone {
+      grid-column: span 3;
+    }
+  }
+
+  &__item--fill-full {
+    @include m.phone {
+      grid-column: 1 / -1;
     }
   }
 
@@ -34,12 +48,27 @@
 
   &__label {
     @include m.eyebrow;
-    display: flex;
-    align-items: center;
-    // The (i) never touches the words.
-    gap: var(--space-1);
+    // Inline flow, so a label that wraps keeps its (i) right after the last word
+    // instead of floating at the cell's edge.
+    display: block;
     overflow-wrap: anywhere;
+
+    .info-tip {
+      // The (i) never touches the words.
+      margin-left: var(--space-1);
+      vertical-align: middle;
+    }
   }
+
+  &__tip {
+    white-space: nowrap;
+
+    // A word joiner: no line break between the label's last word and its (i).
+    &::before {
+      content: "\2060";
+    }
+  }
+
 
   &__value {
     @include m.figure(var(--font-size-xl));
@@ -59,6 +88,12 @@
   &--rows &__list {
     @include m.phone {
       grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  &--rows &__item {
+    @include m.phone {
+      grid-column: 1 / -1;
     }
   }
 
@@ -107,16 +142,36 @@
   &--phone-3 {
     @include m.phone {
       .stat-strip__list {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: repeat(6, minmax(0, 1fr));
       }
 
       .stat-strip__item {
+        grid-column: span 2;
         padding: var(--space-3);
+      }
+
+      .stat-strip__item--fill-half {
+        grid-column: span 3;
+      }
+
+      .stat-strip__item--fill-full {
+        grid-column: 1 / -1;
       }
 
       .stat-strip__value {
         font-size: var(--font-size-md);
       }
+    }
+  }
+
+  // Six figures: a fixed grid, so no width ever leaves a lone tile or an empty cell.
+  &--six &__list {
+    @include m.tablet-up {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    @include m.desktop {
+      grid-template-columns: repeat(6, minmax(0, 1fr));
     }
   }
 }

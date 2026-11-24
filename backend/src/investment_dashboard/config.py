@@ -54,6 +54,11 @@ class Settings(BaseSettings):
     cache_path: Path | None = None
     host: str = "0.0.0.0"
     port: int = 8080
+    #: Seconds the end-of-day job waits after the closing bell before it settles the
+    #: closes (the closing auction prints at the bell; the official closes follow).
+    eod_grace_seconds: int = 60
+    #: Minutes after the bell for one quiet re-pull of the day's closes (0 = off).
+    close_repull_minutes: int = 5
     log_level: str = "INFO"
 
     #: Optional override for where rotating log files are written. When

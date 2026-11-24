@@ -1,0 +1,385 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Impact > 1d EUR: hero, lens and bridge 1`] = `
+{
+  "bridge": [
+    "start",
+    "deposits",
+    "market",
+    "currency",
+    "end",
+  ],
+  "headline": "-€2,267",
+  "holdingsNote": null,
+  "lens": null,
+  "lensNote": null,
+  "meta": "1D · today, since the 29 Jun 2026 close · live",
+  "parts": [],
+  "tag": "Headwind",
+}
+`;
+
+exports[`Impact > 1d USD: hero, lens and bridge 1`] = `
+{
+  "bridge": [],
+  "headline": "$0",
+  "holdingsNote": "Your holdings are in dollars, so in the dollar view the rate does not move them. Their currency effect shows in the euro view.",
+  "lens": "Seen from euros:-0.2 ppreturn gap, euros against dollars",
+  "lensNote": "One rate move, two lenses: a stronger euro shrinks your dollar book in euros and makes each euro you send buy more dollars.",
+  "meta": "1D · today, since the 29 Jun 2026 close · live",
+  "parts": [],
+  "tag": "Neutral",
+}
+`;
+
+exports[`Impact > 1m EUR: hero, lens and bridge 1`] = `
+{
+  "bridge": [
+    "start",
+    "deposits",
+    "market",
+    "currency",
+    "end",
+  ],
+  "headline": "+€26,078",
+  "holdingsNote": null,
+  "lens": null,
+  "lensNote": null,
+  "meta": "1M · 30 May 2026 – 29 Jun 2026 · live",
+  "parts": [
+    "Revaluation+€26,090",
+    "While your dollars waited+€4",
+    "Conversion cost-€16",
+  ],
+  "tag": "Tailwind",
+}
+`;
+
+exports[`Impact > 1m USD: hero, lens and bridge 1`] = `
+{
+  "bridge": [
+    "start",
+    "currency",
+    "end",
+  ],
+  "headline": "-$16",
+  "holdingsNote": "Your holdings are in dollars, so in the dollar view the rate does not move them. Their currency effect shows in the euro view.",
+  "lens": "Seen from euros:+1.6 ppreturn gap, euros against dollars",
+  "lensNote": "One rate move, two lenses: a stronger euro shrinks your dollar book in euros and makes each euro you send buy more dollars.",
+  "meta": "1M · 30 May 2026 – 29 Jun 2026 · live",
+  "parts": [],
+  "tag": "Headwind",
+}
+`;
+
+exports[`Impact > 1w EUR: hero, lens and bridge 1`] = `
+{
+  "bridge": [
+    "start",
+    "deposits",
+    "market",
+    "currency",
+    "end",
+  ],
+  "headline": "+€5,368",
+  "holdingsNote": null,
+  "lens": null,
+  "lensNote": null,
+  "meta": "1W · 23 Jun 2026 – 29 Jun 2026 · live",
+  "parts": [],
+  "tag": "Tailwind",
+}
+`;
+
+exports[`Impact > 1w USD: hero, lens and bridge 1`] = `
+{
+  "bridge": [],
+  "headline": "-$1",
+  "holdingsNote": "Your holdings are in dollars, so in the dollar view the rate does not move them. Their currency effect shows in the euro view.",
+  "lens": "Seen from euros:+0.3 ppreturn gap, euros against dollars",
+  "lensNote": "One rate move, two lenses: a stronger euro shrinks your dollar book in euros and makes each euro you send buy more dollars.",
+  "meta": "1W · 23 Jun 2026 – 29 Jun 2026 · live",
+  "parts": [],
+  "tag": "Headwind",
+}
+`;
+
+exports[`Impact > 1y EUR: hero, lens and bridge 1`] = `
+{
+  "bridge": [
+    "start",
+    "deposits",
+    "market",
+    "currency",
+    "end",
+  ],
+  "headline": "-€22,573",
+  "holdingsNote": null,
+  "lens": null,
+  "lensNote": null,
+  "meta": "1Y · 30 Jun 2025 – 29 Jun 2026 · live",
+  "parts": [
+    "Revaluation-€22,431",
+    "While your dollars waited-€43",
+    "Conversion cost-€99",
+  ],
+  "tag": "Headwind",
+}
+`;
+
+exports[`Impact > 1y USD: hero, lens and bridge 1`] = `
+{
+  "bridge": [
+    "start",
+    "currency",
+    "end",
+  ],
+  "headline": "+$465",
+  "holdingsNote": "Your holdings are in dollars, so in the dollar view the rate does not move them. Their currency effect shows in the euro view.",
+  "lens": "Seen from euros:-2.1 ppreturn gap, euros against dollars",
+  "lensNote": "One rate move, two lenses: a stronger euro shrinks your dollar book in euros and makes each euro you send buy more dollars.",
+  "meta": "1Y · 30 Jun 2025 – 29 Jun 2026 · live",
+  "parts": [],
+  "tag": "Tailwind",
+}
+`;
+
+exports[`Impact > 3m EUR: hero, lens and bridge 1`] = `
+{
+  "bridge": [
+    "start",
+    "deposits",
+    "market",
+    "currency",
+    "end",
+  ],
+  "headline": "+€31,873",
+  "holdingsNote": null,
+  "lens": null,
+  "lensNote": null,
+  "meta": "3M · 30 Mar 2026 – 29 Jun 2026 · live",
+  "parts": [
+    "Revaluation+€31,914",
+    "While your dollars waited-€3",
+    "Conversion cost-€38",
+  ],
+  "tag": "Tailwind",
+}
+`;
+
+exports[`Impact > 3m USD: hero, lens and bridge 1`] = `
+{
+  "bridge": [
+    "start",
+    "currency",
+    "end",
+  ],
+  "headline": "-$56",
+  "holdingsNote": "Your holdings are in dollars, so in the dollar view the rate does not move them. Their currency effect shows in the euro view.",
+  "lens": "Seen from euros:+2.0 ppreturn gap, euros against dollars",
+  "lensNote": "One rate move, two lenses: a stronger euro shrinks your dollar book in euros and makes each euro you send buy more dollars.",
+  "meta": "3M · 30 Mar 2026 – 29 Jun 2026 · live",
+  "parts": [],
+  "tag": "Headwind",
+}
+`;
+
+exports[`Impact > 5y EUR: hero, lens and bridge 1`] = `
+{
+  "bridge": [
+    "start",
+    "deposits",
+    "market",
+    "currency",
+    "end",
+  ],
+  "headline": "-€89,683",
+  "holdingsNote": null,
+  "lens": null,
+  "lensNote": null,
+  "meta": "5Y · 30 Jun 2021 – 29 Jun 2026 · live",
+  "parts": [
+    "Revaluation-€89,129",
+    "While your dollars waited+€22",
+    "Conversion cost-€575",
+  ],
+  "tag": "Headwind",
+}
+`;
+
+exports[`Impact > 5y USD: hero, lens and bridge 1`] = `
+{
+  "bridge": [
+    "start",
+    "currency",
+    "end",
+  ],
+  "headline": "+$14,895",
+  "holdingsNote": "Your holdings are in dollars, so in the dollar view the rate does not move them. Their currency effect shows in the euro view.",
+  "lens": "Seen from euros:-13.2 ppreturn gap, euros against dollars",
+  "lensNote": "One rate move, two lenses: a stronger euro shrinks your dollar book in euros and makes each euro you send buy more dollars.",
+  "meta": "5Y · 30 Jun 2021 – 29 Jun 2026 · live",
+  "parts": [],
+  "tag": "Tailwind",
+}
+`;
+
+exports[`Impact > 10y EUR: hero, lens and bridge 1`] = `
+{
+  "bridge": [
+    "start",
+    "deposits",
+    "market",
+    "currency",
+    "end",
+  ],
+  "headline": "-€89,683",
+  "holdingsNote": null,
+  "lens": null,
+  "lensNote": null,
+  "meta": "10Y · 30 Jun 2016 – 29 Jun 2026 · live",
+  "parts": [
+    "Revaluation-€89,129",
+    "While your dollars waited+€22",
+    "Conversion cost-€575",
+  ],
+  "tag": "Headwind",
+}
+`;
+
+exports[`Impact > 10y USD: hero, lens and bridge 1`] = `
+{
+  "bridge": [
+    "start",
+    "currency",
+    "end",
+  ],
+  "headline": "+$14,895",
+  "holdingsNote": "Your holdings are in dollars, so in the dollar view the rate does not move them. Their currency effect shows in the euro view.",
+  "lens": "Seen from euros:-13.2 ppreturn gap, euros against dollars",
+  "lensNote": "One rate move, two lenses: a stronger euro shrinks your dollar book in euros and makes each euro you send buy more dollars.",
+  "meta": "10Y · 30 Jun 2016 – 29 Jun 2026 · live",
+  "parts": [],
+  "tag": "Tailwind",
+}
+`;
+
+exports[`Impact > all EUR: hero, lens and bridge 1`] = `
+{
+  "bridge": [
+    "start",
+    "deposits",
+    "market",
+    "currency",
+    "end",
+  ],
+  "headline": "-€89,683",
+  "holdingsNote": null,
+  "lens": null,
+  "lensNote": null,
+  "meta": "All · 1 Mar 2023 – 29 Jun 2026 · live",
+  "parts": [
+    "Revaluation-€89,129",
+    "While your dollars waited+€22",
+    "Conversion cost-€575",
+  ],
+  "tag": "Headwind",
+}
+`;
+
+exports[`Impact > all USD: hero, lens and bridge 1`] = `
+{
+  "bridge": [
+    "start",
+    "currency",
+    "end",
+  ],
+  "headline": "+$14,895",
+  "holdingsNote": "Your holdings are in dollars, so in the dollar view the rate does not move them. Their currency effect shows in the euro view.",
+  "lens": "Seen from euros:-13.2 ppreturn gap, euros against dollars",
+  "lensNote": "One rate move, two lenses: a stronger euro shrinks your dollar book in euros and makes each euro you send buy more dollars.",
+  "meta": "All · 1 Mar 2023 – 29 Jun 2026 · live",
+  "parts": [],
+  "tag": "Tailwind",
+}
+`;
+
+exports[`Impact > max EUR: hero, lens and bridge 1`] = `
+{
+  "bridge": [
+    "start",
+    "deposits",
+    "market",
+    "currency",
+    "end",
+  ],
+  "headline": "-€89,683",
+  "holdingsNote": null,
+  "lens": null,
+  "lensNote": null,
+  "meta": "Max · 4 Jan 1999 – 29 Jun 2026 · live",
+  "parts": [
+    "Revaluation-€89,129",
+    "While your dollars waited+€22",
+    "Conversion cost-€575",
+  ],
+  "tag": "Headwind",
+}
+`;
+
+exports[`Impact > max USD: hero, lens and bridge 1`] = `
+{
+  "bridge": [
+    "start",
+    "currency",
+    "end",
+  ],
+  "headline": "+$14,895",
+  "holdingsNote": "Your holdings are in dollars, so in the dollar view the rate does not move them. Their currency effect shows in the euro view.",
+  "lens": "Seen from euros:-13.2 ppreturn gap, euros against dollars",
+  "lensNote": "One rate move, two lenses: a stronger euro shrinks your dollar book in euros and makes each euro you send buy more dollars.",
+  "meta": "Max · 4 Jan 1999 – 29 Jun 2026 · live",
+  "parts": [],
+  "tag": "Tailwind",
+}
+`;
+
+exports[`Impact > ytd EUR: hero, lens and bridge 1`] = `
+{
+  "bridge": [
+    "start",
+    "deposits",
+    "market",
+    "currency",
+    "end",
+  ],
+  "headline": "+€14,779",
+  "holdingsNote": null,
+  "lens": null,
+  "lensNote": null,
+  "meta": "YTD · 31 Dec 2025 – 29 Jun 2026 · live",
+  "parts": [
+    "Revaluation+€14,873",
+    "While your dollars waited-€32",
+    "Conversion cost-€62",
+  ],
+  "tag": "Tailwind",
+}
+`;
+
+exports[`Impact > ytd USD: hero, lens and bridge 1`] = `
+{
+  "bridge": [
+    "start",
+    "currency",
+    "end",
+  ],
+  "headline": "+$30",
+  "holdingsNote": "Your holdings are in dollars, so in the dollar view the rate does not move them. Their currency effect shows in the euro view.",
+  "lens": "Seen from euros:+0.9 ppreturn gap, euros against dollars",
+  "lensNote": "One rate move, two lenses: a stronger euro shrinks your dollar book in euros and makes each euro you send buy more dollars.",
+  "meta": "YTD · 31 Dec 2025 – 29 Jun 2026 · live",
+  "parts": [],
+  "tag": "Tailwind",
+}
+`;

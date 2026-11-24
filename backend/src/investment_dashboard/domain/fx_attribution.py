@@ -95,20 +95,28 @@ class AttributionDay:
     ``rates`` maps every non-reporting currency to that day's :class:`FxRate`
     (a currency held today needs a rate today *and* on the previous row).
     ``flow`` is the day's net external flow into the book, in the reporting
-    currency (money in is positive).
+    currency (money in is positive): what the money cost you (a matched deposit's
+    euro flow is its FX-pool cost).
+    ``carry`` is the currency part hidden in that flow: the flow valued at the day's
+    own rate minus ``flow``. A deposit of dollars bought earlier at a different rate
+    (and with a spread) grows the book by ``usd / r_t``, not by what the dollars cost;
+    that difference is currency, never market (7.3.1).
     """
 
     on: date
     book: Mapping[str, Decimal]
     rates: Mapping[str, FxRate]
     flow: Decimal = ZERO
+    carry: Decimal = ZERO
 
 
 @dataclass(frozen=True)
 class DayParts:
     """The move from the previous row's close (``prev_on``) to ``on``.
 
-    ``start + flow + market + currency == end`` exactly.
+    ``start + flow + market + currency == end`` exactly. ``currency`` is the book's
+    revaluation plus ``carry`` (the currency part of the day's deposits, see
+    :class:`AttributionDay`).
     """
 
     prev_on: date
@@ -118,6 +126,13 @@ class DayParts:
     flow: Decimal
     market: Decimal
     currency: Decimal
+    carry: Decimal = ZERO
+
+    @property
+    def revaluation(self) -> Decimal:
+        """The book revalued from the previous rate to today's (``currency - carry``)."""
+        with _exact():
+            return self.currency - self.carry
 
 
 @dataclass(frozen=True)
@@ -154,6 +169,8 @@ class Bridge:
     market: Decimal
     currency: Decimal
     end: Decimal
+    #: The part of ``currency`` carried in by deposits (see :class:`AttributionDay`).
+    carry: Decimal = ZERO
 
 
 @dataclass(frozen=True)
@@ -265,8 +282,9 @@ def attribute_days(days: Sequence[AttributionDay], reporting: str) -> list[DayPa
             raise ValueError("attribution rows must be in strictly ascending date order")
         start = book_value(prev.book, prev.rates, reporting)
         end = book_value(cur.book, cur.rates, reporting)
-        currency = revaluation(cur.book, reporting, rates_from=prev.rates, rates_to=cur.rates)
+        reval = revaluation(cur.book, reporting, rates_from=prev.rates, rates_to=cur.rates)
         with _exact():
+            currency = reval + cur.carry
             market = end - start - currency - cur.flow
         parts.append(
             DayParts(
@@ -277,6 +295,7 @@ def attribute_days(days: Sequence[AttributionDay], reporting: str) -> list[DayPa
                 flow=cur.flow,
                 market=market,
                 currency=currency,
+                carry=cur.carry,
             )
         )
     return parts
@@ -324,6 +343,7 @@ def bridge(parts: Sequence[DayParts], label: str = "") -> Bridge:
         flows = sum((p.flow for p in parts), ZERO)
         market = sum((p.market for p in parts), ZERO)
         currency = sum((p.currency for p in parts), ZERO)
+        carry = sum((p.carry for p in parts), ZERO)
     return Bridge(
         label=label,
         start_on=parts[0].prev_on,
@@ -333,6 +353,7 @@ def bridge(parts: Sequence[DayParts], label: str = "") -> Bridge:
         market=market,
         currency=currency,
         end=parts[-1].end,
+        carry=carry,
     )
 
 

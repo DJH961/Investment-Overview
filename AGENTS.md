@@ -173,16 +173,70 @@ Adapted from the owner's starter-project convention (see plan §4a):
 - Adapters are tested with mocked HTTP (`respx`) or patched downloaders. Live-API
   tests are `@pytest.mark.network` and skipped unless `--run-network`.
 
+## Testing for agents
+
+**Fixture data (owner rule):** the fixtures (`frontend/src/fixtures/data/*.json`) are a
+recording of the backend's answers, made by `npm run gen:fixtures` (slow: it rebuilds all of
+them). Regenerate only when a change alters what an endpoint returns, and then only the
+endpoints you touched:
+
+    npm run gen:fixtures -- --only /api/currency,/api/holdings   # any API paths or prefixes
+    npm run gen:fixtures -- --force                              # full rebuild, ignores the stamp
+
+`--only` re-records just the matching requests in every data set (`full`, `empty`, `nice`) and
+keeps every other key byte-identical. A plain run first compares a hash of `backend/src/**/*.py`
+with a local, git-ignored fingerprint (`backend/.cache/`) and prints "fixtures up to date" when nothing changed;
+`--only` never updates that stamp. CI's drift guard runs with `--force`. Lanes never run the full
+regeneration. The main session runs it once, after merging, just before the release PR.
+
+**Test what you changed, nothing more (owner rule):** `uv run --project backend python
+scripts/test_changed.py [--base main] [--run]` prints (and with `--run` runs) the
+targeted commands below for your diff. Subagents and lanes run only these, plus a single
+test file while iterating. They never run whole suites (`uv run pytest` without paths,
+`npm run test`, `npm run test:overflow`). The main session runs the full suites
+**once**, at the end of a release, just before the PR; CI runs them again on every push.
+
+`uv run pytest` runs in parallel by default (`-n auto --dist loadfile` in
+`backend/pyproject.toml`); add `-n0` only to debug one test with `pdb` or `-s`. Run
+the tests for what you touched, from `backend/` (or the npm folder):
+
+| Change | Command |
+| --- | --- |
+| `domain/` money maths | `uv run pytest tests/domain` (then `HYPOTHESIS_PROFILE=ci` once for full counts) |
+| `readmodels/`, `services/` | `uv run pytest tests/readmodels tests/services` (or the matching files) |
+| `api/` endpoint | `uv run pytest tests/api/test_<resource>.py`, plus the contract regen above |
+| models / migrations | `uv run pytest tests/test_migration_*.py tests/test_added_columns_guard.py` |
+| `storage/`, `db.py`, boot, backups | `uv run pytest tests/storage tests/test_db_tiers.py tests/services/test_backup_*.py` |
+| `adapters/` | `uv run pytest tests/adapters/<broker or client>` |
+| frontend | `npm run typecheck && npx vitest run src/<path>` in `frontend/` |
+| web demo | `npm run typecheck && npm run test` in `web/` |
+
+- While iterating: `uv run pytest <files> -x --lf` (stop at the first failure, rerun
+  the last failures). Never run the full suite serially; CI runs it on every push.
+- When a run feels slow, add `--durations=15` and fix the slowest tests first.
+- Hypothesis: the local `dev` profile caps every property test at 30 examples; CI
+  (`HYPOTHESIS_PROFILE=ci`) runs each test's own count. Keep `max_examples` ≤ 300,
+  and ≤ 40 for tests that touch a database or the API.
+- Test databases skip fsync; a test that checks durability, journal mode, WAL files
+  or backups is marked `@pytest.mark.durable_sqlite` (or listed in
+  `_DURABLE_SQLITE_MODULES` in `tests/conftest.py`). The API tests copy a schema
+  template, so never rely on `create_all` running per test.
+- Time-of-day logic: use the `market_clock` fixture (`market_clock("open")`; also `preopen`, `preclose`, `closing`, `closed`, `weekend` or an aware datetime), never the real clock. Production code reads "now" through `domain/clock.now()`.
+- No `time.sleep` (use fake clocks or events), no real network (`respx`, patched
+  downloaders; live calls only under `@pytest.mark.network`), no OS keychain (tests
+  use a failing keyring backend) and no real home, AppData or cloud folders
+  (`monkeypatch` `Path.home` and clear the env vars).
+
 ## UI feedback loop: screenshots first
 
 The owner steers UI work from screenshots, early and often.
 
 1. **Build, then shoot.** As soon as the change compiles (`npm run typecheck`), commit it
-   (a `wip:` commit is fine). Then take Playwright screenshots of the changed views against the
-   fixture dev server, at 390 and 1280 px (360 when a phone layout changed). Save them under
-   `.claude/ui-shots/<topic>/` in the session's worktree. Fixture builds (`--mode fixtures`)
-   never start the welcome tour by themselves, so it cannot cover a shot. Add `?tour=1` to
-   the URL only when the shot is of the tour itself.
+   (a `wip:` commit is fine). Then shoot the changed views with `npm run shots` (see "Taking
+   shots" below), at 390 and 1280 px (360 when a phone layout changed), **in EUR and USD**.
+   Save them under `.claude/ui-shots/<topic>/` in the session's worktree (git-ignored).
+   Fixture builds (`--mode fixtures`) never start the welcome tour by themselves, so it cannot
+   cover a shot. Add `?tour=1` to the URL only when the shot is of the tour itself.
 2. **Reject bad shots yourself before anyone sees them.** Look at every shot critically:
    - clipped or overlapping text or chips;
    - uneven gaps or a lone tile on its own row;
@@ -202,6 +256,54 @@ The owner steers UI work from screenshots, early and often.
 Money maths is the exception: it stays test-first (property tests plus golden values, see
 "Testing").
 
+### Taking shots (`npm run shots`)
+
+Use `frontend/e2e/shoot.mjs`; don't write one-off Playwright scripts. **Recommended for
+agents: `--serve`.** The tool starts its own fixture dev server on a free port, waits for it,
+shoots and always stops it (even on error or Ctrl+C), so parallel agents never clash and no
+background process is left behind. From `frontend/`:
+
+    npm run shots -- ../.claude/ui-shots/<topic> currency --serve --pair --tiles
+
+Without `--serve`, start the fixture dev server yourself on port 5273 (`preview_start` with
+`frontend-fixtures`, or `npm run dev:fixtures -- --port 5273 --strictPort`) or pass
+`--base http://localhost:<port>`.
+
+| Want | Command |
+| --- | --- |
+| Pages, both currencies, 390 + 1280 | `npm run shots -- ../.claude/ui-shots/<topic> currency,overview` |
+| Shots for the owner | add `--nice` (realistic book of about €50k, plain fund names; same as `?fixtures=nice` in any browser). Everything else (tests, overflow, agent checks) uses the default stress set |
+| Also dark mode | add `--theme both` |
+| Phone layouts | add `--width 360,390,1280` |
+| One card or strip only (crops) | add `--el ".stat-strip"` (any CSS selector; one file per match) |
+| Just the first screen, not the full page | add `--viewport` |
+| One currency only | add `--ccy USD` |
+| Sidebar open (when the navigation is the subject) | add `--sidebar` |
+| Own server, no port clash, nothing left running | add `--serve` |
+| EUR left, USD right in one labeled image | add `--pair` (`<route>-pair-<width>-<theme>.png`) |
+| Long phone page readable piece by piece | add `--tiles` (full pages over 2.5 screens also get `-t1.png`, `-t2.png`, … with a little overlap) |
+| A market moment (open, close, FX weekend) | `npm run shots -- <dir> overview --at closing` (`preopen`, `opening`, `firsttick`, `preclose`, `closing`, `closed`, `fxfri`, `fxsun`, or an ISO instant; the same `?at=` works in any browser, `?at=live` clears it) |
+
+Files are `<route>-<ccy>-<width>-<theme>[-elN].png`. Write routes without the leading slash
+(`holding/FAKEL`, not `/holding/FAKEL`): Git Bash turns `/x` into a Windows path. The script
+does the fiddly parts for you:
+
+- Currency, theme and sidebar come from the fixture server's URL switches:
+  `/currency?ccy=USD&theme=dark&rail=1` (`rail=1` folds the sidebar). They work in any
+  browser too, including the Browser pane, and stay for the tab; in-app toggles keep
+  working. The script checks the page really shows the asked currency.
+- The folded sidebar never covers or stretches over a full-page shot. The open sidebar
+  fills the window height by design; check it with `--viewport --sidebar` at real
+  heights (1280×800, 1280×1000), never in a full-page shot.
+- It scrolls once so lazy sections (Scenarios, Conversions) load, pins fixed chrome in flow
+  for the capture, and prints `OVERFLOW <n>px` when a page scrolls sideways.
+
+Then read the shots yourself (crop long phone pages, or use `--el`), run the design
+critique against `DESIGN.md` (Impeccable's `critique`, scoped to the changed views only),
+and send only the good ones to the owner with `SendUserFile`. For market-moment
+shots (open/close, FX weekend), fake the browser clock with Playwright's `page.clock`, and
+make every figure on the page tell the same story at that moment.
+
 ## Workflow
 
 - **Git flow:** features and risky changes go through a PR. Small or urgent fixes
@@ -212,27 +314,24 @@ Money maths is the exception: it stays test-first (property tests plus golden va
 - **Release fast — default is one release per change.** Any change that alters
   what the app does (feature or bug fix) is released **in the same PR/push**: a
   patch bump for fixes, a minor bump for features, under a dated
-  `## [x.y.z] — YYYY-MM-DD` heading. Bump `backend/pyproject.toml`, `web/package.json`
-  and `frontend/package.json` in lockstep and regenerate lockfiles (`uv lock`, and
-  `npm install` inside `web/` and `frontend/`). `backend/openapi.json` embeds the
-  version, so regenerate it too (`uv run python -m
-  investment_dashboard.tools.export_openapi openapi.json` in `backend/`), or CI fails
-  and the release never deploys. Pushing the bump to `main` tags the release.
+  `## [x.y.z] — YYYY-MM-DD` heading. Bump with one command from `backend/`:
+  `uv run python -m investment_dashboard.tools.release x.y.z [--date YYYY-MM-DD] [--dry-run]`.
+  It sets the version in `pyproject.toml` and both `package.json` files, refreshes the
+  lockfiles, regenerates `openapi.json` and `api-types.ts` (CI fails on drift) and folds
+  `[Unreleased]` into the dated CHANGELOG heading; it never commits, pushes or tags.
+  Pushing the bump to `main` tags the release.
 - **`[Unreleased]` is temporary storage, not the default.** Use it only for
   changes with no effect on the running app (docs, CI, tests, refactors) or to
   batch a short series of related PRs. Fold it into the next release; no entry
   should sit there longer than a few days, and **a bug fix never waits there**.
-- **Quality gate** before handoff (CI runs the same). The full local `pytest`
-  run takes about 2 hours on the owner's laptop (CI: about 2 minutes), so run the
-  targeted tests for what you touched locally and let CI run the full suite. Known
-  laptop-only failures (they read the real keyring and Dropbox/OneDrive folders):
-  `tests/storage/test_cloud_and_paths.py` cloud-detection tests.
+- **Quality gate** before handoff (CI runs the same). Run the targeted tests for
+  what you touched locally (see "Testing for agents") and let CI run the full suite.
   - From `backend/`:
   - `uv run ruff format .`
   - `uv run ruff check . --fix`
   - `uv run mypy src/investment_dashboard/domain`
   - `uv run lint-imports` (layering contracts)
-  - `uv run pytest`
+  - `uv run pytest <targeted files>` (parallel by default)
   - `npm run typecheck` and `npm run test` inside `frontend/` and `web/`
 - **Keep in step with every feature** (check each one when you add or change behaviour):
   - **Activity logs** (`activity_log.py`, `api/activity.py`, RUNBOOK "Activity logs"):

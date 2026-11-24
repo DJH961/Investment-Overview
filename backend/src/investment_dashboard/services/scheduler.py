@@ -571,18 +571,17 @@ def _tick_now_point(
         split = metrics_service.last_session_split(session, now=now, fx_now=rate)
         if split is None:
             return None
-        return {
-            "EUR": {
-                "v": _dec(split.value_now_eur),
-                "overnight_currency": _dec(split.overnight_eur),
-                "overnight_pct": _dec(split.overnight_pct_eur),
-            },
-            "USD": {
-                "v": _dec(split.value_now_usd),
-                "overnight_currency": _dec(split.overnight_usd),
-                "overnight_pct": _dec(split.overnight_pct_usd),
-            },
-        }
+        out: dict[str, Any] = {}
+        for ccy in ("EUR", "USD"):
+            # On the twin-estimated book while a NAV is pending (7.3.1), as the hero.
+            v, night, pct, estimated = metrics_service.now_point_values(split, ccy)
+            out[ccy] = {
+                "v": _dec(v),
+                "overnight_currency": _dec(night),
+                "overnight_pct": _dec(pct),
+                "funds_estimated": estimated,
+            }
+        return out
     except Exception:
         log.warning("tick now point unavailable", exc_info=True)
         return None
@@ -627,7 +626,42 @@ def default_fx_job() -> dict[str, Any] | None:
     }
 
 
+#: ``refresh_status`` source while the end-of-day job settles the closes; a manual
+#: refresh then answers 409 "settling_close" instead of racing its writes.
+EOD_SOURCE = "eod"
+
+
 def default_eod_job() -> dict[str, Any] | None:
+    from investment_dashboard.services import refresh_status  # noqa: PLC0415
+
+    refresh_status.begin(EOD_SOURCE)
+    try:
+        return _eod_steps()
+    finally:
+        refresh_status.finish(EOD_SOURCE, updated=True)
+
+
+def default_eod_grace() -> timedelta:
+    from investment_dashboard.config import get_settings  # noqa: PLC0415
+
+    return timedelta(seconds=max(0, get_settings().eod_grace_seconds))
+
+
+def default_close_repull_delay() -> timedelta | None:
+    from investment_dashboard.config import get_settings  # noqa: PLC0415
+
+    minutes = get_settings().close_repull_minutes
+    return timedelta(minutes=minutes) if minutes > 0 else None
+
+
+def default_close_repull_job() -> bool:
+    """One quiet re-pull of the day's closes a few minutes after the bell."""
+    from investment_dashboard import boot  # noqa: PLC0415
+
+    return boot._refresh_prices() is not False
+
+
+def _eod_steps() -> dict[str, Any] | None:
     from investment_dashboard import boot  # noqa: PLC0415
 
     failed: list[str] = []
@@ -825,6 +859,11 @@ class Jobs:
     prices_due: Callable[[], bool] = default_prices_due
     #: Name of a running heavy maintenance job (market jobs wait), or ``None``.
     heavy_busy: Callable[[], str | None] = default_heavy_busy
+    #: How long after the bell the end-of-day job waits (the "closing" state).
+    eod_grace: Callable[[], timedelta] = default_eod_grace
+    #: When after the bell the closes are pulled once more (``None`` = never).
+    close_repull_delay: Callable[[], timedelta | None] = default_close_repull_delay
+    close_repull: Callable[[], bool] = default_close_repull_job
 
 
 @dataclass
@@ -848,6 +887,10 @@ class State:
     last_failed: dict[str, bool] = field(default_factory=dict)
     #: What the last published tick / fx event carried (change detection).
     last_payload: dict[str, Any] = field(default_factory=dict)
+    #: The last published ``market_session`` state (opening/open/closing/closed).
+    session_state: str | None = None
+    #: The session date whose closes were re-pulled after the bell.
+    repull_done_for: date | None = None
 
 
 class Scheduler:
@@ -967,6 +1010,8 @@ class Scheduler:
             return ["tick"] if st.last_tick is None or now - st.last_tick >= every else []
         self._load_eod_session()
         if st.last_eod_session != market_hours.latest_settled_session_date(now):
+            if self._in_close_grace(now):
+                return []  # "closing": the official closes are still coming in
             return ["eod"]
         # Closed and the day's eod is done: pull only what is still missing.
         if st.last_due_check is not None and now - st.last_due_check < MISSING_CHECK:
@@ -979,6 +1024,98 @@ class Scheduler:
             return []
         return ["tick"] if missing else []
 
+    def _bell(self, now: datetime) -> datetime | None:
+        """Today's closing bell (UTC) when today traded and it has rung, else ``None``."""
+        day = market_hours.exchange_today(now)
+        if not market_hours.is_trading_day(day):
+            return None
+        bell = datetime.combine(day, market_hours.session_close(day), market_hours.MARKET_TZ)
+        return bell if now >= bell else None
+
+    def _in_close_grace(self, now: datetime) -> bool:
+        bell = self._bell(now)
+        if bell is None:
+            return False
+        try:
+            grace = self.jobs.eod_grace()
+        except Exception:
+            grace = timedelta(seconds=60)
+        return now < bell + grace
+
+    def session_state(self, now: datetime) -> str:
+        """``opening`` / ``open`` / ``closing`` / ``closed`` for the clients' bell moments."""
+        st = self.state
+        if market_hours.is_us_market_open(now):
+            day = market_hours.exchange_today(now)
+            ticked = st.last_tick is not None and market_hours.exchange_today(st.last_tick) == day
+            return "open" if ticked and not st.last_failed.get("tick") else "opening"
+        self._load_eod_session()
+        settled = market_hours.latest_settled_session_date(now)
+        if self._bell(now) is not None and st.last_eod_session != settled:
+            return "closing"
+        return "closed"
+
+    def _publish_session(self, now: datetime) -> None:
+        """Announce a bell moment once per change; drop cached reads at each bell."""
+        state = self.session_state(now)
+        st = self.state
+        if state == st.session_state:
+            return
+        first = st.session_state is None
+        st.session_state = state
+        if not first and state in ("opening", "closing"):
+            # A read cached a minute before the bell still says "live" / "closed".
+            read_cache.invalidate()
+        self.bus.publish(
+            {
+                "type": "market_session",
+                "ts": _event_ts(self.clock()),
+                "state": state,
+                "prices_live": state == "open",
+                "at": now.astimezone(UTC).isoformat(),
+                "market_state": live_bus.market_state(now),
+            }
+        )
+
+    async def repull_step(self) -> bool:
+        """A few minutes after the bell, pull the day's closes once more, quietly.
+
+        The first pull at the bell can still hold a pre-auction bar; this one never
+        blocks anything and only publishes a ``refresh`` when it ran.
+        """
+        st = self.state
+        now = self.clock()
+        bell = self._bell(now)
+        if bell is None or market_hours.is_us_market_open(now):
+            return False
+        day = market_hours.exchange_today(now)
+        if st.repull_done_for == day or st.last_eod_session != day:
+            return False
+        try:
+            delay = self.jobs.close_repull_delay()
+        except Exception:
+            delay = None
+        if delay is None or now < bell + delay or self.jobs.heavy_busy() is not None:
+            return False
+        st.repull_done_for = day
+        try:
+            ok = await asyncio.to_thread(self.jobs.close_repull)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.warning("close re-pull failed", exc_info=True)
+            return False
+        activity("market_data").info("closing prices re-pulled (ok=%s)", ok)
+        self.bus.publish(
+            {
+                "type": "refresh",
+                "ts": _event_ts(self.clock()),
+                "market_state": live_bus.market_state(now),
+                "reason": "closing prices re-pulled",
+            }
+        )
+        return True
+
     def _due_fx(self, now: datetime) -> list[str]:
         """The currency clock (24/5), independent of the stock market."""
         st = self.state
@@ -987,7 +1124,19 @@ class Scheduler:
                 every = self.jobs.fx_interval()
             except Exception:
                 every = FX_INTERVAL
-            return ["fx"] if st.last_fx is None or now - st.last_fx >= every else []
+            # A good stock tick fetched the live EUR/USD spot as well and sent it
+            # (``fx_eur_usd``): no second fetch within the same FX interval (7.3.1).
+            tick = st.last_runs.get("tick")
+            fresh_tick = (
+                tick is not None
+                and not st.last_failed.get("tick")
+                and now - tick < every
+                and market_hours.is_us_market_open(now)
+            )
+            last = max(st.last_fx, tick) if fresh_tick and st.last_fx and tick else st.last_fx
+            if fresh_tick and last is None:
+                last = tick
+            return ["fx"] if last is None or now - last >= every else []
         # Weekend: the rate is frozen at Friday's close. Fetch only if no good
         # reading exists since then (retry every minute until one lands).
         closed_at = market_hours.last_forex_close(now)
@@ -1112,6 +1261,10 @@ class Scheduler:
         ran = [*due, *(n for n in requested if n not in due)]
         for name in ran:
             await self._run_job(name, now)
+        try:
+            await asyncio.to_thread(self._publish_session, now)
+        except Exception:
+            log.debug("market session event failed", exc_info=True)
         return ran
 
     async def settle_step(self) -> bool:
@@ -1169,6 +1322,7 @@ class Scheduler:
             try:
                 await self.step()
                 await self.settle_step()
+                await self.repull_step()
             except asyncio.CancelledError:
                 raise
             except Exception:

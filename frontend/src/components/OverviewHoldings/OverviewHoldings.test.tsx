@@ -32,6 +32,7 @@ vi.mock("../../lib/queries/portfolio", async (orig) => ({
   useHoldings: () => ({ data: { holdings }, isPending: false, isError: false, refetch: vi.fn() }),
 }));
 vi.mock("../../lib/timezone", () => ({ useTimeZone: () => "UTC" }));
+vi.mock("../Freshness/useScreenPhase", () => ({ useScreenPhase: () => ({ phase: null, label: "Today", caption: null, live: true, night: true }) }));
 
 import { OverviewHoldings } from "./OverviewHoldings";
 

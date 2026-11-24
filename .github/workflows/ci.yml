@@ -102,8 +102,12 @@ jobs:
 
       # One worker per runner core; whole test files stay on one worker
       # (--dist loadfile), so module-level fixtures and state behave as in a serial run.
+      # The ci Hypothesis profile runs every property test at its full example count
+      # (local runs cap them); --durations keeps the slowest tests visible.
       - name: Pytest
-        run: uv run pytest -q -n auto --dist loadfile --cov --cov-report=term-missing
+        env:
+          HYPOTHESIS_PROFILE: ci
+        run: uv run pytest -q -n auto --dist loadfile --durations=25 --cov --cov-report=term-missing
 
   web:
     needs: pr-gate
@@ -369,7 +373,7 @@ jobs:
       - name: Fixtures drift guard (src/fixtures/data)
         working-directory: frontend
         run: |
-          npm run gen:fixtures
+          npm run gen:fixtures -- --force
           git diff --exit-code -- src/fixtures/data
 
       # Same Chromium cache as the e2e job (same key), so the download runs at most once.

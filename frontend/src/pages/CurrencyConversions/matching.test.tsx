@@ -155,9 +155,9 @@ describe("table cells", () => {
     expect(trimDecimal("100")).toBe("100");
     expect(trimDecimal(null)).toBe("");
   });
-  it("shows vs ECB as a plain signed percentage", () => {
-    expect(offPctText("-0.0056")).toBe("−0.56 %");
-    expect(offPctText("0.0123")).toBe("+1.23 %");
+  it("shows vs ECB in the app's one signed percent format", () => {
+    expect(offPctText("-0.0056")).toBe("-0.56%");
+    expect(offPctText("0.0123")).toBe("+1.23%");
     expect(offPctText(null)).toBe("–");
     expect(offPctWords("-0.0056")).toMatch(/0\D56 % below ECB/);
   });

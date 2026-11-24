@@ -28,6 +28,7 @@ from investment_dashboard.api.schemas.fx_conversions import (
 )
 from investment_dashboard.domain import fx_spread
 from investment_dashboard.domain.fx_pool import DepositMatch, PoolResult
+from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.readmodels import fx_costs
 from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.services import fx_conversion_service as service
@@ -222,7 +223,7 @@ def costs(
     range_key: Annotated[RateRange, Query(alias="range")] = "all",
 ) -> ByCurrency[CostsOut]:
     """What converting costs you, per reporting currency (a plain read, not logged)."""
-    sides = fx_costs.build_costs_both(session, range_key, date_type.today())
+    sides = fx_costs.build_costs_both(session, range_key, exchange_today())
     return ByCurrency[CostsOut].model_validate(
         {c: CostsOut.model_validate(p) for c, p in sides.items()}
     )
