@@ -34,7 +34,7 @@ export function ImpactCompare({ eur, usd }: { eur: CurrencyEffectDto; usd: Curre
     <Card
       className="impact-compare"
       title={
-        <span className="impact__title">
+        <span className="impact-compare__title">
           Euros and dollars, side by side
           <InfoTip
             label="Euros and dollars, side by side"

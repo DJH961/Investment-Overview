@@ -211,17 +211,16 @@ exports[`Impact > 5y USD: hero, lens and bridge 1`] = `
 {
   "bridge": [
     "start",
-    "deposits",
-    "market",
+    "currency",
     "end",
   ],
-  "headline": "-13.2 pp",
-  "holdingsNote": null,
-  "lens": null,
-  "lensNote": null,
+  "headline": "+$14,895",
+  "holdingsNote": "Your holdings are in dollars, so in the dollar view the rate does not move them. Their currency effect shows in the euro view.",
+  "lens": "Seen from euros:-13.2 ppreturn gap, euros against dollars",
+  "lensNote": "One rate move, two lenses: a stronger euro shrinks your dollar book in euros and makes each euro you send buy more dollars.",
   "meta": "5Y · 30 Jun 2021 – 29 Jun 2026 · live",
   "parts": [],
-  "tag": "Headwind",
+  "tag": "Tailwind",
 }
 `;
 
@@ -252,17 +251,16 @@ exports[`Impact > 10y USD: hero, lens and bridge 1`] = `
 {
   "bridge": [
     "start",
-    "deposits",
-    "market",
+    "currency",
     "end",
   ],
-  "headline": "-13.2 pp",
-  "holdingsNote": null,
-  "lens": null,
-  "lensNote": null,
+  "headline": "+$14,895",
+  "holdingsNote": "Your holdings are in dollars, so in the dollar view the rate does not move them. Their currency effect shows in the euro view.",
+  "lens": "Seen from euros:-13.2 ppreturn gap, euros against dollars",
+  "lensNote": "One rate move, two lenses: a stronger euro shrinks your dollar book in euros and makes each euro you send buy more dollars.",
   "meta": "10Y · 30 Jun 2016 – 29 Jun 2026 · live",
   "parts": [],
-  "tag": "Headwind",
+  "tag": "Tailwind",
 }
 `;
 
@@ -333,17 +331,16 @@ exports[`Impact > max USD: hero, lens and bridge 1`] = `
 {
   "bridge": [
     "start",
-    "deposits",
-    "market",
+    "currency",
     "end",
   ],
-  "headline": "-13.2 pp",
-  "holdingsNote": null,
-  "lens": null,
-  "lensNote": null,
+  "headline": "+$14,895",
+  "holdingsNote": "Your holdings are in dollars, so in the dollar view the rate does not move them. Their currency effect shows in the euro view.",
+  "lens": "Seen from euros:-13.2 ppreturn gap, euros against dollars",
+  "lensNote": "One rate move, two lenses: a stronger euro shrinks your dollar book in euros and makes each euro you send buy more dollars.",
   "meta": "Max · 4 Jan 1999 – 29 Jun 2026 · live",
   "parts": [],
-  "tag": "Headwind",
+  "tag": "Tailwind",
 }
 `;
 

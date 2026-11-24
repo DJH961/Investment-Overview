@@ -99,6 +99,10 @@ def start_of(after: date, first: date | None) -> date | None:
     """The reference day: the range's start close, or (All) the first transaction day."""
     if after == date.min:
         return first
+    # Max starts long before you did: your figures are measured as All is, from the
+    # close before your first day.
+    if first is not None and after < first - timedelta(days=1):
+        return first - timedelta(days=1)
     return after
 
 

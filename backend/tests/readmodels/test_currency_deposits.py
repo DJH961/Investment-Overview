@@ -157,13 +157,37 @@ def test_matched_weekend_and_partly_matched_deposits(session: Session) -> None:
     assert D(out["usd_received"]) == D(2550)
     bridge_sum = D(out["usd_at_start"]) + D(out["effect"])
     assert bridge_sum == D(out["usd_received"])
-    assert D(out["rate_only"]["usd_at_start"]) == D(1100)
-    assert D(out["rate_only"]["usd_now"]) == D(1250)
+    # The regular amount (default EUR 100), not a fixed 1,000.
+    assert D(out["rate_only"]["usd_at_start"]) == D(110)
+    assert D(out["rate_only"]["usd_now"]) == D(125)
     assert out["records"]["best_day"] == {"label": "2024-03-14", "currency": "98.000000"}
     assert out["records"]["worst_day"] == {"label": "2024-03-09", "currency": "-55.000000"}
     assert out["series"][-1]["currency"] == "53.000000"
     # All: measured from the first transaction day's rate (1.10 here too).
     assert cd.window_effect(session, date.min, date(2024, 3, 15), date(2024, 3, 4)) == D(53)
+
+
+def test_a_range_that_starts_before_you_did_is_measured_from_your_first_day(
+    session: Session,
+) -> None:
+    """Max: no rate exists before the first deposit's day, yet the figures are yours."""
+    acct = accounts_repo.create_account(
+        session,
+        broker="fidelity",
+        account_label="USD brokerage",
+        native_currency="USD",
+        account_type="brokerage",
+    ).id
+    fx_repo.upsert_rates(
+        session,
+        {date(2023, 12, 29): D("1.10"), date(2024, 1, 2): D("1.11"), date(2024, 6, 3): D("1.08")},
+    )
+    _deposit(session, acct, date(2024, 1, 2), "1000")
+    session.flush()
+    out = cd.build_investing(session, date(1998, 12, 31), date(2024, 6, 4), first=date(2024, 1, 2))
+    assert out is not None
+    assert D(out["start_rate"]) == D("1.10")
+    assert D(out["rate_only"]["change"]) == D(-2)  # EUR 100: $110 -> $108
 
 
 def test_no_deposits_in_the_range_still_answers(session: Session) -> None:
@@ -181,5 +205,5 @@ def test_no_deposits_in_the_range_still_answers(session: Session) -> None:
     assert out is not None
     assert out["deposit_count"] == 0
     assert D(out["effect"]) == 0
-    assert D(out["rate_only"]["change"]) == D(-20)  # EUR 1,000: $1,100 -> $1,080
+    assert D(out["rate_only"]["change"]) == D(-2)  # EUR 100: $110 -> $108
     assert out["rate_only"]["kind"] == "headwind"
