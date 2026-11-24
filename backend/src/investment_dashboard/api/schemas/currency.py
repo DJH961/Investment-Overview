@@ -28,7 +28,7 @@ from investment_dashboard.api.schemas.overview import CurrencyLifetime, Currency
 #:   with ``direction`` and ``normal``.
 #:
 #: In the USD view (the investing side) ``effect_today`` is how many more or fewer
-#: dollars EUR 1,000 buys than at the last close, and ``effect_this_year`` /
+#: dollars your regular EUR amount buys than at the last close, and ``effect_this_year`` /
 #: ``effect_lifetime`` are the currency effect on your deposits (each deposit's euros
 #: times its rate minus the window's start rate); ``secondary`` is the EUR minus USD
 #: return gap.

@@ -65,6 +65,7 @@ from investment_dashboard.services import (
     fx_cost_service,
     fx_session_rates_service,
     intraday_snapshots_service,
+    investing_power_service,
     metrics_service,
 )
 from investment_dashboard.services.read_cache import cached_read
@@ -93,8 +94,6 @@ MIN_DENOM_SHARE = Decimal("0.1")
 ROLLING_WINDOW = 252
 #: Above this many daily points a series is thinned to the last close of each week.
 MAX_DAILY_POINTS = 1100
-#: "€1,000 buys $X" (plan §5, Today stats).
-BUYS_AMOUNT_EUR = Decimal(1000)
 _CURRENCY_NAMES = {"USD": "dollar", "EUR": "euro", "GBP": "pound", "CHF": "franc"}
 
 #: When a broker account's cash would have gone below zero (see ``fx_attribution_rows``).
@@ -910,10 +909,11 @@ def _buys(session: Session, today: Mapping[str, Any], now: datetime) -> dict[str
     spot, prev = _d(today.get("spot")), _d(today.get("prev"))
     if spot is None or spot <= 0:
         return None
+    amount = investing_power_service.get_amount_eur(session)
     market_open = fx_box_regime(now).market_open
     split = fx_buying_power_split(
         market_open=market_open,
-        amount_eur=BUYS_AMOUNT_EUR,
+        amount_eur=amount,
         live_fx=spot,
         prev_fx=prev,
         session_close_fx=None
@@ -925,12 +925,10 @@ def _buys(session: Session, today: Mapping[str, Any], now: datetime) -> dict[str
     )
     has_prev = prev is not None and prev > 0
     return {
-        "amount_eur": dec(BUYS_AMOUNT_EUR),
-        "usd_now": _m(BUYS_AMOUNT_EUR * spot),
-        "usd_prev": _m(BUYS_AMOUNT_EUR * prev) if has_prev and prev is not None else None,
-        "change_usd": _m(BUYS_AMOUNT_EUR * (spot - prev))
-        if has_prev and prev is not None
-        else None,
+        "amount_eur": dec(amount),
+        "usd_now": _m(amount * spot),
+        "usd_prev": _m(amount * prev) if has_prev and prev is not None else None,
+        "change_usd": _m(amount * (spot - prev)) if has_prev and prev is not None else None,
         "market_hours_usd": _m(split.market_hours_usd),
         "overnight_usd": _m(split.overnight_usd),
     }

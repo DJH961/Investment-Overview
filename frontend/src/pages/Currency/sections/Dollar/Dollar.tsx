@@ -1,18 +1,21 @@
 import { DollarSign, Info } from "lucide-react";
 import { CurrencySection } from "../../../../components/CurrencySection";
 import { RATE_RANGE_LABELS } from "../../../../lib/queries/currencyRate";
-import { useDollar } from "../../../../lib/queries/currencyDollar";
+import { useDollar, useDollarBoth } from "../../../../lib/queries/currencyDollar";
+import { ExposureCompare } from "./ExposureCompare";
 import { windowText } from "../../numbers";
 import type { CurrencySectionComponentProps } from "../../sections";
 import { PositionCard } from "./PositionCard";
 import { RollingPanel } from "./RollingPanel";
 import { TrendPanel } from "./TrendPanel";
 import "./Dollar.scss";
+import "./ExposureCompare.scss";
 
 /** The dollar: where it stands since you started, your position, and whether the rate's move is ordinary. */
 export function Dollar({ id, label, currency, range }: CurrencySectionComponentProps) {
   const q = useDollar(currency, range);
   const data = q.data;
+  const both = useDollarBoth(range).data;
   const state = q.isError && !data ? "error" : !data ? "loading" : !data.position?.exposure_usd && !data.trend?.regime ? "empty" : "ready";
   return (
     <CurrencySection
@@ -36,6 +39,7 @@ export function Dollar({ id, label, currency, range }: CurrencySectionComponentP
       {data ? (
         <>
           <PositionCard data={data} />
+          {both?.EUR && both.USD ? <ExposureCompare eur={both.EUR} usd={both.USD} /> : null}
           <TrendPanel data={data} />
           <RollingPanel data={data} />
           <p className="dollar-section__caption">

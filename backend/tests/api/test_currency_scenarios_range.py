@@ -81,7 +81,8 @@ def test_usd_view_is_the_investing_perspective(
     assert usd["perspective"] == "invest"
     unit = Decimal(usd["invest"]["unit_eur"])
     monthly = Decimal(usd["invest"]["monthly_eur"])
-    assert unit == 1000
+    # The regular amount (the service default here), never a fixed 1,000.
+    assert unit == monthly == Decimal(100)
     spot = Decimal(usd["rate_now"]["rate"])
     for row in usd["rows"][::25]:
         rate = Decimal(row["rate"])

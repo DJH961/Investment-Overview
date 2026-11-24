@@ -258,7 +258,7 @@ def _investing_tiles(
 ) -> list[dict[str, Any]]:
     """The USD view's tiles on the investing perspective (Impact's USD view):
 
-    * today: how many more or fewer dollars EUR 1,000 buys than at the last close;
+    * today: how many more or fewer dollars your regular EUR amount buys than at the last close;
     * this year / lifetime: what the rate did to the euros you sent into your
       dollar accounts (``readmodels/currency_deposits``), the return gap beside.
 
@@ -275,7 +275,7 @@ def _investing_tiles(
     cur = payload["currency"]["today"]
     spot, prev = _d(cur.get("spot")), _d(cur.get("prev"))
     if spot is not None and prev is not None and prev > 0:
-        change = (currency_deposits.AMOUNT_EUR * (spot - prev)).quantize(Q6)
+        change = (investing_power_service.get_amount_eur(session) * (spot - prev)).quantize(Q6)
         eur_day, usd_day = (
             _d(eur_payload["kpis"].get("daily_growth_pct")),
             _d(payload["kpis"].get("daily_growth_pct")),

@@ -29,14 +29,12 @@ from investment_dashboard.domain.kinds import DEPOSIT
 from investment_dashboard.readmodels import fx_attribution_rows as rows_rm
 from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.repositories import transactions_repo
-from investment_dashboard.services import fx_conversion_service
+from investment_dashboard.services import fx_conversion_service, investing_power_service
 from investment_dashboard.services.read_cache import cached_read
 
 ZERO = Decimal(0)
 Q_MONEY = Decimal("0.000001")
 Q_FRAC = Decimal("0.00000001")
-#: "EUR 1,000 buys $X" (the rate-only line).
-AMOUNT_EUR = Decimal(1000)
 #: Above this many deposits the per-deposit list is cut (the sub-page shows them all).
 MAX_DEPOSIT_ROWS = 500
 
@@ -101,6 +99,10 @@ def start_of(after: date, first: date | None) -> date | None:
     """The reference day: the range's start close, or (All) the first transaction day."""
     if after == date.min:
         return first
+    # Max starts long before you did: your figures are measured as All is, from the
+    # close before your first day.
+    if first is not None and after < first - timedelta(days=1):
+        return first - timedelta(days=1)
     return after
 
 
@@ -178,6 +180,7 @@ def build_investing(
     if not deposits or start_on is None:
         return None
     rate_at = rate_lookup(session)
+    amount = investing_power_service.get_amount_eur(session)
     r0 = rate_at(start_on)
     r_end = rate_at(through)
     if r0 is None or r_end is None:
@@ -288,12 +291,12 @@ def build_investing(
             for e in rows
         ],
         "rate_only": {
-            "amount_eur": dec(AMOUNT_EUR),
+            "amount_eur": dec(amount),
             "start_rate": dec(r0),
             "end_rate": dec(r_end),
-            "usd_at_start": _m(AMOUNT_EUR * r0),
-            "usd_now": _m(AMOUNT_EUR * r_end),
-            "change": _m(AMOUNT_EUR * (r_end - r0)),
+            "usd_at_start": _m(amount * r0),
+            "usd_now": _m(amount * r_end),
+            "change": _m(amount * (r_end - r0)),
             "kind": _kind(r_end - r0),
         },
         "stats": stats,

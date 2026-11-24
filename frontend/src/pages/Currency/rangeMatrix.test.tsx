@@ -33,28 +33,26 @@ const data = vi.hoisted(() => ({ dollar: null as unknown }));
 
 /** Max for Impact: the recorder has no Max answer yet; All with the Max window (context before you started). */
 function effectFor(range: string): Both<CurrencyEffectDto> {
-  const rec = fx[`GET /api/currency/effect/both?range=${range}`] as Both<CurrencyEffectDto> | undefined;
-  if (rec) return rec;
-  const all = fx["GET /api/currency/effect/both?range=all"] as Both<CurrencyEffectDto>;
-  const win = (fx["GET /api/currency/dollar/both?range=max"] as Both<{ window: CurrencyEffectDto["window"] }>).EUR.window;
+  const rec = fx[`GET /api/currency/effect/both?range=${range}`] as Both<CurrencyEffectDto>;
+  if (range !== "max") return rec;
   const pre = (d: CurrencyEffectDto): CurrencyEffectDto => ({
     ...d,
-    range: "max",
-    window: win,
     // Two rolling points dated before you started: drawn as context, never as yours.
     rolling: [{ t: "2022-06-30", currency: "1200" }, { t: "2022-12-30", currency: "-800" }, ...(d.rolling ?? [])] as CurrencyEffectDto["rolling"],
   });
-  return { EUR: pre(all.EUR), USD: pre(all.USD) };
+  return { EUR: pre(rec.EUR), USD: pre(rec.USD) };
 }
 
 const ok = (d: unknown) => ({ data: d, isError: false, isFetching: false, isPending: false, isPlaceholderData: false, refetch: () => undefined });
 vi.mock("../../lib/queries/currencyEffect", async (orig) => ({
   ...(await orig<typeof import("../../lib/queries/currencyEffect")>()),
   useCurrencyEffect: (r: string, c: Ccy) => ok(effectFor(r)[c]),
+  useCurrencyEffectBoth: (r: string) => ok(effectFor(r)),
 }));
 vi.mock("../../lib/queries/currencyDollar", async (orig) => ({
   ...(await orig<typeof import("../../lib/queries/currencyDollar")>()),
   useDollar: (c: Ccy, r: string) => ok(data.dollar ?? (fx[`GET /api/currency/dollar/both?range=${r}`] as Both)[c]),
+  useDollarBoth: (r: string) => ok(data.dollar ? { EUR: data.dollar, USD: data.dollar } : fx[`GET /api/currency/dollar/both?range=${r}`]),
   useScenarios: (c: Ccy, r: string) => ok((fx[`GET /api/currency/scenarios/both?range=${r}`] as Both)[c]),
 }));
 vi.mock("../../lib/queries/fxCosts", async (orig) => ({
@@ -78,7 +76,7 @@ function mount(node: React.ReactNode) {
   );
 }
 
-const RANGES = ["1d", "1w", "all", "max"] as const satisfies readonly RateRange[];
+const RANGES = ["1d", "1w", "1m", "3m", "ytd", "1y", "all", "5y", "10y", "max"] as const satisfies readonly RateRange[];
 const VIEWS = ["EUR", "USD"] as const;
 const SECTIONS = [
   { id: "impact", label: "Impact", C: Impact },
@@ -212,6 +210,42 @@ describe("Impact", () => {
     const hero = charts.seen.find((c) => c.className === "impact__chart")!;
     const t = Date.parse(String(hero.series[0].points[0].t));
     expect(hero.timeFormat(t)).toMatch(/\d{4}/);
+  });
+});
+
+describe("EUR next to USD, and the regular amount", () => {
+  for (const range of RANGES) {
+    it(`${range}: Impact sets euros and dollars side by side, each in its own currency`, () => {
+      const { container } = mount(<Impact id="impact" label="Impact" currency="EUR" range={range} />);
+      const table = container.querySelector(".impact-compare__table")!;
+      expect(table).not.toBeNull();
+      const rows = [...table.querySelectorAll("tbody tr")].map((r) => [...r.querySelectorAll("td")].map((c) => c.textContent ?? ""));
+      // One row (the returns are in the hero): euros on the left, dollars on the right.
+      expect(rows).toHaveLength(1);
+      expect(rows[0][0]).toContain("€");
+      expect(rows[0][1]).toContain("$");
+    });
+
+    it(`${range}: Exposure sets the two quotes side by side`, () => {
+      const { container } = mount(<Dollar id="exposure" label="Exposure" currency="USD" range={range} />);
+      const head = [...container.querySelectorAll(".exposure-compare__head")].map((h) => h.textContent);
+      expect(head[0]).toContain("USD/EUR");
+      expect(head[1]).toContain("EUR/USD");
+      // Each column names its lens, so headwind and tailwind read as two different things.
+      expect(head[0]).toContain("Dollars you hold");
+      expect(head[1]).toContain("Euros you convert");
+    });
+  }
+
+  it("every 'buys' figure uses the regular amount (the €100 default), never €1,000", () => {
+    const rec = fx["GET /api/currency/dollar/both?range=1y"] as Both<{ next_euro?: { amount_eur: string } | null }>;
+    expect(Number(rec.USD.next_euro?.amount_eur)).toBe(100);
+    const { container } = mount(<Dollar id="exposure" label="Exposure" currency="USD" range="1y" />);
+    expect(container.textContent).toContain("€100");
+    expect(container.textContent).not.toContain("1,000");
+    const sc = fx["GET /api/currency/scenarios/both?range=1y"] as Both<{ invest?: { unit_eur: string; monthly_eur: string } | null }>;
+    expect(sc.USD.invest?.unit_eur).toBe(sc.USD.invest?.monthly_eur);
+    expect(Number(sc.USD.invest?.unit_eur)).toBe(100);
   });
 });
 

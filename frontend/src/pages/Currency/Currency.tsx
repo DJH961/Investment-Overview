@@ -24,7 +24,7 @@ export const STRIP_LABELS: Record<string, StatMeta> = {
   rate_now: { label: "EUR/USD now", tip: "How many dollars one euro buys at the latest rate." },
   effect_today: {
     label: "Effect today",
-    tip: "Euro view: what the exchange rate added to or took from your portfolio's euro value since the last close. Dollar view: how many more or fewer dollars €1,000 buys than at the last close.",
+    tip: "Euro view: what the exchange rate added to or took from your portfolio's euro value since the last close. Dollar view: how many more or fewer dollars your regular conversion amount (Settings) buys than at the last close.",
   },
   effect_ytd: {
     label: "Effect this year",

@@ -91,7 +91,7 @@ class NextEuroPoint(ApiModel):
 
 
 class NextEuro(ApiModel):
-    """ "€1,000 buys $X now; $Y a year ago" (a euro notional at one rate each)."""
+    """ "The regular amount buys $X now; $Y a year ago" (a euro notional at one rate each)."""
 
     amount_eur: DecStr
     usd_now: DecStr
@@ -372,7 +372,7 @@ class StressRow(ApiModel):
 class InvestAmounts(ApiModel):
     """The euros the invest view prices (the USD Scenarios)."""
 
-    #: A round unit: "what does EUR 1,000 buy".
+    #: A round unit: "what does the regular amount buy".
     unit_eur: DecStr
     #: The owner's regular amount (``investing_power.amount_eur``).
     monthly_eur: DecStr
@@ -425,7 +425,7 @@ class ScenariosOut(ApiModel):
     #: ``value`` (EUR view: today's holdings at other rates, a strong dollar is good) or
     #: ``invest`` (USD view: what the euros you send in buy, a strong euro is good).
     perspective: Literal["value", "invest"] = "value"
-    #: ``invest`` only: the euro unit ("what does EUR 1,000 buy") and the regular amount.
+    #: ``invest`` only: the euro unit (the regular amount) and the regular amount (equal today).
     invest: InvestAmounts | None = None
     other_ccy: Ccy = "USD"
     #: The book in ``other_ccy`` at today's rate (the secondary line of the invest view).

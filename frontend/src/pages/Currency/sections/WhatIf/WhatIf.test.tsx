@@ -61,7 +61,11 @@ describe("What if", () => {
   it("the USD view prices the euros you send in, with the holdings in euros as a side line", () => {
     mount("USD");
     expect(screen.getByText(/What you already have/)).toBeInTheDocument();
-    expect(screen.getAllByText(/€1,000 buys/).length).toBeGreaterThan(0);
+    // The regular amount from Settings (here the €100 default), never a fixed €1,000;
+    // unit and regular amount are one column when they are the same number.
+    expect(screen.getAllByText(/€100 buys/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/1,000 buys/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Your regular/)).not.toBeInTheDocument();
     expect(screen.queryByText(/stays the same/)).not.toBeInTheDocument();
   });
 

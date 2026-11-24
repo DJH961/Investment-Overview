@@ -81,7 +81,7 @@ HISTORY_RANGES = ("1m", "3m", "6m", "ytd", "1y", "all")
 #: The Currency page chart's ranges (``api/schemas/currency_rate.RateRange``).
 RATE_RANGES = ("1d", "1w", "1m", "3m", "ytd", "1y", "all", "5y", "10y", "max")
 # The Effect endpoint uses a shorter horizon set than the rate chart / Dollar view.
-EFFECT_RANGES = ("1d", "1w", "1m", "3m", "ytd", "1y", "3y", "5y", "10y", "all")
+EFFECT_RANGES = ("1d", "1w", "1m", "3m", "ytd", "1y", "3y", "5y", "10y", "all", "max")
 GET_ENDPOINTS: tuple[str, ...] = (
     "/api/auth/me",
     "/api/auth/passkeys",

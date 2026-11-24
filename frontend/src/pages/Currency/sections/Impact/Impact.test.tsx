@@ -14,6 +14,7 @@ vi.mock("../../../../components/Chart", () => ({
 const effect = vi.hoisted(() => ({ data: null as unknown }));
 vi.mock("../../../../lib/queries/currencyEffect", async (orig) => ({
   ...(await orig<typeof import("../../../../lib/queries/currencyEffect")>()),
+  useCurrencyEffectBoth: () => ({ data: effect.data }),
   useCurrencyEffect: (_r: string, c: "EUR" | "USD") => ({
     data: (effect.data as Record<string, unknown>)[c],
     isError: false,

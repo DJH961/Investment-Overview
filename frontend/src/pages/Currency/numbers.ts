@@ -1,5 +1,5 @@
 import type { components } from "../../lib/api-types";
-import { formatDate, formatPercent, formatPp, signOf } from "../../lib/format";
+import { formatDate, formatMoney, formatPercent, formatPp, signOf } from "../../lib/format";
 import { RATE_RANGE_LABELS, type RateRange } from "../../lib/queries/currencyRate";
 
 /**
@@ -43,6 +43,14 @@ export function windowText(w: RangeWindowDto | null | undefined, range?: RateRan
   const span = `${formatDate(w.start)} – ${formatDate(w.through)}`;
   return `${label} · ${span}${w.live ? " · live" : ""}`;
 }
+
+/** The regular conversion amount in euros: whole when it is whole, else with cents. */
+export const euroText = (n: number | null | undefined) =>
+  formatMoney(n, "EUR", { digits: n != null && Number.isInteger(n) ? 0 : 2 });
+
+/** Digits for what a euro amount buys: small amounts (under 1,000) need cents. */
+export const investDigits = (amountEur: number | null | undefined) =>
+  amountEur != null && amountEur < 1000 ? 2 : 0;
 
 /** Epoch ms of the last day before you started (Max only), or null. */
 export function contextUntilMs(w: RangeWindowDto | null | undefined): number | null {

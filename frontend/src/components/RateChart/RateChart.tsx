@@ -17,6 +17,7 @@ import {
   formatWeekdayTime,
 } from "../../lib/format";
 import { toNum } from "../../lib/queries/portfolio";
+import { contextUntilMs, windowText } from "../../pages/Currency/numbers";
 import {
   RATE_RANGE_LABELS,
   RATE_RANGES,
@@ -248,7 +249,18 @@ export function RateChart({
   const series = useMemo<ChartSeries[]>(() => {
     if (!data) return [];
     const toPts = (pts: RatePointDto[]) => pts.map((p) => ({ t: p.t, v: pick(p, lens) }));
-    const out: ChartSeries[] = [{ id: "rate", label: pair, points: toPts(data.points ?? []), tone: "primary" }];
+    const all = data.points ?? [];
+    // Max: the part before you started is context, drawn muted and dashed; the line
+    // you lived through (and every figure) starts after it.
+    const ctx = contextUntilMs(data.window);
+    const firstOwn = ctx === null ? -1 : all.findIndex((p) => Date.parse(p.t) > ctx);
+    const out: ChartSeries[] = [];
+    if (ctx !== null && firstOwn > 1) {
+      out.push({ id: "rate-before", label: "Before you started", points: toPts(all.slice(0, firstOwn)), tone: "invested" });
+      out.push({ id: "rate", label: pair, points: toPts(all.slice(firstOwn - 1)), tone: "primary" });
+    } else {
+      out.push({ id: "rate", label: pair, points: toPts(all), tone: "primary" });
+    }
     if (data.ma200?.length) out.push({ id: "ma200", label: "200-day average", points: toPts(data.ma200), tone: "benchmark" });
     return out;
   }, [data, lens, pair]);
@@ -261,7 +273,16 @@ export function RateChart({
   const pts = data?.points ?? [];
   const last = pts.length ? pick(pts[pts.length - 1], lens) : null;
   const change = toNum(lens === "rate" ? data?.change?.rate_pct : data?.change?.inverse_pct);
-  const rangeLabel = shown === "max" ? "since 1999" : shown === "all" ? "since you started" : RATE_RANGE_LABELS[shown];
+  // Max says where the drawn line really starts (a thin history starts later than the window).
+  const firstDrawn = pts.length ? pts[0].t.slice(0, 10) : null;
+  const sinceDrawn = firstDrawn
+    ? new Date(`${firstDrawn}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" })
+    : "1999";
+  const rangeLabel = shown === "max" ? `since ${sinceDrawn}` : shown === "all" ? "since you started" : RATE_RANGE_LABELS[shown];
+  const windowLine = windowText(
+    data?.window && shown === "max" && firstDrawn && firstDrawn > data.window.start ? { ...data.window, start: firstDrawn } : data?.window,
+    shown,
+  );
   const long = shown === "1y" || shown === "all" || shown === "5y" || shown === "10y" || shown === "max";
   const sessions = useMemo(
     () => (shown === "1w" ? (data?.sessions ?? []).map((s) => ({ date: s.close.slice(0, 10), open: s.open, close: s.close })) : []),
@@ -338,6 +359,11 @@ export function RateChart({
           </span>
         ) : null}
       </p>
+      {windowLine ? (
+        <p className="rate-chart__window" data-testid="rate-window">
+          {windowLine}
+        </p>
+      ) : null}
       <Chart
         series={series}
         // Labelled in the legend, not on the plot, where it would cross the line.

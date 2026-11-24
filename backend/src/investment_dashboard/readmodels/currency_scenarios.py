@@ -65,10 +65,6 @@ def _display(rate: Decimal, ccy: str) -> Decimal:
     return (ONE / rate).quantize(SIX_DP) if QUOTES[ccy]["field"] == "inverse" else rate
 
 
-#: The unit the USD (investing) view prices: "what does €1,000 buy".
-INVEST_UNIT_EUR = Decimal(1000)
-
-
 @dataclass(frozen=True)
 class Invest:
     """The euros sent in: a round unit and the regular amount (``investing_power``)."""
@@ -377,7 +373,7 @@ def build_scenarios_both(  # noqa: PLR0915
         other = "USD" if ccy == "EUR" else "EUR"
         # EUR view = value (cashing out the dollars held); USD view = investing (what the
         # euros you send in buy). Equivalent, inverted: strong dollar good / strong euro good.
-        invest = Invest(INVEST_UNIT_EUR, monthly) if ccy == "USD" else None
+        invest = Invest(monthly, monthly) if ccy == "USD" else None
         inverse = QUOTES[ccy]["field"] == "inverse"
         grid = _grid(spot, ccy, inverse=inverse)
         shown_grid = [q for q, _r in grid]

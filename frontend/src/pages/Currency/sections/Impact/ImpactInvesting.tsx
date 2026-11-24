@@ -8,7 +8,7 @@ import { Money } from "../../../../components/Money";
 import { formatDate, formatNumber, signOf } from "../../../../lib/format";
 import type { CurrencyEffectDto, OtherLensDto } from "../../../../lib/queries/currencyEffect";
 import { toNum } from "../../../../lib/queries/portfolio";
-import { fractionTone, ppText } from "../../numbers";
+import { fractionTone, investDigits, ppText } from "../../numbers";
 import { gapWords, RETURNS_TIP } from "./impactFormat";
 
 /**
@@ -74,8 +74,8 @@ export function InvestingHeadline({ data, inv }: { data: CurrencyEffectDto; inv:
       <p className="impact__lede">
         {none ? (
           <>
-            No deposits in this range. <Money amount={toNum(ro.amount_eur)} currency="EUR" digits={0} /> buys{" "}
-            <Money amount={toNum(ro.usd_now)} currency="USD" digits={0} /> now, {change !== null && change < 0 ? "fewer" : "more"} dollars
+            No deposits in this range. <Money amount={toNum(ro.amount_eur)} currency="EUR" digits={Number.isInteger(toNum(ro.amount_eur)) ? 0 : 2} /> buys{" "}
+            <Money amount={toNum(ro.usd_now)} currency="USD" digits={investDigits(toNum(ro.amount_eur))} /> now, {change !== null && change < 0 ? "fewer" : "more"} dollars
             than at the start.
           </>
         ) : (

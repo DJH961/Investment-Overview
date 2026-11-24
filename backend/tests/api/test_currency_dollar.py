@@ -197,3 +197,47 @@ def test_scenarios_today_row_is_exactly_today(api_client: TestClient, seeded: No
         today = next(m for m in side["marks"] if m["key"] == "today")
         row = side["rows"][today["row_index"]]
         assert Decimal(row["value"]) == Decimal(side["value_now"])
+
+
+@pytest.mark.parametrize("amount", ["100", "250", "12.50"])
+def test_every_buys_figure_uses_the_regular_amount(
+    api_client: TestClient, seeded: None, amount: str
+) -> None:
+    """The regular amount from Settings drives every "EUR x buys" figure (7.3.1), never 1,000.
+
+    Golden values: the amount times the same rate, in native dollars (no EUR round trip).
+    """
+    from investment_dashboard.services import investing_power_service, read_cache
+
+    with ledger_session_scope() as session:
+        investing_power_service.set_amount_eur(session, Decimal(amount))
+    read_cache.invalidate()
+    regular = Decimal(amount)
+
+    dollar = _get(api_client, "/api/currency/dollar/both?range=1y")
+    for ccy in ("EUR", "USD"):
+        nxt = dollar[ccy]["next_euro"]
+        assert nxt is not None
+        assert Decimal(nxt["amount_eur"]) == regular
+        assert Decimal(nxt["usd_now"]) > 0
+
+    scenarios = _get(api_client, "/api/currency/scenarios/both?range=1y")
+    invest = scenarios["USD"]["invest"]
+    assert Decimal(invest["unit_eur"]) == Decimal(invest["monthly_eur"]) == regular
+    rate_now = Decimal(scenarios["USD"]["rate_now"]["rate"])
+    for row in scenarios["USD"]["rows"][::40]:
+        rate = Decimal(row["rate"])
+        assert Decimal(row["per_unit"]) == regular * rate
+        assert Decimal(row["unit_change"]) == regular * (rate - rate_now)
+
+    resp = api_client.get("/api/currency/effect/both?range=1y")
+    assert resp.status_code == 200, resp.text
+    usd = resp.json()["USD"]
+    only = usd["investing"]["rate_only"]
+    assert Decimal(only["amount_eur"]) == regular
+    assert Decimal(only["usd_now"]) == regular * Decimal(only["end_rate"])
+    assert Decimal(only["change"]) == regular * (
+        Decimal(only["end_rate"]) - Decimal(only["start_rate"])
+    )
+    if usd["buys"] is not None:
+        assert Decimal(usd["buys"]["amount_eur"]) == regular

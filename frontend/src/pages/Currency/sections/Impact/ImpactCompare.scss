@@ -1,0 +1,65 @@
+.impact-compare {
+  min-width: 0;
+
+  &__title {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  &__table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+
+  &__head {
+    padding: 0 var(--space-3) var(--space-2);
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    text-align: right;
+  }
+
+  &__lens {
+    display: block;
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-regular);
+  }
+
+  &__row {
+    width: 26%;
+    padding: var(--space-3) var(--space-3) var(--space-3) 0;
+    border-top: var(--border-width) solid var(--color-border);
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    text-align: left;
+    vertical-align: top;
+  }
+
+  &__cell {
+    text-align: right;
+    padding: var(--space-3);
+    border-top: var(--border-width) solid var(--color-border);
+    vertical-align: top;
+  }
+
+  &__figure {
+    display: block;
+    font-weight: var(--font-weight-figure);
+    font-size: var(--font-size-xl);
+    font-variant-numeric: tabular-nums;
+    line-height: var(--line-height-tight);
+  }
+
+  &__figure--pos { color: var(--color-pos); }
+  &__figure--neg { color: var(--color-neg); }
+
+  &__basis {
+    display: block;
+    margin-top: var(--space-1);
+    color: var(--color-muted);
+    font-size: var(--font-size-2xs);
+  }
+}

@@ -12,7 +12,7 @@ import { useScenarios, type ScenarioMarkDto, type ScenariosDto } from "../../../
 import { RATE_RANGE_LABELS, type RateRange } from "../../../../lib/queries/currencyRate";
 import { toNum } from "../../../../lib/queries/portfolio";
 import type { CurrencySectionComponentProps } from "../../sections";
-import { pctText, windowText } from "../../numbers";
+import { euroText, investDigits, pctText, windowText } from "../../numbers";
 import { layoutMarks } from "./layoutMarks";
 import "./WhatIf.scss";
 
@@ -155,7 +155,9 @@ function ScenarioSlider({ data }: { data: ScenariosDto }) {
     0,
     ...(data.stress ?? []).map((s) => Math.abs(toNum(invest ? s.unit_change : s.change) ?? 0)),
   );
-  const euros = (n: number | null) => formatMoney(n, "EUR", { digits: 0 });
+  const euros = euroText;
+  const dg = invest ? investDigits(unit) : 0;
+  const same = invest != null && unit === monthly;
 
   return (
     <Card className="what-if__scenario" title="Try another exchange rate">
@@ -222,11 +224,11 @@ function ScenarioSlider({ data }: { data: ScenariosDto }) {
           <div className="scenario-result__item scenario-result__item--lead">
             <dt className="scenario-result__label">{invest ? `${euros(unit)} buys` : "Holdings worth"}</dt>
             <dd className="scenario-result__value">
-              <Money amount={toNum(invest ? row.per_unit : row.value)} currency={data.ccy} digits={0} />
+              <Money amount={toNum(invest ? row.per_unit : row.value)} currency={data.ccy} digits={dg} />
             </dd>
-            {invest ? (
+            {invest && !same ? (
               <dd className="scenario-result__note">
-                Your regular {euros(monthly)}: <Money amount={toNum(row.per_monthly)} currency={data.ccy} digits={0} />
+                Your regular {euros(monthly)}: <Money amount={toNum(row.per_monthly)} currency={data.ccy} digits={dg} />
               </dd>
             ) : null}
           </div>
@@ -234,11 +236,11 @@ function ScenarioSlider({ data }: { data: ScenariosDto }) {
             <div className="scenario-result__item scenario-result__item--lead">
               <dt className="scenario-result__label">Compared with today</dt>
               <dd className="scenario-result__value scenario-result__value--sub">
-                {Math.abs(diff) < 0.5 ? "No change" : <Money amount={diff} currency={data.ccy} signed colored digits={0} />}
+                {Math.abs(diff) < 0.5 ? "No change" : <Money amount={diff} currency={data.ccy} signed colored digits={dg} />}
               </dd>
-              {invest && row.monthly_change != null && Math.abs(toNum(row.monthly_change) ?? 0) >= 0.5 ? (
+              {invest && !same && row.monthly_change != null && Math.abs(toNum(row.monthly_change) ?? 0) >= 0.5 ? (
                 <dd className="scenario-result__note">
-                  On your regular {euros(monthly)}: <Money amount={toNum(row.monthly_change)} currency={data.ccy} signed colored digits={0} />
+                  On your regular {euros(monthly)}: <Money amount={toNum(row.monthly_change)} currency={data.ccy} signed colored digits={dg} />
                 </dd>
               ) : null}
               <dd className="scenario-result__bar">
@@ -249,7 +251,7 @@ function ScenarioSlider({ data }: { data: ScenariosDto }) {
           <div className="scenario-result__item">
             <dt className="scenario-result__label">{invest ? `Against your average rate` : "Currency gain/loss"}</dt>
             <dd className="scenario-result__value">
-              <Money amount={toNum(invest ? row.unit_vs_avg : row.gain)} currency={data.ccy} signed colored digits={0} />
+              <Money amount={toNum(invest ? row.unit_vs_avg : row.gain)} currency={data.ccy} signed colored digits={dg} />
             </dd>
             {invest ? <dd className="scenario-result__note">per {euros(unit)}, against what your past euros got</dd> : null}
           </div>
@@ -290,7 +292,9 @@ function StressCard({ data }: { data: ScenariosDto }) {
   const invest = data.perspective === "invest" ? data.invest : null;
   const unit = invest ? toNum(invest.unit_eur) : null;
   const monthly = invest ? toNum(invest.monthly_eur) : null;
-  const euros = (n: number | null) => formatMoney(n, "EUR", { digits: 0 });
+  const euros = euroText;
+  const dg = invest ? investDigits(unit) : 0;
+  const same = invest != null && unit === monthly;
   const valueOf = (s: (typeof stress)[number]) => (invest ? s.per_unit : s.value);
   const changeOf = (s: (typeof stress)[number]) => (invest ? s.unit_change : s.change);
   const nowUnit = invest && data.rate_now && unit != null ? unit * (toNum(data.rate_now.rate) ?? 0) : null;
@@ -302,15 +306,15 @@ function StressCard({ data }: { data: ScenariosDto }) {
       <th scope="row">{formatPercent(toNum(s.shift_pct), { signed: true, digits: 0 })}</th>
       <td>{formatNumber(toNum(s.rate_display), 4)}</td>
       <td>
-        <Money amount={toNum(valueOf(s))} currency={data.ccy} digits={0} />
+        <Money amount={toNum(valueOf(s))} currency={data.ccy} digits={dg} />
       </td>
       <td className="rate-table__delta">
-        <Money amount={toNum(changeOf(s))} currency={data.ccy} signed colored digits={0} />
+        <Money amount={toNum(changeOf(s))} currency={data.ccy} signed colored digits={dg} />
         <DeltaBar value={toNum(changeOf(s)) ?? 0} scale={scale} />
       </td>
-      {invest ? (
+      {invest && !same ? (
         <td>
-          <Money amount={toNum(s.per_monthly)} currency={data.ccy} digits={0} />
+          <Money amount={toNum(s.per_monthly)} currency={data.ccy} digits={dg} />
         </td>
       ) : null}
     </tr>
@@ -319,7 +323,7 @@ function StressCard({ data }: { data: ScenariosDto }) {
     <Card className="what-if__stress" title={`If the ${words.mover.toLowerCase()} moves`}>
       <p className="what-if__intro">
         {invest
-          ? `What ${euros(unit)} and your regular ${euros(monthly)} would buy if ${data.quote.pair} were 5, 10 or 15% different from today.`
+          ? `What ${same ? `your regular ${euros(unit)}` : `${euros(unit)} and your regular ${euros(monthly)}`} would buy if ${data.quote.pair} were 5, 10 or 15% different from today.`
           : `Today's holdings if ${data.quote.pair} were 5, 10 or 15% different from today.`}
       </p>
       <table className="rate-table" aria-label={invest ? `Dollars bought if ${data.quote.pair} moves` : `Holdings value if ${data.quote.pair} moves`}>
@@ -329,7 +333,7 @@ function StressCard({ data }: { data: ScenariosDto }) {
             <th scope="col">{data.quote.pair}</th>
             <th scope="col">{invest ? `${euros(unit)} buys` : "Worth"}</th>
             <th scope="col">Change</th>
-            {invest ? <th scope="col">{euros(monthly)} buys</th> : null}
+            {invest && !same ? <th scope="col">{euros(monthly)} buys</th> : null}
           </tr>
         </thead>
         <tbody>
@@ -338,15 +342,15 @@ function StressCard({ data }: { data: ScenariosDto }) {
             <th scope="row">Today</th>
             <td>{formatNumber(toNum(data.rate_now ? data.rate_now[data.quote.field] : null), 4)}</td>
             <td>
-              <Money amount={invest ? nowUnit : toNum(data.value_now)} currency={data.ccy} digits={0} />
+              <Money amount={invest ? nowUnit : toNum(data.value_now)} currency={data.ccy} digits={dg} />
             </td>
             <td className="rate-table__delta">
               —
               <span className="delta-bar delta-bar--empty" aria-hidden />
             </td>
-            {invest ? (
+            {invest && !same ? (
               <td>
-                <Money amount={monthly != null && data.rate_now ? monthly * (toNum(data.rate_now.rate) ?? 0) : null} currency={data.ccy} digits={0} />
+                <Money amount={monthly != null && data.rate_now ? monthly * (toNum(data.rate_now.rate) ?? 0) : null} currency={data.ccy} digits={dg} />
               </td>
             ) : null}
           </tr>
@@ -450,8 +454,9 @@ function tiles(data: ScenariosDto): StatItem[] {
   const by = new Map((data.stats ?? []).map((s) => [s.key, s]));
   const out: StatItem[] = [];
   const invest = data.perspective === "invest";
-  const euros = data.invest ? formatMoney(toNum(data.invest.monthly_eur), "EUR", { digits: 0 }) : "";
-  const unitEuros = data.invest ? formatMoney(toNum(data.invest.unit_eur), "EUR", { digits: 0 }) : "";
+  const euros = data.invest ? euroText(toNum(data.invest.monthly_eur)) : "";
+  const dg = invest ? investDigits(toNum(data.invest?.unit_eur)) : 0;
+  const unitEuros = data.invest ? euroText(toNum(data.invest.unit_eur)) : "";
   const cent = by.get("one_cent");
   if (cent) {
     out.push({
@@ -462,7 +467,7 @@ function tiles(data: ScenariosDto): StatItem[] {
         : `How much your holdings' value moves if ${pair} moves by one cent from today's rate. It is a size, not a loss: it can go either way.`,
       value: (
         <>
-          ±<Money amount={Math.abs(toNum(cent.value) ?? 0)} currency={data.ccy} digits={0} />
+          ±<Money amount={Math.abs(toNum(cent.value) ?? 0)} currency={data.ccy} digits={dg} />
         </>
       ),
       note: invest ? `on your regular ${euros}, each way` : "each way, per cent",
@@ -493,7 +498,7 @@ function tiles(data: ScenariosDto): StatItem[] {
       tip: invest
         ? `How many dollars ${unitEuros} would buy at the ${word} ${pair} rate ${words.window}.`
         : `What your holdings would be worth at the ${word} ${pair} rate ${words.window}.`,
-      value: <Money amount={toNum(s.value) ?? 0} currency={s.currency ?? data.ccy} digits={0} />,
+      value: <Money amount={toNum(s.value) ?? 0} currency={s.currency ?? data.ccy} digits={dg} />,
       note: `at ${rateText(s.secondary_display ?? s.secondary ?? null, data.ccy)}${s.date ? ` · ${formatDate(s.date)}` : ""}`,
     });
   }
