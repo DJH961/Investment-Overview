@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.models import Account, FxConversion, FxHistory, Instrument, Transaction
 from investment_dashboard.services import diagnostics_service, prices_service
 from investment_dashboard.services import recurring_service as svc
@@ -508,7 +509,9 @@ def test_est_buy_carries_the_rate_of_the_dollars_own_conversion(session: Session
     # No conversion at all: today's settled ECB fixing (none stored here: no rate).
     (view,) = svc.estimate_views(session)
     assert view.eur_rate is None
-    _fx(session, {date.today(): "1.20"})
+    # The code reads the New York exchange date, not the laptop date (they differ after
+    # midnight in Europe), so the fixing is stored under that date.
+    _fx(session, {exchange_today(): "1.20"})
     assert svc.estimate_views(session)[0].eur_rate_source == "ecb"
     # A real conversion on or before the due date: its all-in rate (1089 / (1000 + 11)).
     fxs.create_conversion(
