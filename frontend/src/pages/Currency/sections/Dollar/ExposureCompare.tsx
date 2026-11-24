@@ -22,59 +22,42 @@ function side(d: DollarDto) {
 
 type Side = ReturnType<typeof side>;
 
-function Tile({ name, lens, s }: { name: string; lens: string; s: Side }) {
-  const rows: { key: string; label: string; value: ReactNode }[] = [
-    { key: "now", label: "Rate now", value: s.now },
-    { key: "avg", label: "Your average", value: s.average },
-    {
-      key: "since",
-      label: "Since your average",
-      value: (
-        <>
-          {pct(s.since)} <KindTag kind={leanOf(s.since)} />
-        </>
-      ),
-    },
-    ...(s.range === null
-      ? []
-      : [
-          {
-            key: "range",
-            label: "Over this range",
-            value: (
-              <>
-                {pct(s.range)} <KindTag kind={leanOf(s.range)} />
-              </>
-            ),
-          },
-        ]),
-  ];
+const change = (v: number | null): ReactNode =>
+  v === null ? (
+    "–"
+  ) : (
+    <>
+      {pct(v)} <KindTag kind={leanOf(v)} />
+    </>
+  );
+
+/** One figure, two lines: the euro side on top, the dollar side below, each marked. */
+function Cell({ label, eur, usd }: { label: string; eur: ReactNode; usd: ReactNode }) {
   return (
-    <section className="exposure-compare__tile" aria-label={`${name}, ${lens}`}>
-      <p className="exposure-compare__eyebrow">
-        {name}
-        <span className="exposure-compare__lens">{lens}</span>
-        <span className="exposure-compare__pair">{s.pair}</span>
-      </p>
-      <dl className="exposure-compare__rows">
-        {rows.map((r) => (
-          <div key={r.key} className="exposure-compare__row">
-            <dt className="exposure-compare__label">{r.label}</dt>
-            <dd className="exposure-compare__value">{r.value}</dd>
-          </div>
-        ))}
-      </dl>
-    </section>
+    <div className="exposure-compare__cell">
+      <dt className="exposure-compare__label">{label}</dt>
+      <dd className="exposure-compare__line">
+        <span className="exposure-compare__mark">EUR</span>
+        <span className="exposure-compare__value">{eur}</span>
+      </dd>
+      <dd className="exposure-compare__line">
+        <span className="exposure-compare__mark">USD</span>
+        <span className="exposure-compare__value">{usd}</span>
+      </dd>
+    </div>
   );
 }
 
 /**
- * EUR and USD one by one: the same rate seen from each side, in that side's own quote.
- * The two lenses point opposite ways (a stronger dollar helps the dollars you hold, a stronger
- * euro helps the euros you convert), so each tile names its lens and its change carries its
- * own tag. All server figures.
+ * EUR and USD one by one: the same rate seen from each side, in that side's own quote, as
+ * one compact row of figures (two lines per figure). The two lenses point opposite ways (a
+ * stronger dollar helps the dollars you hold, a stronger euro helps the euros you convert),
+ * so the legend names them and each change carries its own tag. All server figures.
  */
 export function ExposureCompare({ eur, usd }: { eur: DollarDto; usd: DollarDto }) {
+  const e: Side = side(eur);
+  const u: Side = side(usd);
+  const hasRange = e.range !== null || u.range !== null;
   return (
     <Card
       className="exposure-compare"
@@ -88,10 +71,20 @@ export function ExposureCompare({ eur, usd }: { eur: DollarDto; usd: DollarDto }
         </span>
       }
     >
-      <div className="exposure-compare__tiles">
-        <Tile name="In euros" lens="Dollars you hold" s={side(eur)} />
-        <Tile name="In dollars" lens="Euros you convert" s={side(usd)} />
-      </div>
+      <p className="exposure-compare__legend">
+        <span>
+          <span className="exposure-compare__mark">EUR</span> {e.pair}, the dollars you hold
+        </span>
+        <span>
+          <span className="exposure-compare__mark">USD</span> {u.pair}, the euros you convert
+        </span>
+      </p>
+      <dl className={`exposure-compare__cells${hasRange ? "" : " exposure-compare__cells--three"}`}>
+        <Cell label="Rate now" eur={e.now} usd={u.now} />
+        <Cell label="Your average" eur={e.average} usd={u.average} />
+        <Cell label="Since your average" eur={change(e.since)} usd={change(u.since)} />
+        {hasRange ? <Cell label="Over this range" eur={change(e.range)} usd={change(u.range)} /> : null}
+      </dl>
     </Card>
   );
 }

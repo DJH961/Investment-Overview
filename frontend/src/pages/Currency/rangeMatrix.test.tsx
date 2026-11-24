@@ -231,12 +231,15 @@ describe("EUR next to USD, and the regular amount", () => {
 
     it(`${range}: Exposure sets the two quotes side by side`, () => {
       const { container } = mount(<Dollar id="exposure" label="Exposure" currency="USD" range={range} />);
-      const head = [...container.querySelectorAll(".exposure-compare__eyebrow")].map((h) => h.textContent);
+      const head = [...container.querySelectorAll(".exposure-compare__legend > span")].map((h) => h.textContent);
       expect(head[0]).toContain("USD/EUR");
       expect(head[1]).toContain("EUR/USD");
-      // Each column names its lens, so headwind and tailwind read as two different things.
-      expect(head[0]).toContain("Dollars you hold");
-      expect(head[1]).toContain("Euros you convert");
+      // Each side names its lens, so headwind and tailwind read as two different things.
+      expect(head[0]).toContain("dollars you hold");
+      expect(head[1]).toContain("euros you convert");
+      // One cell per figure, each with a EUR line and a USD line.
+      const cell = container.querySelector(".exposure-compare__cell");
+      expect(cell?.querySelectorAll(".exposure-compare__line")).toHaveLength(2);
     });
   }
 

@@ -1,3 +1,5 @@
+@use "../../../../styles/mixins" as m;
+
 .exposure-compare {
   min-width: 0;
 
@@ -7,47 +9,59 @@
     gap: var(--space-2);
   }
 
-  &__tiles {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--space-5);
+  &__legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-5);
+    margin: 0 0 var(--space-3);
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
   }
 
-  &__tile {
-    min-width: 0;
+  // One row of figures on desktop, two by two on phones; hairlines between cells.
+  &__cells {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    margin: 0;
 
-    & + & {
-      padding-left: var(--space-5);
-      border-left: var(--border-width) solid var(--color-border);
+    @include m.phone {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
 
-  &__eyebrow {
-    display: grid;
-    gap: 0;
-    margin: 0 0 var(--space-3);
-    color: var(--color-fg);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-semibold);
+  &__cells--three {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+
+    @include m.phone {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
 
-  &__lens,
-  &__pair {
-    color: var(--color-muted);
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-regular);
-  }
-
-  &__rows {
+  &__cell {
     display: grid;
-    margin: 0;
-  }
-
-  &__row {
-    display: grid;
+    align-content: start;
     gap: var(--space-1);
-    padding: var(--space-2) 0;
-    border-top: var(--border-width) solid var(--color-border);
+    min-width: 0;
+    padding: var(--space-2) var(--space-4);
+    border-left: var(--border-width) solid var(--color-border);
+
+    &:first-child {
+      padding-left: 0;
+      border-left: 0;
+    }
+
+    @include m.phone {
+      padding: var(--space-2) var(--space-3);
+
+      &:nth-child(odd) {
+        padding-left: 0;
+        border-left: 0;
+      }
+
+      &:nth-child(n + 3) {
+        border-top: var(--border-width) solid var(--color-border);
+      }
+    }
   }
 
   &__label {
@@ -57,8 +71,23 @@
     font-weight: var(--font-weight-medium);
   }
 
-  &__value {
+  &__line {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    min-width: 0;
     margin: 0;
+  }
+
+  &__mark {
+    flex: none;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+  }
+
+  &__value {
+    min-width: 0;
     font-size: var(--font-size-md);
     font-variant-numeric: tabular-nums;
   }
