@@ -20,6 +20,8 @@
     align-content: start;
     gap: var(--space-1);
     min-width: 0;
+    // The figure shrinks with its tile (360 px phones, seven-figure books).
+    container-type: inline-size;
 
     & + & {
       padding-left: var(--space-5);
@@ -46,8 +48,9 @@
   }
 
   &__figure {
-    font-size: var(--font-size-2xl);
+    font-size: clamp(var(--font-size-md), 14cqi, var(--font-size-2xl));
     font-weight: var(--font-weight-figure);
+    overflow-wrap: anywhere;
     font-variant-numeric: tabular-nums;
     line-height: var(--line-height-tight);
     letter-spacing: -0.02em;
