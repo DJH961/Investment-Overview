@@ -336,7 +336,7 @@ function DollarsInEuros({ next, data }: { next: NextDto; data: DollarDto }) {
       hint="a stronger dollar helps"
       headline={
         <>
-          <Money amount={usd} currency="USD" digits={dg} /> is worth <Money amount={now} currency="EUR" digits={dg} />
+          <Money amount={usd} currency="USD" digits={dg} /> is worth <Money amount={now} currency="EUR" digits={Number.isInteger(amount) ? 0 : 2} />
         </>
       }
       note="at today's rate"

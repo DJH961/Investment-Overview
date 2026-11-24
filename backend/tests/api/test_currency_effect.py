@@ -95,7 +95,12 @@ def test_views_lead_with_what_answers_them(api_client: TestClient, seeded: None,
     eur, usd = body["EUR"]["headline"], body["USD"]["headline"]
     assert eur["lead"] == "effect"
     effect = D(eur["effect"])
-    assert eur["kind"] == ("tailwind" if effect > 0 else "headwind" if effect < 0 else "neutral")
+    if eur["note"] is not None:  # money and gap print opposite signs: say "mixed", not one word
+        assert eur["kind"] == "mixed"
+    else:
+        assert eur["kind"] == (
+            "tailwind" if effect > 0 else "headwind" if effect < 0 else "neutral"
+        )
     assert usd["lead"] == "deposits"
     inv = body["USD"]["investing"]
     assert inv is not None
