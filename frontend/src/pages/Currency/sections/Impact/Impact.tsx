@@ -90,6 +90,16 @@ export function stripItems(stats: EffectStatDto[], ccy: string, investing = fals
     });
 }
 
+/**
+ * Short ranges keep only the figures that mean something inside them: no month counts
+ * on 1D / 1W, and on 1D no "typical" or "largest" day (today is the only day).
+ */
+export function shortFigures(items: StatItem[], range: string): StatItem[] {
+  if (range !== "1d" && range !== "1w") return items;
+  const drop = new Set(["tailwind_share", "typical_month", ...(range === "1d" ? ["typical_day", "largest_day"] : [])]);
+  return items.filter((i) => !drop.has(i.key));
+}
+
 /** The window the server resolved (the same dates in every section), else the payload's own. */
 function rangeMeta(range: CurrencyRange, data: CurrencyEffectDto | undefined): string {
   const fromServer = windowText(data?.window, range);
@@ -106,7 +116,7 @@ export function Impact({ id, label, currency, range }: CurrencySectionComponentP
   const refetch = useCallback(() => void qRefetch(), [qRefetch]);
   const data = q.data;
   const shownRange = data?.range ?? range;
-  const intraday = data?.granularity === "intraday";
+  const intraday = data?.window?.intraday ?? data?.granularity === "intraday";
   // The USD view reads the investing side: the same cards, on the euros sent in.
   const inv = data?.investing ?? null;
   const view = data ? investingView(data) : undefined;
@@ -142,14 +152,15 @@ export function Impact({ id, label, currency, range }: CurrencySectionComponentP
     >
       {data && view ? (
         <div className="impact">
-          <ImpactHero data={data} range={shownRange} figures={stripItems((inv ? inv.stats : data.stats) ?? [], data.ccy, !!inv)} />
+          <ImpactHero data={data} range={shownRange} figures={shortFigures(stripItems((inv ? inv.stats : data.stats) ?? [], data.ccy, !!inv), range)} />
           <div className="impact__pair">
             {intraday ? <SessionCard data={data} /> : null}
             {inv ? <InvestingBridgeCard inv={inv} /> : <BridgeCard data={data} />}
             {!intraday ? <RecordsCard data={view} dayLabel={inv ? "Deposit" : "Day"} /> : null}
           </div>
-          <MonthsCard data={view} />
-          <RollingCard data={view} range={shownRange} />
+          {/* 1D / 1W sit inside one month: months, years and a rolling year say nothing there. */}
+          {!intraday ? <MonthsCard data={view} /> : null}
+          {!intraday ? <RollingCard data={view} range={shownRange} /> : null}
           {inv ? <DepositsCard inv={inv} range={range} holdingsNote={data.holdings_note} /> : <HoldingsCard data={data} range={range} />}
         </div>
       ) : null}

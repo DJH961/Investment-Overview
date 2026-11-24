@@ -158,6 +158,16 @@ describe("Impact", () => {
     expect(cost?.textContent).toMatch(/^[−-]/);
   });
 
+  for (const range of ["1d", "1w"] as const) {
+    it(`${range}: no month counts, months card or rolling year inside a short range`, () => {
+      const { container } = mount(<Impact id="impact" label="Impact" currency="EUR" range={range} />);
+      expect(screen.queryByText("Months it helped")).toBeNull();
+      expect(container.querySelector(".impact__months")).toBeNull();
+      expect(container.querySelector(".impact__rolling")).toBeNull();
+      if (range === "1d") expect(screen.queryByText("Typical day")).toBeNull();
+    });
+  }
+
   it("1D on one bridge part only: no breakdown that would just repeat the currency step", () => {
     const { container } = mount(<Impact id="impact" label="Impact" currency="EUR" range="1d" />);
     expect(container.querySelector(".impact__parts")).toBeNull();

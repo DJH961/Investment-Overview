@@ -481,8 +481,8 @@ function tiles(data: ScenariosDto): StatItem[] {
   }
   const words = rangeWords(data.range);
   for (const [key, label, word] of [
-    ["value_at_low", `${invest ? `${unitEuros} buys` : "Worth"} at ${words.low.replace(/^Low/, "low")}`, "lowest"],
-    ["value_at_high", `${invest ? `${unitEuros} buys` : "Worth"} at ${words.high.replace(/^High/, "high")}`, "highest"],
+    ["value_at_low", `${invest ? `${unitEuros} buys` : "Worth"} at ${words.low.replace(/^(Low|Today's)/, (w) => w.toLowerCase())}`, "lowest"],
+    ["value_at_high", `${invest ? `${unitEuros} buys` : "Worth"} at ${words.high.replace(/^(High|Today's)/, (w) => w.toLowerCase())}`, "highest"],
   ] as const) {
     const s = by.get(key);
     if (!s) continue;

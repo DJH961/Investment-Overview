@@ -159,7 +159,7 @@ function CumulativeCard({ d }: { d: FxCostsDto }) {
           tooltipTimeFormat={(t) => formatDate(new Date(t), "medium")}
           height={phone ? 160 : 200}
           ariaLabel="Cumulative cost of converting"
-          legendExtra="Steps up on the days you converted"
+          legendExtra="Steps down on the days you converted"
         />
       ) : (
         <p className="conv-section__muted">One conversion so far: a line needs at least two.</p>

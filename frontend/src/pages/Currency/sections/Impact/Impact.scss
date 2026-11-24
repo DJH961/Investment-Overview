@@ -5,6 +5,14 @@
   gap: var(--page-gap);
   min-width: 0;
 
+  // The section's window line, with its tips spaced from the dates.
+  &__meta {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1);
+  }
+
   &__pair {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
