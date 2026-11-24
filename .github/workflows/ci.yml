@@ -373,7 +373,7 @@ jobs:
       - name: Fixtures drift guard (src/fixtures/data)
         working-directory: frontend
         run: |
-          npm run gen:fixtures
+          npm run gen:fixtures -- --force
           git diff --exit-code -- src/fixtures/data
 
       # Same Chromium cache as the e2e job (same key), so the download runs at most once.
