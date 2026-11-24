@@ -806,3 +806,30 @@
     text-decoration: underline;
   }
 }
+
+.conversions__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+
+  // Phones: two equal buttons on one row, with short labels.
+  @include m.phone {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+}
+
+.conversions__label--short {
+  display: none;
+
+  @include m.phone {
+    display: inline;
+  }
+}
+
+.conversions__label--long {
+  @include m.phone {
+    display: none;
+  }
+}

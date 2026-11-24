@@ -53,6 +53,15 @@
       &:has(> .segmented > :nth-child(5)) {
         width: 100%;
       }
+
+      // A group of two or more buttons (Import + Add) shares the full row evenly.
+      &:has(> :not(.segmented) > :is(a, button):nth-child(2)) {
+        width: 100%;
+
+        > * {
+          flex: 1 1 100%;
+        }
+      }
     }
   }
 }

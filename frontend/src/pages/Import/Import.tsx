@@ -1,6 +1,6 @@
 import { AlertTriangle, CheckCircle2, FileUp } from "lucide-react";
-import { useMemo, useRef, useState, type DragEvent } from "react";
-import { Link } from "react-router";
+import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { Link, useLocation } from "react-router";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { DataTable, type Column } from "../../components/DataTable";
@@ -91,6 +91,15 @@ function previewColumns(busy: boolean, onResolve: (row: PreviewRow, fix: RowFix 
 
 export function Import() {
   const { toast } = useToast();
+  const { hash } = useLocation();
+  // "Import statement" on the Conversions page lands here: bring the Wise card into view.
+  useEffect(() => {
+    if (hash !== "#wise-statement") return;
+    const id = window.requestAnimationFrame(() =>
+      document.getElementById("wise-statement")?.scrollIntoView({ block: "start" }),
+    );
+    return () => window.cancelAnimationFrame(id);
+  }, [hash]);
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [broker, setBroker] = useState(AUTO);
@@ -466,7 +475,11 @@ export function Import() {
         </Card>
       )}
 
-      {step === 1 && <WiseStatement />}
+      {step === 1 && (
+        <div id="wise-statement" className="import-page__wise">
+          <WiseStatement />
+        </div>
+      )}
 
       <ImportHistory highlight={result?.import_batch_id ?? null} />
     </div>

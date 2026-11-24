@@ -29,14 +29,21 @@ export interface StatStripProps {
  * tiles that have no figure yet are simply left out by the caller.
  */
 export function StatStrip({ items, label, className, phoneColumns = 2 }: StatStripProps) {
+  // Phones: a short last row stretches across the width instead of leaving an empty
+  // cell (5 figures in 3 columns = 3 + 2 wide; 3 in 2 = 2 + 1 full).
+  const rest = items.length % phoneColumns;
+  const fillFrom = rest === 0 ? items.length : items.length - rest;
+  const fill = rest === 1 ? "full" : "half";
   return (
     <section className={clsx("stat-strip", phoneColumns === 3 && "stat-strip--phone-3", className)} aria-label={label}>
       <dl className="stat-strip__list">
-        {items.map((s) => (
-          <div key={s.key} className="stat-strip__item">
+        {items.map((s, i) => (
+          <div
+            key={s.key}
+            className={clsx("stat-strip__item", i >= fillFrom && `stat-strip__item--fill-${fill}`)}
+          >
             <dt className="stat-strip__label">
-              {s.label}
-              {s.tip ? <InfoTip label={s.label} content={s.tip} /> : null}
+              {s.tip ? <LabelWithTip label={s.label} tip={s.tip} /> : s.label}
             </dt>
             <dd className="stat-strip__value">{s.value}</dd>
             {s.note && <dd className="stat-strip__note">{s.note}</dd>}
@@ -44,5 +51,21 @@ export function StatStrip({ items, label, className, phoneColumns = 2 }: StatStr
         ))}
       </dl>
     </section>
+  );
+}
+
+/** The label with its (i) glued to the last word, so a wrap never strands the icon. */
+function LabelWithTip({ label, tip }: { label: string; tip: string }) {
+  const cut = label.lastIndexOf(" ");
+  const head = cut >= 0 ? label.slice(0, cut + 1) : "";
+  const last = cut >= 0 ? label.slice(cut + 1) : label;
+  return (
+    <>
+      {head}
+      <span className="stat-strip__label-end">
+        {last}
+        <InfoTip label={label} content={tip} />
+      </span>
+    </>
   );
 }

@@ -1,7 +1,7 @@
-import { Coins, Copy, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
+import { Coins, Copy, FileUp, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router";
-import { Button } from "../../components/Button";
+import { Button, LinkButton } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { Dialog } from "../../components/Dialog";
 import { EmptyState } from "../../components/EmptyState";
@@ -410,9 +410,28 @@ export function CurrencyConversions() {
   );
 
   const addButton = (
-    <Button leftIcon={<Plus aria-hidden />} onClick={() => setDialog({ editing: null })}>
-      Add conversion
+    <Button leftIcon={<Plus aria-hidden />} aria-label="Add conversion" onClick={() => setDialog({ editing: null })}>
+      <span className="conversions__label--long">Add conversion</span>
+      <span className="conversions__label--short">Add</span>
     </Button>
+  );
+  // The Wise statement import lives on the Import page; this goes straight to it.
+  const importButton = (
+    <LinkButton
+      variant="secondary"
+      leftIcon={<FileUp aria-hidden />}
+      to={{ pathname: "/import", hash: "#wise-statement" }}
+      aria-label="Import statement"
+    >
+      <span className="conversions__label--long">Import statement</span>
+      <span className="conversions__label--short">Import</span>
+    </LinkButton>
+  );
+  const actions = (
+    <div className="conversions__actions">
+      {importButton}
+      {addButton}
+    </div>
   );
   const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
@@ -422,7 +441,7 @@ export function CurrencyConversions() {
       <PageHeader
         title="Currency conversions"
         subtitle="What your EUR to USD conversions really cost, and which one paid for each deposit."
-        actions={addButton}
+        actions={actions}
       />
 
       {list.isError && !list.data ? (
@@ -434,13 +453,12 @@ export function CurrencyConversions() {
           icon={<Coins aria-hidden />}
           title="No conversions yet"
           description="Until you add them, EUR returns use the ECB daily rate."
-          action={addButton}
+          action={actions}
         />
       ) : (
         <>
           <StatStrip
             label="Conversions at a glance"
-            phoneColumns={3}
             items={[
               {
                 key: "pool",

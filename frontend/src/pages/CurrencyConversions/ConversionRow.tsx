@@ -100,7 +100,8 @@ export function ConversionRow({ c, menu, onSettle }: { c: FxConversion; menu: Re
   const note = c.is_estimate && c.note?.startsWith("est.") ? null : c.note;
   const fees = c.fees_eur && Number(c.fees_eur) > 0 ? Number(c.fees_eur) : 0;
   const allIn = Number(c.all_in_rate) !== Number(c.rate);
-  const cost = c.cost_eur === null || c.cost_eur === undefined ? null : Number(c.cost_eur);
+  // Shown as what it took from you: negative (one sign rule on every currency figure).
+  const cost = c.cost_eur === null || c.cost_eur === undefined ? null : -Number(c.cost_eur);
   const kept = Number(c.kept_usd);
   return (
     <li className="conv" id={`conversion-${c.id}`}>
