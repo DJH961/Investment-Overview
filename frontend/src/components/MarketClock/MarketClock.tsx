@@ -4,7 +4,7 @@ import { formatTime, formatWeekdayTime, parseInstant } from "../../lib/format";
 import type { OverviewDto } from "../../lib/queries/portfolio";
 import { useTimeZone } from "../../lib/timezone";
 import { Bell } from "lucide-react";
-import { useMarketPhase, type MarketPhase } from "./marketPhase";
+import { useBlip, useMarketPhase, usePrevious, type MarketPhase } from "./marketPhase";
 import "./MarketClock.scss";
 
 type FreshnessDto = NonNullable<OverviewDto["freshness"]>;
@@ -332,6 +332,10 @@ export const NEAR_WINDOW = 15 * MINUTE;
 
 export function MarketClock({ freshness, onBoundary, now: fixed, variant = "full", fire = true }: MarketClockProps) {
   const model = useClockModel(freshness, onBoundary, fixed, fire);
+  // The session bar finishes with one light sweep when the closing bell rings.
+  const modelPhase = model?.phase ?? null;
+  const prevPhase = usePrevious(modelPhase);
+  const sweeping = useBlip(modelPhase === "closing" && prevPhase !== "closing", 1800) && !model?.still;
   if (!model) return null;
   const { open, remaining, parts, progress, span, ticks, rung, bellRang, phase, label, short, stateWord, soon, last, bellTime, sentence, still, timeZone } =
     model;
@@ -395,6 +399,7 @@ export function MarketClock({ freshness, onBoundary, now: fixed, variant = "full
           <div className="market-clock__bar" data-testid="market-clock-track">
             <div className="market-clock__track">
               <span className="market-clock__fill" style={{ width: `${(progress * 100).toFixed(2)}%` }} />
+              {sweeping && <span className="market-clock__sweep" data-testid="market-clock-sweep" />}
               {ticks.map((t) => (
                 <span key={t} className="market-clock__tick" style={{ left: `${(t * 100).toFixed(3)}%` }} />
               ))}

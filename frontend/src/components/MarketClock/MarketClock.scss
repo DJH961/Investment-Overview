@@ -199,6 +199,21 @@
     transition: width var(--duration-slow) var(--ease-standard);
   }
 
+  // The closing bell: one soft highlight runs the length of the finished bar, once.
+  &__sweep {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, var(--color-surface), transparent);
+    opacity: 0.7;
+    pointer-events: none;
+    animation: market-clock-sweep 1.6s var(--ease-out) 1 both;
+
+    @include m.reduced-motion {
+      animation: none;
+      display: none;
+    }
+  }
+
   &__tick {
     position: absolute;
     top: 0;
@@ -402,5 +417,16 @@
 @keyframes market-clock-breathe {
   50% {
     opacity: 0.72;
+  }
+}
+
+// The finished session bar: a light sweep from the open end to the close end.
+@keyframes market-clock-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(100%);
   }
 }

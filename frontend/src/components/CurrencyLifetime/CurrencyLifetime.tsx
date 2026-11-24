@@ -1,4 +1,6 @@
 import clsx from "clsx";
+import { FxState } from "../FxState";
+import { useFxMoment } from "../../lib/fxWeekend";
 import { Card } from "../Card";
 import { Money } from "../Money";
 import { Percent } from "../Percent";
@@ -34,6 +36,7 @@ export interface CurrencyLifetimeProps {
  */
 export function CurrencyLifetime({ data, rateLine }: CurrencyLifetimeProps) {
   const { hide } = useHideAmounts();
+  const { moment: fx } = useFxMoment();
   const life = data.currency.lifetime ?? {};
   // Hide mode: the FX gain/loss as a share of what cashing out now would bring home.
   const fxPnl = toNum(life.fx_pnl_eur);
@@ -50,7 +53,12 @@ export function CurrencyLifetime({ data, rateLine }: CurrencyLifetimeProps) {
   const favor = change === null ? "flat" : signOf(usdView ? change : -change, 3);
   const pp = usdView ? toNum(split?.eur_minus_usd_pp) : toNum(split?.currency_effect_pp);
   return (
-    <Card title="Currency effect (lifetime)" collapsibleId="overview.currency-lifetime" className="currency-lifetime">
+    <Card
+      title="Currency effect (lifetime)"
+      collapsibleId="overview.currency-lifetime"
+      className={clsx("currency-lifetime", fx === "back" && "currency-lifetime--fx-back")}
+      actions={<FxState frozen={data.currency.today?.regime?.forex_frozen ?? false} reopenAt={data.currency.today?.reopen_at} />}
+    >
       <dl className="currency-lifetime__grid">
         <div
           className={clsx(

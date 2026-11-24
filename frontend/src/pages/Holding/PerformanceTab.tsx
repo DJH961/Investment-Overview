@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Chart, isReferenceInSoftBounds, type ChartMarker, type ChartSeries } from "../../components/Chart";
 import { hasSplit, HoldingDaySplit } from "../../components/DaySplit";
-import { holdingPriceTime, PriceStamps } from "../../components/Freshness";
+import { holdingPriceTime, PriceStamps, useScreenPhase } from "../../components/Freshness";
 import { KpiTile } from "../../components/KpiTile";
 import { Money } from "../../components/Money";
 import { Percent } from "../../components/Percent";
@@ -173,6 +173,7 @@ export function KeyFacts({ row, ccy }: { row: HoldingRowDto; ccy: ReportingCurre
 
 export function HoldingKpis({ row, ccy }: { row: HoldingRowDto; ccy: ReportingCurrency }) {
   const stale = row.daily_is_stale;
+  const day = useScreenPhase();
   return (
     <div className="holding-page__kpis">
       <KpiTile
@@ -201,7 +202,7 @@ export function HoldingKpis({ row, ccy }: { row: HoldingRowDto; ccy: ReportingCu
         tooltip="The holding's annualized return, weighting each buy and sell by when it happened."
       />
       <KpiTile
-        label="Today"
+        label={day.label}
         value={<Money amount={toNum(row.today_move)} currency={ccy} signed colored={!stale} />}
         hint={
           <span className="holding-page__today-hint">
