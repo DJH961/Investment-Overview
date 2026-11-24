@@ -47,6 +47,19 @@ describe("RateChart window and context", () => {
     expect(own.points.map((p) => p.t)).toEqual(["2023-02-28", "2023-03-01", "2023-06-01"]);
   });
 
+  it("Max with a thin history: no context series, and the headline says where the line starts", () => {
+    charts.seen = [];
+    history = {
+      ...hist("max", "2023-02-28"),
+      points: pts.slice(1),
+      change: { rate_pct: "0.05", inverse_pct: "-0.05" },
+    } as unknown as RateHistoryDto;
+    render(<RateChart currency="USD" range="max" />);
+    expect(charts.seen.at(-1)!.series.map((s) => s.id)).toEqual(["rate"]);
+    expect(document.querySelector(".rate-chart__change")).toHaveTextContent("since Feb 2023");
+    expect(screen.getByTestId("rate-window")).toHaveTextContent(`Max · ${formatDate("2023-02-28")} –`);
+  });
+
   it("All: one solid line, nothing before the first transaction", () => {
     charts.seen = [];
     history = hist("all", null);

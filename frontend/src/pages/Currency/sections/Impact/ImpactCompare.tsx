@@ -1,11 +1,9 @@
-import clsx from "clsx";
 import { Card } from "../../../../components/Card";
 import { KindTag } from "../../../../components/CurrencySection";
 import { InfoTip } from "../../../../components/InfoTip";
 import { Money } from "../../../../components/Money";
 import type { CurrencyEffectDto } from "../../../../lib/queries/currencyEffect";
 import { toNum } from "../../../../lib/queries/portfolio";
-import { fractionTone, pctText } from "../../numbers";
 
 type Kind = "tailwind" | "headwind" | "neutral";
 
@@ -15,11 +13,6 @@ function sideEffect(d: CurrencyEffectDto): { amount: number | null; kind: Kind; 
   // USD = the deposit lens (dollars received for the euros sent in); EUR = the book lens.
   if (inv) return { amount: toNum(inv.effect), kind: inv.kind, basis: "on the euros you sent in" };
   return { amount: toNum(d.headline.effect), kind: d.headline.kind, basis: "on what you hold" };
-}
-
-function Return({ value }: { value: number | null }) {
-  const tone = fractionTone(value);
-  return <span className={clsx("impact-compare__figure", tone !== "flat" && `impact-compare__figure--${tone}`)}>{pctText(value)}</span>;
 }
 
 /**
@@ -60,18 +53,7 @@ export function ImpactCompare({ eur, usd }: { eur: CurrencyEffectDto; usd: Curre
         <tbody>
           <tr>
             <th scope="row" className="impact-compare__row">
-              Your return
-            </th>
-            <td className="impact-compare__cell">
-              <Return value={toNum(eur.headline.eur_return)} />
-            </td>
-            <td className="impact-compare__cell">
-              <Return value={toNum(usd.headline.usd_return)} />
-            </td>
-          </tr>
-          <tr>
-            <th scope="row" className="impact-compare__row">
-              What the rate did
+              What the rate did to you
             </th>
             <td className="impact-compare__cell">
               <span className="impact-compare__figure">

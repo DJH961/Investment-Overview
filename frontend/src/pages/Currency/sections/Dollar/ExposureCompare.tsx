@@ -73,7 +73,7 @@ export function ExposureCompare({ eur, usd }: { eur: DollarDto; usd: DollarDto }
           Euros and dollars, side by side
           <InfoTip
             label="Euros and dollars, side by side"
-            content="The same exchange rate from each side. In euros it is what one dollar costs and your dollars are the holding; in dollars it is what one euro buys and your euros are the ones you convert. The two moves mirror each other, so a gain on one side is a loss on the other."
+            content="The same exchange rate from each side. In euros it is what one dollar costs and your dollars are the holding; in dollars it is what one euro buys and your euros are the ones you convert. The two moves mirror each other: a stronger dollar helps the dollars you hold and hurts the euros you convert."
           />
         </span>
       }
@@ -84,10 +84,12 @@ export function ExposureCompare({ eur, usd }: { eur: DollarDto; usd: DollarDto }
             <td />
             <th scope="col" className="exposure-compare__head">
               In euros
+              <span className="exposure-compare__lens">Dollars you hold</span>
               <span className="exposure-compare__lens">{e.pair}</span>
             </th>
             <th scope="col" className="exposure-compare__head">
               In dollars
+              <span className="exposure-compare__lens">Euros you convert</span>
               <span className="exposure-compare__lens">{u.pair}</span>
             </th>
           </tr>

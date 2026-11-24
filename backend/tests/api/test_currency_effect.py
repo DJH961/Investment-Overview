@@ -168,6 +168,11 @@ def test_today_equals_day_split(api_client: TestClient, seeded: None) -> None:
         split = overview[ccy].get("day_split")
         if split is None:
             continue
+        # Overnight (market shut) the split's currency leg is the rate change *since the
+        # close*, shown beside the total and not added; 1D then describes the last
+        # session. The two agree only while the day is live, so the check is for that.
+        if split.get("overnight"):
+            continue
         assert D(body[ccy]["headline"]["effect"]) == D(split["currency_move"]).quantize(
             Decimal("0.000001")
         )

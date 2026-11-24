@@ -255,7 +255,7 @@ export function RateChart({
     const ctx = contextUntilMs(data.window);
     const firstOwn = ctx === null ? -1 : all.findIndex((p) => Date.parse(p.t) > ctx);
     const out: ChartSeries[] = [];
-    if (ctx !== null && firstOwn > 0) {
+    if (ctx !== null && firstOwn > 1) {
       out.push({ id: "rate-before", label: "Before you started", points: toPts(all.slice(0, firstOwn)), tone: "invested" });
       out.push({ id: "rate", label: pair, points: toPts(all.slice(firstOwn - 1)), tone: "primary" });
     } else {
@@ -273,8 +273,16 @@ export function RateChart({
   const pts = data?.points ?? [];
   const last = pts.length ? pick(pts[pts.length - 1], lens) : null;
   const change = toNum(lens === "rate" ? data?.change?.rate_pct : data?.change?.inverse_pct);
-  const rangeLabel = shown === "max" ? "since 1999" : shown === "all" ? "since you started" : RATE_RANGE_LABELS[shown];
-  const windowLine = windowText(data?.window, shown);
+  // Max says where the drawn line really starts (a thin history starts later than the window).
+  const firstDrawn = pts.length ? pts[0].t.slice(0, 10) : null;
+  const sinceDrawn = firstDrawn
+    ? new Date(`${firstDrawn}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" })
+    : "1999";
+  const rangeLabel = shown === "max" ? `since ${sinceDrawn}` : shown === "all" ? "since you started" : RATE_RANGE_LABELS[shown];
+  const windowLine = windowText(
+    data?.window && shown === "max" && firstDrawn && firstDrawn > data.window.start ? { ...data.window, start: firstDrawn } : data?.window,
+    shown,
+  );
   const long = shown === "1y" || shown === "all" || shown === "5y" || shown === "10y" || shown === "max";
   const sessions = useMemo(
     () => (shown === "1w" ? (data?.sessions ?? []).map((s) => ({ date: s.close.slice(0, 10), open: s.open, close: s.close })) : []),

@@ -220,10 +220,10 @@ describe("EUR next to USD, and the regular amount", () => {
       const table = container.querySelector(".impact-compare__table")!;
       expect(table).not.toBeNull();
       const rows = [...table.querySelectorAll("tbody tr")].map((r) => [...r.querySelectorAll("td")].map((c) => c.textContent ?? ""));
-      expect(rows).toHaveLength(2);
-      // The effect row: euros on the left, dollars on the right; never the same symbol twice.
-      expect(rows[1][0]).toContain("€");
-      expect(rows[1][1]).toContain("$");
+      // One row (the returns are in the hero): euros on the left, dollars on the right.
+      expect(rows).toHaveLength(1);
+      expect(rows[0][0]).toContain("€");
+      expect(rows[0][1]).toContain("$");
     });
 
     it(`${range}: Exposure sets the two quotes side by side`, () => {
@@ -231,6 +231,9 @@ describe("EUR next to USD, and the regular amount", () => {
       const head = [...container.querySelectorAll(".exposure-compare__head")].map((h) => h.textContent);
       expect(head[0]).toContain("USD/EUR");
       expect(head[1]).toContain("EUR/USD");
+      // Each column names its lens, so headwind and tailwind read as two different things.
+      expect(head[0]).toContain("Dollars you hold");
+      expect(head[1]).toContain("Euros you convert");
     });
   }
 
