@@ -13,6 +13,9 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
   test: {
+    // Worker threads with a fresh VM context per file (isolation kept): faster
+    // than the default forks pool, which starts a process per file.
+    pool: "vmThreads",
     environment: "node",
     include: ["test/**/*.test.ts"],
     setupFiles: ["test/setup.ts"],

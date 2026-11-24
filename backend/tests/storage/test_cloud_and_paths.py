@@ -19,11 +19,19 @@ from investment_dashboard.storage.paths import (
 
 @pytest.fixture(autouse=True)
 def _clear_cloud_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Strip cloud env vars so detector doesn't see the runner's HOME."""
+    """Strip cloud env vars so detector doesn't see the runner's HOME.
+
+    ``APPDATA`` / ``LOCALAPPDATA`` point at the real Windows profile (the Dropbox
+    ``info.json`` probe and the local-default root read them), and ``XDG_DATA_HOME``
+    is its POSIX twin, so a laptop run would otherwise see the owner's folders.
+    """
     for var in (
         "OneDrive",
         "OneDriveConsumer",
         "OneDriveCommercial",
+        "APPDATA",
+        "LOCALAPPDATA",
+        "XDG_DATA_HOME",
         "INV_DASHBOARD_DB_PATH",
         "INV_DASHBOARD_LEDGER_PATH",
         "INV_DASHBOARD_CONFIG_PATH",
@@ -126,7 +134,9 @@ def test_resolver_falls_back_to_local_default(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    # The local default reads XDG_DATA_HOME on POSIX and LOCALAPPDATA on Windows.
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "share"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "share"))
     layout = resolve_storage_layout(detect_cloud=False)
     assert layout.ledger.source is ResolverSource.LOCAL_DEFAULT
     assert layout.ledger.path == tmp_path / "share" / "inv-dashboard" / "ledger.sqlite"
@@ -137,7 +147,9 @@ def test_resolver_uses_cloud_default_when_detected(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    # The local default reads XDG_DATA_HOME on POSIX and LOCALAPPDATA on Windows.
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "share"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "share"))
     od = tmp_path / "OneDrive"
     od.mkdir()
     monkeypatch.setenv("OneDrive", str(od))
