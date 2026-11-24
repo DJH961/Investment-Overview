@@ -27,7 +27,7 @@ const change = (v: number | null): ReactNode =>
     "–"
   ) : (
     <>
-      {pct(v)} <KindTag kind={leanOf(v)} />
+      {pct(v)} <KindTag kind={leanOf(v)} compact />
     </>
   );
 

@@ -96,4 +96,12 @@
     width: 1em;
     height: 1em;
   }
+
+  // Compact tags (dense tables): on phones only the arrow shows; the word stays for
+  // screen readers and in the hover title.
+  &__kind--compact &__kind-word {
+    @include m.phone {
+      @include m.visually-hidden;
+    }
+  }
 }

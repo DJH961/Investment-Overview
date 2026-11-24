@@ -47,12 +47,20 @@ export function statFigure(
 }
 
 /** Tailwind / headwind as an arrow and a word, never color alone. */
-export function KindTag({ kind }: { kind: "tailwind" | "headwind" | "neutral" | "mixed" }) {
+/**
+ * Tailwind / headwind / neutral / mixed: an arrow plus the word (never color alone).
+ * `compact`: on phones only the arrow shows, the word stays for screen readers and as
+ * the hover title.
+ */
+export function KindTag({ kind, compact = false }: { kind: "tailwind" | "headwind" | "neutral" | "mixed"; compact?: boolean }) {
   const Icon = KIND_ICON[kind];
   return (
-    <span className={`currency-stat__kind currency-stat__kind--${kind}`}>
+    <span
+      className={`currency-stat__kind currency-stat__kind--${kind}${compact ? " currency-stat__kind--compact" : ""}`}
+      title={compact ? KIND_WORD[kind] : undefined}
+    >
       <Icon aria-hidden className="currency-stat__kind-icon" />
-      {KIND_WORD[kind]}
+      <span className="currency-stat__kind-word">{KIND_WORD[kind]}</span>
     </span>
   );
 }
