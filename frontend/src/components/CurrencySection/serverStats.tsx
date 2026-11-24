@@ -40,7 +40,8 @@ export function statFigure(
 ): ReactNode {
   const n = toNum(value ?? null);
   if (unit === "rate") return formatNumber(n, 4);
-  if (unit === "fraction") return fractionFormat === "percent" ? formatPercent(n, { digits: 1 }) : formatPp(n);
+  // The Currency page's one rule: percents and points signed, with one digit.
+  if (unit === "fraction") return fractionFormat === "percent" ? formatPercent(n, { signed: true, digits: 1 }) : formatPp(n, 1);
   // Whole units: cents on a currency effect are noise (and crowd a phone row).
   return <Money amount={n} currency={ccy ?? fallbackCcy} signed colored digits={0} />;
 }

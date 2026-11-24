@@ -525,6 +525,27 @@
     stroke-width: 1.75;
     stroke-linejoin: round;
     vector-effect: non-scaling-stroke;
+
+    // Max: before you started, context only (muted and dashed, not color alone).
+    &--context {
+      stroke: var(--color-muted);
+      stroke-width: 1.25;
+      stroke-dasharray: 4 3;
+    }
+  }
+
+  &__before {
+    fill: var(--color-surface-2);
+    opacity: 0.6;
+  }
+
+  &__before-label { color: var(--color-muted); }
+
+  // 1D / 1W: no room for trailing changes; one calm line instead of a chart.
+  &__short {
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-sm);
   }
 
   &__plot {

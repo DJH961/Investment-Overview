@@ -188,7 +188,7 @@ function EffectPanel({ data }: { data: CurrencyBoxData }) {
   const { hide } = useHideAmounts();
   // Hide mode: each figure as a share of the portfolio value (server-supplied).
   const total = toNum(data.kpis?.total_value ?? null);
-  const share = (v: number) => <Percent ratio={total ? v / total : null} signed colored />;
+  const share = (v: number) => <Percent ratio={total ? v / total : null} signed colored digits={1} />;
   const today = data.currency.today;
   const phrase = sincePhrase(today.since_phrase);
   const ip = today.investing_power_usd;
@@ -219,7 +219,7 @@ function EffectPanel({ data }: { data: CurrencyBoxData }) {
     const base = amountUsd !== null ? amountUsd - net : null;
     const fmt = (v: number) =>
       hide ? (
-        <Percent ratio={base ? v / base : null} signed colored />
+        <Percent ratio={base ? v / base : null} signed colored digits={1} />
       ) : (
         <Money amount={v} currency="USD" signed colored digits={digits} />
       );
@@ -303,7 +303,7 @@ export function CurrencyBox({ data, footer, trend, collapsibleId = "overview.cur
               <div className="currency-box__stat">
                 <dt className="currency-box__label">{moveLabel(today.move)}</dt>
                 <dd className="currency-box__value">
-                  <Percent ratio={toNum(today.move.pct)} signed colored />
+                  <Percent ratio={toNum(today.move.pct)} signed colored digits={1} />
                 </dd>
                 <dd className="currency-box__meta">
                   <span className="currency-box__sub">{MOVE_SUB[today.move.anchor_kind]}</span>
@@ -314,7 +314,7 @@ export function CurrencyBox({ data, footer, trend, collapsibleId = "overview.cur
               <div className="currency-box__stat">
                 <dt className="currency-box__label">{today.since.kind === "open" ? "Since open" : "Since close"}</dt>
                 <dd className="currency-box__value">
-                  <Percent ratio={toNum(today.since.pct)} signed colored />
+                  <Percent ratio={toNum(today.since.pct)} signed colored digits={1} />
                 </dd>
                 <dd className="currency-box__meta">
                   <span className="currency-box__sub">rate move</span>

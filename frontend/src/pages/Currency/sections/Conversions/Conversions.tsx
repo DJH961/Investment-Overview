@@ -17,6 +17,7 @@ import {
 } from "../../../../lib/queries/fxCosts";
 import { toNum } from "../../../../lib/queries/portfolio";
 import { useIsPhone } from "../../../../lib/useMediaQuery";
+import { fractionTone, PCT_DIGITS, pctText, PP_DIGITS, spanOf, windowText } from "../../numbers";
 import type { CurrencySectionComponentProps } from "../../sections";
 import "./Conversions.scss";
 
@@ -26,20 +27,30 @@ const providerName = (p: string | null | undefined) => (p ? (PROVIDER_LABEL[p] ?
 const FIXING_TIP =
   "Measured against the ECB daily reference, which is struck at about 14:15 CET. A conversion done at another hour is compared with a rate it never saw, so a small negative cost is normal intraday noise, not a win.";
 
-/** "−0.56 %": a distance from the ECB reference as a plain signed number (no good/bad color). */
-const offText = (v: string | null | undefined) => {
+/** "−0.6%": a distance from the ECB reference, signed, the page's one digit (no good/bad color). */
+const offText = (v: string | null | undefined) => pctText(toNum(v ?? null));
+
+/** The server sends a cost as a positive amount; the page shows it as what it took from you. */
+const asCost = (v: string | null | undefined) => {
   const n = toNum(v ?? null);
-  if (n === null) return "–";
-  const pct = n * 100;
-  if (Math.abs(pct) < 0.005) return "0.00 %";
-  return `${pct < 0 ? "−" : "+"}${formatNumber(Math.abs(pct), 2)} %`;
+  return n === null ? null : -n;
 };
 
-const pctText = (v: string | null | undefined) => formatPercent(toNum(v ?? null), { digits: 2 });
+/** A cost share, negative like the cost itself ("−0.4%"). */
+const costPctText = (v: string | null | undefined) => pctText(asCost(v));
 
+/** A cost: minus always means it cost you (orange); a rare plus is a conversion that beat the reference. */
 function Cost({ value, ccy }: { value: string | null | undefined; ccy: FxCostsDto["currency"] }) {
-  // Signed plain text on purpose: for a cost, "up" is bad, so no gain/loss color.
-  return <Money amount={toNum(value ?? null)} currency={ccy} signed digits={2} />;
+  return <Money amount={asCost(value)} currency={ccy} signed colored digits={2} />;
+}
+
+/** The range's span in ms from the server window (the same dates in every section). */
+function windowSpan(d: FxCostsDto): number | null {
+  const w = d.window;
+  if (!w) return null;
+  const a = Date.parse(w.start);
+  const b = Date.parse(w.through);
+  return Number.isFinite(a) && Number.isFinite(b) && b > a ? b - a : null;
 }
 
 function stats(d: FxCostsDto): StatItem[] {
@@ -49,7 +60,7 @@ function stats(d: FxCostsDto): StatItem[] {
     {
       key: "fees",
       label: "Fees paid",
-      value: <Money amount={toNum(s.fees)} currency={d.currency} digits={2} />,
+      value: <Cost value={s.fees} ccy={d.currency} />,
       note: `on ${s.count} ${s.count === 1 ? "conversion" : "conversions"}`,
     },
     {
@@ -63,7 +74,7 @@ function stats(d: FxCostsDto): StatItem[] {
       key: "cost",
       label: "Total cost",
       value: <Cost value={s.cost} ccy={d.currency} />,
-      note: s.cost_pct !== null ? `${pctText(s.cost_pct)} of converted` : undefined,
+      note: s.cost_pct !== null ? `${costPctText(s.cost_pct)} of converted` : undefined,
       tip: `Fees plus spread. ${FIXING_TIP}`,
     },
     {
@@ -87,12 +98,12 @@ function TimingCard({ d }: { d: FxCostsDto }) {
   const t = d.timing;
   const avg = toNum(t.avg_pct);
   if (t.count === 0 || avg === null) return null;
-  const pct = formatNumber(Math.abs(avg) * 100, 1);
-  const flat = Math.abs(avg) * 100 < 0.05;
+  const pct = formatPercent(Math.abs(avg), { digits: PCT_DIGITS });
+  const flat = fractionTone(avg) === "flat";
   const Icon = flat ? Minus : avg > 0 ? ArrowUp : ArrowDown;
   const headline = flat
     ? "You converted at about the month average"
-    : `You converted ${pct} % ${avg > 0 ? "better" : "worse"} than the month average`;
+    : `You converted ${pct} ${avg > 0 ? "better" : "worse"} than the month average`;
   return (
     <Card
       className="conv-section__timing"
@@ -125,23 +136,26 @@ function CumulativeCard({ d }: { d: FxCostsDto }) {
       {
         id: "cost",
         label: d.currency === "USD" ? "Dollars not received, cumulative" : "Cumulative cost",
-        points: d.cumulative.map((p) => ({ t: p.date, v: toNum(p.cost) })),
+        // Down is cost, like every cost on the page.
+        points: d.cumulative.map((p) => ({ t: p.date, v: asCost(p.cost) })),
         tone: "primary",
       },
     ],
     [d.cumulative, d.currency],
   );
+  // The real span: the range's window when the server sends it, else the line's own.
+  const span = windowSpan(d) ?? spanOf(d.cumulative.map((p) => Date.parse(p.date)));
   return (
     <Card
       title="Cost over time"
-      subtitle="Cumulative fees plus spread, by conversion date, versus the ECB daily reference."
+      subtitle="Cumulative fees plus spread, by conversion date, versus the ECB daily reference. Below zero is what it cost you."
     >
       {d.cumulative.length >= 2 ? (
         <Chart
           series={series}
           referenceLine={{ value: 0 }}
           valueFormat={chartMoneyFormat(d.currency, "axis")}
-          timeFormat={(t) => formatAxisDate(t, Infinity)}
+          timeFormat={(t) => formatAxisDate(t, span)}
           tooltipTimeFormat={(t) => formatDate(new Date(t), "medium")}
           height={phone ? 160 : 200}
           ariaLabel="Cumulative cost of converting"
@@ -174,14 +188,14 @@ function YearsCard({ d }: { d: FxCostsDto }) {
       phone: "headline",
       emphasis: true,
       cell: (r) => <Cost value={r.cost} ccy={ccy} />,
-      sortValue: (r) => toNum(r.cost),
+      sortValue: (r) => asCost(r.cost),
     },
     {
       key: "pct",
       header: "Cost %",
       align: "right",
-      cell: (r) => pctText(r.cost_pct),
-      sortValue: (r) => toNum(r.cost_pct),
+      cell: (r) => costPctText(r.cost_pct),
+      sortValue: (r) => asCost(r.cost_pct),
     },
   ];
   if (phone) {
@@ -208,7 +222,7 @@ function YearsCard({ d }: { d: FxCostsDto }) {
                 <td className="conv-section__mini-cell conv-section__mini-cell--num">
                   <Cost value={r.cost} ccy={ccy} />
                 </td>
-                <td className="conv-section__mini-cell conv-section__mini-cell--num">{pctText(r.cost_pct)}</td>
+                <td className="conv-section__mini-cell conv-section__mini-cell--num">{costPctText(r.cost_pct)}</td>
               </tr>
             ))}
           </tbody>
@@ -244,7 +258,7 @@ function ProvidersCard({ d }: { d: FxCostsDto }) {
     compare && d.cheaper_provider && d.cheaper_than && gap !== null ? (
       <>
         {providerName(d.cheaper_provider)} is cheaper than {providerName(d.cheaper_than)} by{" "}
-        {formatNumber(gap * 100, 2)} points of what you converted.
+        {formatNumber(Math.abs(gap) * 100, PP_DIGITS)} pp of what you converted.
       </>
     ) : named.length === 1 ? (
       "Compare once you use a second provider."
@@ -283,7 +297,7 @@ function ProvidersCard({ d }: { d: FxCostsDto }) {
                   </div>
                   <div className="conv-section__prov-row">
                     <dt className="conv-section__prov-label">Cost %</dt>
-                    <dd className="conv-section__prov-value">{pctText(p.cost_pct)}</dd>
+                    <dd className="conv-section__prov-value">{costPctText(p.cost_pct)}</dd>
                   </div>
                   <div className="conv-section__prov-row">
                     <dt className="conv-section__prov-label">vs ECB</dt>
@@ -319,6 +333,7 @@ export function Conversions({ id, label, currency, range }: CurrencySectionCompo
           ? "The dollars you did not get when you converted, versus the ECB daily reference."
           : "What your EUR to USD conversions cost, versus the ECB daily reference: fees plus the rate you were given."
       }
+      meta={d ? (windowText(d.window, range) ?? undefined) : undefined}
       stats={d ? stats(d) : undefined}
       state={state}
       onRetry={() => void q.refetch()}

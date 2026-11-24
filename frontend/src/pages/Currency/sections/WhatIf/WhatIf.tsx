@@ -11,6 +11,7 @@ import { useScenarios, type ScenarioMarkDto, type ScenariosDto } from "../../../
 import { RATE_RANGE_LABELS, type RateRange } from "../../../../lib/queries/currencyRate";
 import { toNum } from "../../../../lib/queries/portfolio";
 import type { CurrencySectionComponentProps } from "../../sections";
+import { pctText, windowText } from "../../numbers";
 import { layoutMarks } from "./layoutMarks";
 import "./WhatIf.scss";
 
@@ -25,6 +26,7 @@ const QUOTE_WORDS = {
 /** The range worded for a label: "1Y low", "low since you started", "low since 1999". */
 function rangeWords(range: RateRange): { low: string; high: string; start: string; window: string } {
   if (range === "all") return { low: "Low since you started", high: "High since you started", start: "You started", window: "since you started" };
+  if (range === "1d") return { low: "Today's low", high: "Today's high", start: "Last close", window: "today" };
   if (range === "max") return { low: "Low since 1999", high: "High since 1999", start: "1999", window: "since 1999" };
   const label = RATE_RANGE_LABELS[range];
   return { low: `${label} low`, high: `${label} high`, start: `${label} start`, window: `over the last ${label}` };
@@ -253,7 +255,7 @@ function ScenarioSlider({ data }: { data: ScenariosDto }) {
           <div className="scenario-result__item">
             <dt className="scenario-result__label">Move to break even</dt>
             <dd className="scenario-result__value">
-              {toBreakeven == null ? "—" : Math.abs(toBreakeven) < 0.00005 ? "None" : formatPercent(toBreakeven, { signed: true })}
+              {toBreakeven == null ? "—" : Math.abs(toBreakeven) < 0.0005 ? "None" : pctText(toBreakeven)}
             </dd>
             <dd className="scenario-result__note">
               {row.to_breakeven == null || toBreakeven == null || Math.abs(toBreakeven) < 0.00005
@@ -507,7 +509,7 @@ export function WhatIf({ id, label, currency, range }: CurrencySectionComponentP
       id={id}
       title={label}
       explainer={data?.perspective === "invest" ? "See what a different exchange rate would mean for the euros you send in." : "See what a different exchange rate would mean for your dollar holdings."}
-      meta={data?.as_of ? `As of ${formatDate(data.as_of)}` : undefined}
+      meta={windowText(data?.window, range) ?? (data?.as_of ? `As of ${formatDate(data.as_of)}` : undefined)}
       stats={data ? tiles(data) : undefined}
       statsLabel="What if at a glance"
       state={q.isError && !data ? "error" : !data ? "loading" : hasRows ? "ready" : "empty"}
