@@ -252,9 +252,9 @@
   }
 
 
-  // Under an hour to a bell: the digits take the accent colour (a quiet "get ready").
+  // Under an hour to a bell: the digits stay ink and gain weight (a quiet "get ready"); indigo is for selected / clickable only.
   &--soon &__time {
-    color: var(--color-accent);
+    font-weight: var(--font-weight-semibold);
   }
 
   // Last minute: the seconds breathe once a second. Off with reduced motion.
