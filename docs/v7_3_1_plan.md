@@ -312,3 +312,22 @@ Files: `scheduler.py`, `read_cache.py`, `live_bus.py`, `ops.py`, `refresh.ts`, `
     phone width.
 - Refresh benchmark before and after in the PR. CI runs the full suite. Check for conflicts
   with `main` at the end.
+
+## Round 2 (owner review, 2026-11-24)
+
+1. **Conversions page:** six KPI figures (desktop: one row of 6; phones: 2 × 3), no
+   5-tile layouts. (main session)
+2. **Open and close, end to end:** the whole screen must make sense at every moment,
+   not just the clock: shortly before the open, the open with no data yet, the first
+   prices, shortly before the close, closing, closed. Update markers (top bar,
+   freshness), graphs (1D at the open and close), holdings list and holding page
+   (day moves, live markers), Overview and Currency. FX close (Fri) and reopen (Sun)
+   also shown subtly on the home-screen currency cards. A bit more animation flair,
+   still restrained. (lane A)
+3. **Currency pages:** clean one-by-one EUR vs USD comparisons where a page reads one
+   currency at a time; every "€1,000 buys" uses the owner's regular conversion
+   amount from Settings (`investing_power_service.get_amount_eur`), never a fixed
+   1,000; rate chart prints the range window and mutes the pre-investing part on Max;
+   record a Max Impact fixture. All ranges must still make sense. (lane B)
+4. UI changes go to the owner as screenshots for approval (only shots we fully stand
+   behind), before full checks and the PR.
