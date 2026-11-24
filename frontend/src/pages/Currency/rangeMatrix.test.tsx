@@ -217,18 +217,21 @@ describe("EUR next to USD, and the regular amount", () => {
   for (const range of RANGES) {
     it(`${range}: Impact sets euros and dollars side by side, each in its own currency`, () => {
       const { container } = mount(<Impact id="impact" label="Impact" currency="EUR" range={range} />);
-      const table = container.querySelector(".impact-compare__table")!;
-      expect(table).not.toBeNull();
-      const rows = [...table.querySelectorAll("tbody tr")].map((r) => [...r.querySelectorAll("td")].map((c) => c.textContent ?? ""));
-      // One row (the returns are in the hero): euros on the left, dollars on the right.
-      expect(rows).toHaveLength(1);
-      expect(rows[0][0]).toContain("€");
-      expect(rows[0][1]).toContain("$");
+      const tiles = [...container.querySelectorAll(".impact-compare__tile")].map((t) => t.textContent ?? "");
+      // Two lens tiles (the returns are in the hero): euros first, dollars second.
+      expect(tiles).toHaveLength(2);
+      expect(tiles[0]).toContain("€");
+      expect(tiles[1]).toContain("$");
+      // Mixed shows only when the two lenses genuinely point opposite ways.
+      const eur = container.querySelector('[data-key="eur"] .money')?.className ?? "";
+      const usd = container.querySelector('[data-key="usd"] .money')?.className ?? "";
+      const opposite = (eur.includes("pos") && usd.includes("neg")) || (eur.includes("neg") && usd.includes("pos"));
+      expect(container.querySelector('[data-testid="lens-mixed"]') !== null).toBe(opposite);
     });
 
     it(`${range}: Exposure sets the two quotes side by side`, () => {
       const { container } = mount(<Dollar id="exposure" label="Exposure" currency="USD" range={range} />);
-      const head = [...container.querySelectorAll(".exposure-compare__head")].map((h) => h.textContent);
+      const head = [...container.querySelectorAll(".exposure-compare__eyebrow")].map((h) => h.textContent);
       expect(head[0]).toContain("USD/EUR");
       expect(head[1]).toContain("EUR/USD");
       // Each column names its lens, so headwind and tailwind read as two different things.

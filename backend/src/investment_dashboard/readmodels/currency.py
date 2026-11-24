@@ -24,7 +24,7 @@ from typing import Any, Literal
 from sqlalchemy.orm import Session
 
 from investment_dashboard.domain.market_hours import exchange_today
-from investment_dashboard.readmodels._serialize import dec
+from investment_dashboard.readmodels._serialize import dec, kind_at_display
 from investment_dashboard.services import (
     intraday_snapshots_service,
     investing_power_service,
@@ -52,12 +52,9 @@ def _iso_utc(at: datetime) -> str:
     return (at if at.tzinfo is not None else at.replace(tzinfo=UTC)).isoformat()
 
 
-def _kind(value: Decimal) -> str:
-    if value > 0:
-        return "tailwind"
-    if value < 0:
-        return "headwind"
-    return "neutral"
+def _kind(value: Decimal, *, fraction: bool = False) -> str:
+    """The kind from the value as printed: anything that prints as zero is neutral."""
+    return kind_at_display(value, fraction=fraction)
 
 
 def _rate_range(
@@ -215,7 +212,7 @@ def _gap_tile(key: str, gap: Decimal | None, eur_money: Decimal | None) -> list[
     """A USD-view tile led by the gap (euro return minus dollar return), euros beside it."""
     if gap is None:
         return []
-    extra: dict[str, Any] = {"kind": _kind(gap)}
+    extra: dict[str, Any] = {"kind": _kind(gap, fraction=True)}
     if eur_money is not None:
         extra |= {
             "secondary": dec(eur_money.quantize(Q6)),

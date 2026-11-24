@@ -59,7 +59,7 @@ from investment_dashboard.domain.session_fx import fx_buying_power_split
 from investment_dashboard.readmodels import currency_deposits as deposits_rm
 from investment_dashboard.readmodels import currency_range
 from investment_dashboard.readmodels import fx_attribution_rows as rows_rm
-from investment_dashboard.readmodels._serialize import dec
+from investment_dashboard.readmodels._serialize import dec, kind_at_display
 from investment_dashboard.repositories import instruments_repo, transactions_repo
 from investment_dashboard.services import (
     fx_cost_service,
@@ -194,13 +194,10 @@ def _d(value: Any) -> Decimal | None:
         return None
 
 
-def kind_of(value: Decimal) -> str:
-    """``tailwind`` / ``headwind`` / ``neutral`` for the side's reader."""
-    if value > 0:
-        return "tailwind"
-    if value < 0:
-        return "headwind"
-    return "neutral"
+def kind_of(value: Decimal, *, fraction: bool = False) -> str:
+    """``tailwind`` / ``headwind`` / ``neutral`` for the side's reader, from the value as
+    printed (whole money units, points to one digit): a zero on screen is neutral."""
+    return kind_at_display(value, fraction=fraction)
 
 
 _minus_months = currency_range.minus_months
@@ -1125,7 +1122,7 @@ def _one_side(  # noqa: PLR0912, PLR0915
         "currency_share": _f(currency_share(market, effect)) if moved else None,
         "kind": headline_kind(effect, effect_pp)
         if lead == "effect"
-        else kind_of(effect_pp or ZERO),
+        else kind_of(effect_pp or ZERO, fraction=True),
         "lead": lead,
         "return_basis": basis,
         "note": mismatch_note(effect, effect_pp) if lead == "effect" else None,
@@ -1155,7 +1152,7 @@ def _one_side(  # noqa: PLR0912, PLR0915
                     "value": _f(effect_pp),
                     "unit": "fraction",
                     "currency": None,
-                    "kind": kind_of(effect_pp),
+                    "kind": kind_of(effect_pp, fraction=True),
                 }
                 if effect_pp is not None
                 else None
