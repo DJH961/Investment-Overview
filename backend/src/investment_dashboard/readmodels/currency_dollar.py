@@ -169,6 +169,47 @@ def _next_euro(
             "year_ago_date": row[0].isoformat(),
             "change_pct": dec(usd_now / usd_then - ONE),
         }
+    out["dollar_lens"] = _dollar_lens(usd_now, daily, spot, year_ago, first)
+    return out
+
+
+def _dollar_lens(
+    usd_amount: Decimal,
+    daily: list[tuple[date, Decimal]],
+    spot: Decimal,
+    year_ago: date,
+    first: date | None,
+) -> dict[str, Any]:
+    """The book lens of the same card: a native-dollar notional valued in euros.
+
+    ``usd_amount`` is the dollars the regular euro amount buys today (a native dollar
+    figure, never derived back from euros). Each value is that one dollar amount at one
+    rate (``usd / fx`` at a single instant): today's spot, the settled rate a year ago
+    and each week in between. No return is converted; the change is the ratio of two
+    euro values of the same dollars.
+    """
+    eur_now = usd_amount / spot
+    out: dict[str, Any] = {
+        "usd_amount": dec(usd_amount),
+        "eur_now": dec(eur_now),
+        # Share of days since you started on which these dollars were worth fewer euros
+        # than now (a rate above today's spot).
+        "better_than_share": (
+            dec(fx_trend.share_above(daily, spot, first)) if first is not None else None
+        ),
+        "spark": [
+            {"t": d.isoformat(), "eur": dec(usd_amount / r)}
+            for d, r in _thin_weekly([(d, r) for d, r in daily if d >= year_ago])
+        ],
+    }
+    row = _on_or_before(daily, year_ago)
+    if row is not None and daily and daily[0][0] <= year_ago:
+        eur_then = usd_amount / row[1]
+        out |= {
+            "eur_year_ago": dec(eur_then),
+            "year_ago_date": row[0].isoformat(),
+            "change_pct": dec(eur_now / eur_then - ONE),
+        }
     return out
 
 

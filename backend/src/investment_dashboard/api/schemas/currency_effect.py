@@ -32,6 +32,8 @@ from investment_dashboard.api.schemas.currency_rate import RangeWindow
 EFFECT_RANGE_PATTERN = r"^(1d|1w|1m|3m|ytd|1y|3y|5y|10y|all|max|\d{4})$"
 
 EffectKind = Literal["tailwind", "headwind", "neutral"]
+#: The headline word: ``mixed`` when the money figure and the gap in points disagree.
+HeadlineKind = Literal["tailwind", "headwind", "neutral", "mixed"]
 EffectGranularity = Literal["intraday", "daily", "weekly"]
 #: How the headline returns were computed, each currency on its own: ``daily_chain``
 #: = the hardened daily time-weighted chain over the lifetime's days, sliced to the
@@ -99,7 +101,7 @@ class EffectHeadline(ApiModel):
     currency_share: DecStr | None = None
     #: Follows the lead figure: the money effect (``lead == "effect"``) or the gap
     #: (``lead == "gap"``: tailwind = the euro result is the higher one).
-    kind: EffectKind
+    kind: HeadlineKind
     lead: HeadlineLead = "effect"
     return_basis: ReturnBasis
     #: Why the money figure and the gap point different ways, when they do.
