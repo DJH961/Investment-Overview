@@ -11,7 +11,7 @@
 | 4 Refresh speed + indicator | done (tick ~5.7 s → ~0.5 s on the benchmark); leftover: duplicate FX job |
 | 5 Bells | backend done (grace 60 s, 409 settling_close, `market_session`, re-pull); UI lane in progress |
 | 6 Faster tests + guideline | done (AGENTS.md "Testing for agents") |
-| Release 7.3.1 | to do |
+| Release 7.3.1 | done 2026-11-25 |
 
 ## Context
 
