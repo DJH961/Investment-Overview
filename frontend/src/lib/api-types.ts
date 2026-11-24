@@ -4380,7 +4380,7 @@ export interface components {
         };
         /**
          * EffectBuys
-         * @description "€1,000 buys $X; yesterday $Y" (``domain/session_fx.fx_buying_power_split``).
+         * @description "The regular amount buys $X; yesterday $Y" (``domain/session_fx.fx_buying_power_split``).
          */
         EffectBuys: {
             /** Amount Eur */
@@ -6806,7 +6806,7 @@ export interface components {
         };
         /**
          * NextEuro
-         * @description "€1,000 buys $X now; $Y a year ago" (a euro notional at one rate each).
+         * @description "The regular amount buys $X now; $Y a year ago" (a euro notional at one rate each).
          */
         NextEuro: {
             /** Amount Eur */
@@ -7820,7 +7820,7 @@ export interface components {
         };
         /**
          * RateOnly
-         * @description EUR 1,000 at the range start's rate and at its end's (the rate alone).
+         * @description The regular EUR amount at the range start's rate and at its end's (the rate alone).
          */
         RateOnly: {
             /** Amount Eur */

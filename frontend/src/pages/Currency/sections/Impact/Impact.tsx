@@ -6,14 +6,16 @@ import { Money } from "../../../../components/Money";
 import type { StatItem } from "../../../../components/StatStrip";
 import { formatDate, formatNumber, formatPercent } from "../../../../lib/format";
 import { RATE_RANGE_LABELS } from "../../../../lib/queries/currencyRate";
-import { useCurrencyEffect, type CurrencyEffectDto, type EffectStatDto } from "../../../../lib/queries/currencyEffect";
+import { useCurrencyEffect, useCurrencyEffectBoth, type CurrencyEffectDto, type EffectStatDto } from "../../../../lib/queries/currencyEffect";
 import { toNum } from "../../../../lib/queries/portfolio";
 import { windowText } from "../../numbers";
 import type { CurrencyRange } from "../../range";
 import type { CurrencySectionComponentProps } from "../../sections";
 import { BridgeCard, foreignOf, HoldingsCard, ImpactHero, isGapLead, MonthsCard, RecordsCard, RollingCard, SessionCard } from "./ImpactPanels";
+import { ImpactCompare } from "./ImpactCompare";
 import { DepositsCard, InvestingBridgeCard, investingView } from "./ImpactInvesting";
 import "./Impact.scss";
+import "./ImpactCompare.scss";
 
 /** The section's secondary figures' words (the hero carries the returns and the effect). */
 const STAT_LABELS: Record<string, StatMeta> = {
@@ -112,6 +114,7 @@ function rangeMeta(range: CurrencyRange, data: CurrencyEffectDto | undefined): s
 /** Impact: what the exchange rate did to you over the page range. */
 export function Impact({ id, label, currency, range }: CurrencySectionComponentProps) {
   const q = useCurrencyEffect(range, currency);
+  const both = useCurrencyEffectBoth(range).data;
   const { refetch: qRefetch } = q;
   const refetch = useCallback(() => void qRefetch(), [qRefetch]);
   const data = q.data;
@@ -153,6 +156,7 @@ export function Impact({ id, label, currency, range }: CurrencySectionComponentP
       {data && view ? (
         <div className="impact">
           <ImpactHero data={data} range={shownRange} figures={shortFigures(stripItems((inv ? inv.stats : data.stats) ?? [], data.ccy, !!inv), range)} />
+          {both?.EUR && both.USD ? <ImpactCompare eur={both.EUR} usd={both.USD} /> : null}
           <div className="impact__pair">
             {intraday ? <SessionCard data={data} /> : null}
             {inv ? <InvestingBridgeCard inv={inv} /> : <BridgeCard data={data} />}

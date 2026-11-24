@@ -252,7 +252,7 @@ class SessionSplit(ApiModel):
 
 
 class EffectBuys(ApiModel):
-    """ "€1,000 buys $X; yesterday $Y" (``domain/session_fx.fx_buying_power_split``)."""
+    """ "The regular amount buys $X; yesterday $Y" (``domain/session_fx.fx_buying_power_split``)."""
 
     amount_eur: DecStr
     usd_now: DecStr
@@ -296,7 +296,7 @@ class DepositEffectRow(ApiModel):
 
 
 class RateOnly(ApiModel):
-    """EUR 1,000 at the range start's rate and at its end's (the rate alone)."""
+    """The regular EUR amount at the range start's rate and at its end's (the rate alone)."""
 
     amount_eur: DecStr
     start_rate: DecStr

@@ -950,7 +950,7 @@ function BuysLine({ buys }: { buys: NonNullable<CurrencyEffectDto["buys"]> }) {
   const change = toNum(buys.change_usd);
   return (
     <p className="impact__buys">
-      <Money amount={amount} currency="EUR" digits={0} /> buys{" "}
+      <Money amount={amount} currency="EUR" digits={Number.isInteger(amount) ? 0 : 2} /> buys{" "}
       <strong>
         <Money amount={now} currency="USD" />
       </strong>

@@ -7,6 +7,7 @@ import { Money } from "../../../../components/Money";
 import { formatDate } from "../../../../lib/format";
 import { quoteOf, type DollarDto } from "../../../../lib/queries/currencyDollar";
 import { toNum } from "../../../../lib/queries/portfolio";
+import { euroText, investDigits } from "../../numbers";
 import { leanOf, pct, quoteWords, rateText, share } from "./quote";
 import { SinceStarted } from "./RangeCard";
 
@@ -210,7 +211,8 @@ type Extreme = { t: number; v: number; kind: "best" | "worst" };
  * EUR 1,000 x EUR/USD: linear presentation only) sit on it as small labelled points;
  * when the two are close, their labels lean apart so they never overlap.
  */
-function WeekColumns({ pts, extremes }: { pts: { t: number; v: number }[]; extremes: Extreme[] }) {
+function WeekColumns({ pts, extremes, amount }: { pts: { t: number; v: number }[]; extremes: Extreme[]; amount: number }) {
+  const dg = investDigits(amount);
   const vs = [...pts.map((p) => p.v), ...extremes.map((e) => e.v)];
   const max = Math.max(...vs);
   const min = Math.min(...vs);
@@ -246,13 +248,13 @@ function WeekColumns({ pts, extremes }: { pts: { t: number; v: number }[]; extre
     <div className="next-cols">
       <p className="next-cols__caption">Each week of the past year</p>
       <div className="next-cols__frame">
-        <ol className="next-cols__plot" aria-label="What 1,000 euros bought each week of the past year">
+        <ol className="next-cols__plot" aria-label={`What ${euroText(amount)} bought each week of the past year`}>
           {pts.map((p, i) => (
             <li
               key={p.t}
               className={clsx("next-cols__col", i === pts.length - 1 && "next-cols__col--today", i === 0 && "next-cols__col--then")}
               style={{ height: `${h(p.v)}%` }}
-              title={`${formatDate(new Date(p.t).toISOString().slice(0, 10))}: $${Math.round(p.v)}`}
+              title={`${formatDate(new Date(p.t).toISOString().slice(0, 10))}: $${p.v.toFixed(dg)}`}
             />
           ))}
         </ol>
@@ -268,7 +270,7 @@ function WeekColumns({ pts, extremes }: { pts: { t: number; v: number }[]; extre
                 className={clsx("next-cols__point-label", `next-cols__point-label--${anchor(e)}`)}
                 style={{ left: `${e.x}%`, bottom: `${top}%` }}
               >
-                {e.kind === "best" ? "best" : "worst"} <Money amount={e.v} currency="USD" digits={0} />
+                {e.kind === "best" ? "best" : "worst"} <Money amount={e.v} currency="USD" digits={dg} />
               </span>
             </span>
           );
@@ -287,7 +289,8 @@ function NextEuro({ next, data }: { next: NextDto; data: DollarDto }) {
   const ago = toNum(next.usd_year_ago ?? null);
   const change = toNum(next.change_pct ?? null);
   const better = toNum(next.better_than_share ?? null);
-  const amount = toNum(next.amount_eur) ?? 1000;
+  const amount = toNum(next.amount_eur) ?? 100;
+  const dg = investDigits(amount);
   const pts = (next.spark ?? [])
     .map((p) => ({ t: Date.parse(p.t), v: toNum(p.usd) }))
     .filter((p): p is { t: number; v: number } => p.v !== null && Number.isFinite(p.t));
@@ -311,17 +314,17 @@ function NextEuro({ next, data }: { next: NextDto; data: DollarDto }) {
       hint="a stronger euro helps"
       headline={
         <>
-          <Money amount={toNum(next.amount_eur)} currency="EUR" digits={0} /> buys <Money amount={now} currency="USD" digits={0} />
+          <Money amount={toNum(next.amount_eur)} currency="EUR" digits={Number.isInteger(amount) ? 0 : 2} /> buys <Money amount={now} currency="USD" digits={dg} />
         </>
       }
       note="at today's rate"
-      visual={pts.length > 2 ? <WeekColumns pts={pts} extremes={extremes.length === 2 ? extremes : []} /> : null}
+      visual={pts.length > 2 ? <WeekColumns pts={pts} extremes={extremes.length === 2 ? extremes : []} amount={amount} /> : null}
       figs={[
         {
           key: "ago",
           label: "A year ago",
-          value: ago !== null ? <Money amount={ago} currency="USD" digits={0} /> : "–",
-          note: "for the same €1,000",
+          value: ago !== null ? <Money amount={ago} currency="USD" digits={dg} /> : "–",
+          note: `for the same ${euroText(amount)}`,
         },
         {
           key: "change",

@@ -30,7 +30,7 @@ from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.readmodels import currency_range
 from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.repositories import transactions_repo
-from investment_dashboard.services import fx_service, positions_service
+from investment_dashboard.services import fx_service, investing_power_service, positions_service
 
 QUOTES: dict[str, dict[str, str]] = {
     "EUR": {"pair": "USD/EUR", "field": "inverse"},
@@ -38,7 +38,6 @@ QUOTES: dict[str, dict[str, str]] = {
 }
 ONE = Decimal(1)
 SIX_DP = Decimal("0.000001")
-NEXT_EURO_AMOUNT = Decimal(1000)
 INTRADAY_RANGES = frozenset({"1d", "1w"})
 WEEKLY_RANGES = frozenset({"10y", "max"})
 ROLLING_WINDOWS: tuple[tuple[str, int], ...] = (
@@ -140,27 +139,31 @@ def _position(
 
 
 def _next_euro(
-    daily: list[tuple[date, Decimal]], spot: Decimal | None, today: date, first: date | None
+    amount: Decimal,
+    daily: list[tuple[date, Decimal]],
+    spot: Decimal | None,
+    today: date,
+    first: date | None,
 ) -> dict[str, Any] | None:
     if spot is None or spot <= 0:
         return None
-    usd_now = NEXT_EURO_AMOUNT * spot
+    usd_now = amount * spot
     out: dict[str, Any] = {
-        "amount_eur": dec(NEXT_EURO_AMOUNT),
+        "amount_eur": dec(amount),
         "usd_now": dec(usd_now),
         "better_than_share": (
             dec(fx_trend.share_below(daily, spot, first)) if first is not None else None
         ),
     }
     year_ago = today - timedelta(days=365)
-    # "Dollars per €1,000" over the last year, weekly: the sparkline beside the headline.
+    # "Dollars per the regular amount" over the last year, weekly: the sparkline beside the headline.
     out["spark"] = [
-        {"t": d.isoformat(), "usd": dec(NEXT_EURO_AMOUNT * r)}
+        {"t": d.isoformat(), "usd": dec(amount * r)}
         for d, r in _thin_weekly([(d, r) for d, r in daily if d >= year_ago])
     ]
     row = _on_or_before(daily, year_ago)
     if row is not None and daily and daily[0][0] <= year_ago:
-        usd_then = NEXT_EURO_AMOUNT * row[1]
+        usd_then = amount * row[1]
         out |= {
             "usd_year_ago": dec(usd_then),
             "year_ago_date": row[0].isoformat(),
@@ -488,6 +491,7 @@ def build_dollar_both(
         (d, r) for d, r in fx_service.get_settled_rates(session).items() if r > 0 and d <= today
     )
     first = transactions_repo.earliest_transaction_date(session)
+    amount = investing_power_service.get_amount_eur(session)
     on_raw = overview["EUR"].get("kpis", {}).get("daily_growth_as_of")
     on = date.fromisoformat(str(on_raw)[:10]) if on_raw else today
     positions = positions_service.compute_positions(session, as_of=on)
@@ -514,7 +518,7 @@ def build_dollar_both(
             "quote": QUOTES[ccy],
             "position": _position(_exposure(positions, spot, ccy), life, today_block)
             | {"range_change": range_change},
-            "next_euro": _next_euro(daily, spot, today, first),
+            "next_euro": _next_euro(amount, daily, spot, today, first),
             "trend": trend,
             "rolling": rolling[of],
             "rolling_too_short": range_key in INTRADAY_RANGES,

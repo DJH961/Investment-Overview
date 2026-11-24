@@ -43,6 +43,11 @@ export const currencyEffectQuery = (range: EffectRange) =>
     staleTime: 60_000,
   });
 
+/** Both sides of the same cached entry, for panels that set EUR next to USD. */
+export function useCurrencyEffectBoth(range: EffectRange) {
+  return useQuery(currencyEffectQuery(range));
+}
+
 export function useCurrencyEffect(range: EffectRange, ccy: ReportingCurrency) {
   return useQuery({ ...currencyEffectQuery(range), select: (d) => d[ccy] });
 }
