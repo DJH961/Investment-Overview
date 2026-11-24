@@ -301,7 +301,8 @@ export function clockLabel(o: {
   now: Date;
   timeZone?: string;
 }): { long: string; short: string } {
-  if (o.bellRang === "close") return { long: "The closing bell has rung", short: "Bell! Closing time" };
+  // Once the close is settled the clock reads like any shut market ("Opens in 17 h"), not "Bell! Closing time".
+  if (o.bellRang === "close" && o.phase !== "closed") return { long: "The closing bell has rung", short: "Bell! Closing time" };
   if (o.bellRang === "open") return { long: "The opening bell has rung", short: "Bell! Market's open" };
   if (o.phase === "closing") return { long: "Settling the closing prices", short: "Settling the close" };
   if (o.phase === "opening") return { long: "Waiting for the first prices", short: "First prices soon" };

@@ -134,6 +134,7 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 }
 
 export function KeyFacts({ row, ccy }: { row: HoldingRowDto; ccy: ReportingCurrency }) {
+  const day = useScreenPhase();
   const native = row.native_currency;
   return (
     <section className="holding-page__section" aria-labelledby="holding-facts">
@@ -146,7 +147,7 @@ export function KeyFacts({ row, ccy }: { row: HoldingRowDto; ccy: ReportingCurre
           {formatMoney(toNum(row.avg_price_native), native)} → {formatMoney(toNum(row.price_native), native, { unmasked: true })}
         </Fact>
         <Fact label="Price as of">
-          <PriceStamps price={holdingPriceTime(row)} updated={null} terse />
+          <PriceStamps price={holdingPriceTime(row, day.live)} updated={null} terse />
         </Fact>
         <Fact label="Cost basis">
           <Money amount={toNum(row.cost_basis)} currency={ccy} />

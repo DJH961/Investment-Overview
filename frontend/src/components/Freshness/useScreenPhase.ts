@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { parseInstant } from "../../lib/format";
 import { useMarketPhase, type MarketPhase } from "../../lib/marketPhase";
 import { overviewQuery } from "../../lib/queries/portfolio";
 import { useTimeZone } from "../../lib/timezone";
@@ -19,9 +20,10 @@ export interface DayWords {
 }
 
 /** Pure: the wording for one phase (`sessionDate` is the headline move's session). */
-export function dayWords(phase: MarketPhase | null, sessionDate: string | null | undefined, timeZone?: string): DayWords {
+/** `overnight`: the gap from the last close to the next open is a weeknight (under a day), not a weekend or holiday. */
+export function dayWords(phase: MarketPhase | null, sessionDate: string | null | undefined, timeZone?: string, overnight: boolean | null = null): DayWords {
   const live = phase === null || phase === "live" || phase === "open";
-  const night = phase === null || phase === "closed" || phase === "holiday";
+  const night = phase === null || (phase === "closed" && overnight !== false);
   const earlier = phase === "closing" ? null : lastSessionLabel(sessionDate, { timeZone });
   if (phase === "closing") return { label: "Today", caption: "Closing · the closing prices are being settled", live, earlier, night };
   if (phase === "opening") {
@@ -42,5 +44,7 @@ export function useScreenPhase(): DayWords & { phase: MarketPhase | null } {
   const timeZone = useTimeZone();
   const data = useQuery({ ...overviewQuery("EUR"), enabled: false }).data;
   const { phase } = useMarketPhase(data?.freshness, Boolean(data?.daily_caption?.live));
-  return { phase, ...dayWords(phase, data?.kpis?.daily_growth_as_of, timeZone) };
+  const f = data?.freshness;
+  const gap = f?.last_close_at && f?.next_open_at ? parseInstant(f.next_open_at).getTime() - parseInstant(f.last_close_at).getTime() : Number.NaN;
+  return { phase, ...dayWords(phase, data?.kpis?.daily_growth_as_of, timeZone, Number.isNaN(gap) ? null : gap < 24 * 3_600_000) };
 }

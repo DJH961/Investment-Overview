@@ -181,7 +181,7 @@ export function Holding() {
               {row.native_currency === currency && (
                 <Percent ratio={toNum(row.today_pct)} signed colored={!row.daily_is_stale} />
               )}
-              <PriceStamps price={holdingPriceTime(row)} updated={null} compact />
+              <PriceStamps price={holdingPriceTime(row, day.live)} updated={null} compact />
             </>
           ) : undefined
         }

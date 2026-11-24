@@ -5,7 +5,10 @@ import { MarketChip } from "../MarketClock/MarketChip";
 import { FxState } from "../FxState";
 import { IDLE_REFRESH } from "../../lib/refresh";
 import { marketPhase } from "../../lib/marketPhase";
-import { describeFreshness, dayWords } from ".";
+import { describeFreshness, dayWords, holdingPriceTime } from ".";
+import { clockLabel } from "../MarketClock/MarketClock";
+import { moversBasisLabel } from "../MoversCard/MoversCard";
+import { dayMoveLabel } from "../OverviewHero/OverviewHero";
 
 vi.mock("../../lib/timezone", () => ({ useTimeZone: () => "UTC" }));
 
@@ -87,6 +90,27 @@ describe("the top bar chip, the phase and the day words at every open / close mo
       const shut = phase === "closed";
       expect(dayWords(phase, "2026-11-24", "UTC").night, m.name).toBe(shut);
     }
+  });
+
+  it("once closed the clock reads like any shut market, not 'Bell! Closing time'", () => {
+    const base = { open: false, remaining: 17 * 3_600_000, target: "2026-11-25T14:30:00Z", now: new Date("2026-11-24T21:04:00Z"), timeZone: "UTC" };
+    expect(clockLabel({ ...base, bellRang: "close", phase: "closing" }).short).toBe("Bell! Closing time");
+    expect(clockLabel({ ...base, bellRang: "close", phase: "closed" })).toEqual({ long: "Opens in 17 h", short: "Opens in 17 h" });
+  });
+
+  it("a holding's price stamp never says live while closing or closed", () => {
+    const row = { market_open: true, price_as_of: "2026-11-24", price_market_at: "2026-11-24T20:59:50Z", asset_class: "etf", native_currency: "USD" } as never;
+    expect(holdingPriceTime(row, true).marketOpen).toBe(true);
+    expect(holdingPriceTime(row, dayWords("closing", "2026-11-24", "UTC").live).marketOpen).toBe(false);
+    expect(holdingPriceTime(row, dayWords("closed", "2026-11-24", "UTC").live).marketOpen).toBe(false);
+  });
+
+  it("the overnight chip is for the weeknight between two sessions only; the movers card names the hero's day", () => {
+    expect(dayWords("closed", "2026-11-24", "UTC", true).night).toBe(true); // Tue evening, next open Wed
+    expect(dayWords("closed", "2026-11-27", "UTC", false).night).toBe(false); // Fri close, next open Mon
+    expect(dayWords("holiday", "2026-11-26", "UTC", false).night).toBe(false);
+    const o = { timeZone: "UTC", now: new Date("2026-11-29T22:20:00Z") };
+    expect(moversBasisLabel("2026-11-27", o)).toBe(dayMoveLabel("2026-11-27", o));
   });
 
   it("the phone chip says when the market opens once it is shut, not just a countdown", () => {
