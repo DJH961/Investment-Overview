@@ -153,6 +153,10 @@ function BuyingPower({ data }: { data: DollarDto }) {
       note: "euros into dollars",
     },
     { key: "now", label: "Now", value: rateText(q(pos.rate_now), field), note: `${pct(today)} today` },
+    // 1D has no settled change of its own ("Now … today" already says it): no empty tile.
+    ...(overRange === null
+      ? []
+      : [
     {
       key: "range",
       label: "Over this range",
@@ -160,6 +164,7 @@ function BuyingPower({ data }: { data: DollarDto }) {
       value: pct(overRange),
       note: <KindTag kind={leanOf(overRange)} />,
     },
+        ]),
   ];
   if (other !== null && Math.round(other) !== 0) {
     figs.push({

@@ -614,3 +614,12 @@
     }
   }
 }
+
+// "€1,000 buys $1,164 · yesterday …": its own line under the hours bars, not jammed
+// against the last bar.
+.impact__buys {
+  margin: var(--space-3) 0 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}

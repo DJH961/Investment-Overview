@@ -1,3 +1,4 @@
+import clsx from "clsx";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { ArrowRight, RotateCcw, Scale } from "lucide-react";
 import { Link } from "react-router";
@@ -399,7 +400,7 @@ function RiskCard({ data }: { data: ScenariosDto }) {
         </span>
       }
     >
-      <div className="what-if__groups">
+      <div className={clsx("what-if__groups", cushion.too_short && "what-if__groups--short")}>
         <p className="what-if__intro">
           Your own history, since {formatDate(cushion.since)}
           {data.range === "all" || data.range === "max" ? "" : ` (${RATE_RANGE_LABELS[data.range]})`}.
@@ -524,7 +525,9 @@ export function WhatIf({ id, label, currency, range }: CurrencySectionComponentP
       {data ? (
         <div className="what-if">
           <ScenarioSlider data={data} />
-          <div className="what-if__pair">
+          {/* Too short for the cushion: it becomes a short note under the table, not a
+              tall empty card beside it. */}
+          <div className={clsx("what-if__pair", data.cushion?.too_short && "what-if__pair--stacked")}>
             <StressCard data={data} />
             <RiskCard data={data} />
           </div>
