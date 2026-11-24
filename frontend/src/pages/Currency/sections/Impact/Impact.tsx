@@ -6,8 +6,9 @@ import { Money } from "../../../../components/Money";
 import type { StatItem } from "../../../../components/StatStrip";
 import { formatDate, formatNumber, formatPercent } from "../../../../lib/format";
 import { RATE_RANGE_LABELS } from "../../../../lib/queries/currencyRate";
-import { effectRangeFor, useCurrencyEffect, type CurrencyEffectDto, type EffectStatDto } from "../../../../lib/queries/currencyEffect";
+import { useCurrencyEffect, type CurrencyEffectDto, type EffectStatDto } from "../../../../lib/queries/currencyEffect";
 import { toNum } from "../../../../lib/queries/portfolio";
+import { windowText } from "../../numbers";
 import type { CurrencyRange } from "../../range";
 import type { CurrencySectionComponentProps } from "../../sections";
 import { BridgeCard, foreignOf, HoldingsCard, ImpactHero, isGapLead, MonthsCard, RecordsCard, RollingCard, SessionCard } from "./ImpactPanels";
@@ -89,24 +90,22 @@ export function stripItems(stats: EffectStatDto[], ccy: string, investing = fals
     });
 }
 
+/** The window the server resolved (the same dates in every section), else the payload's own. */
 function rangeMeta(range: CurrencyRange, data: CurrencyEffectDto | undefined): string {
+  const fromServer = windowText(data?.window, range);
+  if (fromServer) return fromServer;
   const label = RATE_RANGE_LABELS[range];
   if (!data?.start_on || !data.end_on) return label;
-  const all = effectRangeFor(range) === "all";
-  // 5Y / 10Y / Max are not split further than your own time: say which window this is.
-  return all
-    ? `${label}: all your time, since ${formatDate(data.start_on)}`
-    : `${label} · ${formatDate(data.start_on)} – ${formatDate(data.end_on)}`;
+  return `${label} · ${formatDate(data.start_on)} – ${formatDate(data.end_on)}`;
 }
 
 /** Impact: what the exchange rate did to you over the page range. */
 export function Impact({ id, label, currency, range }: CurrencySectionComponentProps) {
-  const effectRange = effectRangeFor(range);
-  const q = useCurrencyEffect(effectRange, currency);
+  const q = useCurrencyEffect(range, currency);
   const { refetch: qRefetch } = q;
   const refetch = useCallback(() => void qRefetch(), [qRefetch]);
   const data = q.data;
-  const shownRange = data?.range ?? effectRange;
+  const shownRange = data?.range ?? range;
   const intraday = data?.granularity === "intraday";
   // The USD view reads the investing side: the same cards, on the euros sent in.
   const inv = data?.investing ?? null;
@@ -151,7 +150,7 @@ export function Impact({ id, label, currency, range }: CurrencySectionComponentP
           </div>
           <MonthsCard data={view} />
           <RollingCard data={view} range={shownRange} />
-          {inv ? <DepositsCard inv={inv} range={range} /> : <HoldingsCard data={data} range={range} />}
+          {inv ? <DepositsCard inv={inv} range={range} holdingsNote={data.holdings_note} /> : <HoldingsCard data={data} range={range} />}
         </div>
       ) : null}
     </CurrencySection>

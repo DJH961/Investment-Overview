@@ -3,7 +3,7 @@ import { MemoryRouter } from "react-router";
 import { describe, expect, it, vi } from "vitest";
 import full from "../../../../fixtures/data/full.json";
 import { HideAmountsProvider } from "../../../../lib/hideAmounts";
-import { effectRangeFor, type CurrencyEffectDto } from "../../../../lib/queries/currencyEffect";
+import { type CurrencyEffectDto } from "../../../../lib/queries/currencyEffect";
 import { Impact } from "./Impact";
 import { ImpactHero } from "./ImpactPanels";
 
@@ -96,14 +96,4 @@ describe("Impact, both views have the same cards", () => {
       expect(seen.USD.filter(Boolean).length).toBeGreaterThanOrEqual(5);
     });
   }
-});
-
-describe("effectRangeFor", () => {
-  it("keeps 5Y and 10Y, maps Max and All to all", () => {
-    expect(effectRangeFor("5y")).toBe("5y");
-    expect(effectRangeFor("10y")).toBe("10y");
-    expect(effectRangeFor("max")).toBe("all");
-    expect(effectRangeFor("all")).toBe("all");
-    expect(effectRangeFor("1y")).toBe("1y");
-  });
 });
