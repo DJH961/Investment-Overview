@@ -236,12 +236,16 @@ Money maths is the exception: it stays test-first (property tests plus golden va
 
 ### Taking shots (`npm run shots`)
 
-Use `frontend/e2e/shoot.mjs`; don't write one-off Playwright scripts. Two steps:
+Use `frontend/e2e/shoot.mjs`; don't write one-off Playwright scripts. **Recommended for
+agents: `--serve`.** The tool starts its own fixture dev server on a free port, waits for it,
+shoots and always stops it (even on error or Ctrl+C), so parallel agents never clash and no
+background process is left behind. From `frontend/`:
 
-1. Start the fixture dev server on port 5273: `preview_start` with `frontend-fixtures`
-   (`.claude/launch.json`), or `npm run dev:fixtures -- --port 5273 --strictPort` in the
-   background. Parallel agents use their own port and pass `--base http://localhost:<port>`.
-2. From `frontend/`, run:
+    npm run shots -- ../.claude/ui-shots/<topic> currency --serve --pair --tiles
+
+Without `--serve`, start the fixture dev server yourself on port 5273 (`preview_start` with
+`frontend-fixtures`, or `npm run dev:fixtures -- --port 5273 --strictPort`) or pass
+`--base http://localhost:<port>`.
 
 | Want | Command |
 | --- | --- |
@@ -252,6 +256,9 @@ Use `frontend/e2e/shoot.mjs`; don't write one-off Playwright scripts. Two steps:
 | Just the first screen, not the full page | add `--viewport` |
 | One currency only | add `--ccy USD` |
 | Sidebar open (when the navigation is the subject) | add `--sidebar` |
+| Own server, no port clash, nothing left running | add `--serve` |
+| EUR left, USD right in one labeled image | add `--pair` (`<route>-pair-<width>-<theme>.png`) |
+| Long phone page readable piece by piece | add `--tiles` (full pages over 2.5 screens also get `-t1.png`, `-t2.png`, … with a little overlap) |
 
 Files are `<route>-<ccy>-<width>-<theme>[-elN].png`. Write routes without the leading slash
 (`holding/FAKEL`, not `/holding/FAKEL`): Git Bash turns `/x` into a Windows path. The script
