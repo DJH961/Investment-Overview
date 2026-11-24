@@ -1,0 +1,764 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-24T13:56:23+00:00",
+  "title": "Design System: Investment Dashboard",
+  "extensions": {
+    "colorMeta": {
+      "ink-navy": {
+        "role": "neutral",
+        "displayName": "Ink Navy",
+        "canonical": "#0d1626",
+        "tonalRamp": [
+          "#070b12",
+          "#1f2530",
+          "#3a4251",
+          "#576274",
+          "#788396",
+          "#9ca6b7",
+          "#c1cad8",
+          "#e8effa"
+        ]
+      },
+      "slate-muted": {
+        "role": "neutral",
+        "displayName": "Slate Muted",
+        "canonical": "#566173",
+        "tonalRamp": [
+          "#070b12",
+          "#1f252f",
+          "#3a4250",
+          "#586273",
+          "#788395",
+          "#9ca6b5",
+          "#c2cad7",
+          "#e8eff9"
+        ]
+      },
+      "slate-faint": {
+        "role": "neutral",
+        "displayName": "Slate Faint",
+        "canonical": "#5a6578",
+        "tonalRamp": [
+          "#070b12",
+          "#1f2530",
+          "#3a4250",
+          "#586273",
+          "#788395",
+          "#9ca6b6",
+          "#c2cad7",
+          "#e8effa"
+        ]
+      },
+      "quiet-indigo": {
+        "role": "primary",
+        "displayName": "Quiet Indigo",
+        "canonical": "#3e3cb4",
+        "tonalRamp": [
+          "#070130",
+          "#1a185c",
+          "#32338c",
+          "#4c50bf",
+          "#6a74e6",
+          "#8e9bfe",
+          "#b5c2ff",
+          "#deeaff"
+        ]
+      },
+      "lagoon-cyan": {
+        "role": "secondary",
+        "displayName": "Lagoon Cyan",
+        "canonical": "#06b6d4",
+        "tonalRamp": [
+          "#00101b",
+          "#002d3d",
+          "#004d62",
+          "#00708a",
+          "#0093ae",
+          "#50b5cc",
+          "#8ad7ea",
+          "#c0faff"
+        ]
+      },
+      "brand-indigo": {
+        "role": "secondary",
+        "displayName": "Brand Indigo",
+        "canonical": "#4f46e5",
+        "tonalRamp": [
+          "#080039",
+          "#1b0c69",
+          "#32299e",
+          "#4b45d6",
+          "#686bfe",
+          "#8b96ff",
+          "#b1bfff",
+          "#dbe8ff"
+        ]
+      },
+      "brand-teal": {
+        "role": "secondary",
+        "displayName": "Brand Teal",
+        "canonical": "#0891b2",
+        "tonalRamp": [
+          "#000f1b",
+          "#002c3d",
+          "#004b62",
+          "#006d8b",
+          "#2390ae",
+          "#62b2cc",
+          "#95d4ea",
+          "#c7f8ff"
+        ]
+      },
+      "action-ink": {
+        "role": "primary",
+        "displayName": "Action Ink",
+        "canonical": "#121b2c",
+        "tonalRamp": [
+          "#070b13",
+          "#1f2530",
+          "#3a4251",
+          "#576275",
+          "#788397",
+          "#9ca5b7",
+          "#c1cad9",
+          "#e8effb"
+        ]
+      },
+      "paper-canvas": {
+        "role": "neutral",
+        "displayName": "Paper Canvas",
+        "canonical": "#f6f7fa",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242526",
+          "#414244",
+          "#606163",
+          "#818285",
+          "#a4a5a7",
+          "#c8c9cb",
+          "#eeeef0"
+        ]
+      },
+      "card-white": {
+        "role": "neutral",
+        "displayName": "Card White",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "well-mist": {
+        "role": "neutral",
+        "displayName": "Well Mist",
+        "canonical": "#eef0f4",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242527",
+          "#414244",
+          "#606164",
+          "#818286",
+          "#a3a5a8",
+          "#c8c9cb",
+          "#edeef0"
+        ]
+      },
+      "hairline-grey": {
+        "role": "neutral",
+        "displayName": "Hairline Grey",
+        "canonical": "#e3e6ec",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#242528",
+          "#404246",
+          "#5f6166",
+          "#808287",
+          "#a3a5a9",
+          "#c7c9cd",
+          "#edeef1"
+        ]
+      },
+      "border-strong-grey": {
+        "role": "neutral",
+        "displayName": "Border Strong Grey",
+        "canonical": "#cbd1db",
+        "tonalRamp": [
+          "#090b0e",
+          "#22252a",
+          "#3e4249",
+          "#5d616a",
+          "#7e838b",
+          "#a1a5ad",
+          "#c5c9d0",
+          "#eceff4"
+        ]
+      },
+      "spine-navy": {
+        "role": "neutral",
+        "displayName": "Spine Navy",
+        "canonical": "#0d1524",
+        "tonalRamp": [
+          "#080b12",
+          "#20252f",
+          "#3b4250",
+          "#586273",
+          "#798395",
+          "#9ca5b6",
+          "#c2c9d7",
+          "#e9effa"
+        ]
+      },
+      "gain-harbor-blue": {
+        "role": "tertiary",
+        "displayName": "Gain Harbor Blue",
+        "canonical": "#2a6181",
+        "tonalRamp": [
+          "#000d19",
+          "#08283a",
+          "#1e475e",
+          "#366785",
+          "#5789a8",
+          "#81abc7",
+          "#accfe6",
+          "#d8f3ff"
+        ]
+      },
+      "loss-rust": {
+        "role": "tertiary",
+        "displayName": "Loss Rust",
+        "canonical": "#74210c",
+        "tonalRamp": [
+          "#1e0100",
+          "#431308",
+          "#6b2c1d",
+          "#964633",
+          "#bb6854",
+          "#d9907d",
+          "#f6b8a8",
+          "#ffe1d4"
+        ]
+      },
+      "warn-ochre": {
+        "role": "tertiary",
+        "displayName": "Warn Ochre",
+        "canonical": "#806912",
+        "tonalRamp": [
+          "#130a00",
+          "#302300",
+          "#514000",
+          "#745f11",
+          "#968139",
+          "#b6a46a",
+          "#d8c999",
+          "#faeec9"
+        ]
+      },
+      "estimate-violet": {
+        "role": "tertiary",
+        "displayName": "Estimate Violet",
+        "canonical": "#9c6ef7",
+        "tonalRamp": [
+          "#11002e",
+          "#2d0c59",
+          "#4c2688",
+          "#6d40bb",
+          "#8e64e1",
+          "#ae8ffa",
+          "#d0b8ff",
+          "#f4e2ff"
+        ]
+      },
+      "chart-indigo": {
+        "role": "tertiary",
+        "displayName": "Chart Indigo",
+        "canonical": "#414df3",
+        "tonalRamp": [
+          "#05003c",
+          "#130c6e",
+          "#262aa4",
+          "#3b47de",
+          "#576dff",
+          "#7c99ff",
+          "#a5c2ff",
+          "#d1eaff"
+        ]
+      },
+      "chart-teal": {
+        "role": "tertiary",
+        "displayName": "Chart Teal",
+        "canonical": "#319790",
+        "tonalRamp": [
+          "#00110f",
+          "#002e2b",
+          "#004e49",
+          "#00706b",
+          "#38938c",
+          "#6db4ae",
+          "#9dd6d0",
+          "#cdf9f4"
+        ]
+      },
+      "chart-gold": {
+        "role": "tertiary",
+        "displayName": "Chart Gold",
+        "canonical": "#8a6d00",
+        "tonalRamp": [
+          "#140900",
+          "#322200",
+          "#543f00",
+          "#785e00",
+          "#9a7f2e",
+          "#baa363",
+          "#dbc894",
+          "#fdeec5"
+        ]
+      },
+      "chart-clay": {
+        "role": "tertiary",
+        "displayName": "Chart Clay",
+        "canonical": "#b88365",
+        "tonalRamp": [
+          "#170600",
+          "#381d0d",
+          "#5c3823",
+          "#82553a",
+          "#a6765a",
+          "#c59b83",
+          "#e5c1ad",
+          "#ffe8d8"
+        ]
+      },
+      "chart-pine": {
+        "role": "tertiary",
+        "displayName": "Chart Pine",
+        "canonical": "#356c62",
+        "tonalRamp": [
+          "#000f0c",
+          "#0b2b26",
+          "#224a43",
+          "#3a6c63",
+          "#5b8e84",
+          "#85afa6",
+          "#afd2ca",
+          "#daf6ef"
+        ]
+      },
+      "chart-plum": {
+        "role": "tertiary",
+        "displayName": "Chart Plum",
+        "canonical": "#691586",
+        "tonalRamp": [
+          "#180023",
+          "#390a49",
+          "#5c2373",
+          "#833c9f",
+          "#a75fc4",
+          "#c689e0",
+          "#e5b3fc",
+          "#ffdeff"
+        ]
+      },
+      "night-fg": {
+        "role": "neutral",
+        "displayName": "Fg (dark)",
+        "canonical": "#eef2f8",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#232528",
+          "#404246",
+          "#5e6166",
+          "#7f8387",
+          "#a2a5aa",
+          "#c7c9cd",
+          "#edeff1"
+        ]
+      },
+      "night-muted": {
+        "role": "neutral",
+        "displayName": "Muted (dark)",
+        "canonical": "#9aa4b5",
+        "tonalRamp": [
+          "#080b11",
+          "#20252e",
+          "#3c424e",
+          "#596270",
+          "#7a8392",
+          "#9ea5b3",
+          "#c3cad5",
+          "#e9eff8"
+        ]
+      },
+      "night-accent": {
+        "role": "primary",
+        "displayName": "Quiet Indigo (dark)",
+        "canonical": "#a09bff",
+        "tonalRamp": [
+          "#0a0427",
+          "#221b4e",
+          "#3d367a",
+          "#5b53a8",
+          "#7b75ce",
+          "#9d9be8",
+          "#c2c2ff",
+          "#e8e9ff"
+        ]
+      },
+      "night-canvas": {
+        "role": "neutral",
+        "displayName": "Canvas (dark)",
+        "canonical": "#070a10",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#23252a",
+          "#3f4248",
+          "#5d6169",
+          "#7e838b",
+          "#a1a5ac",
+          "#c6c9cf",
+          "#eceff3"
+        ]
+      },
+      "night-surface": {
+        "role": "neutral",
+        "displayName": "Surface (dark)",
+        "canonical": "#0f141d",
+        "tonalRamp": [
+          "#090b0f",
+          "#22252b",
+          "#3d424b",
+          "#5b616c",
+          "#7c838e",
+          "#a0a5af",
+          "#c5c9d2",
+          "#ebeff5"
+        ]
+      },
+      "night-well": {
+        "role": "neutral",
+        "displayName": "Well (dark)",
+        "canonical": "#161c28",
+        "tonalRamp": [
+          "#090b10",
+          "#21252d",
+          "#3d424d",
+          "#5a616f",
+          "#7b8391",
+          "#9fa5b2",
+          "#c4c9d4",
+          "#eaeff7"
+        ]
+      },
+      "night-border": {
+        "role": "neutral",
+        "displayName": "Border (dark)",
+        "canonical": "#1d2431",
+        "tonalRamp": [
+          "#080b11",
+          "#21252d",
+          "#3c424d",
+          "#5a6270",
+          "#7a8392",
+          "#9ea5b3",
+          "#c3c9d5",
+          "#eaeff8"
+        ]
+      },
+      "night-gain": {
+        "role": "tertiary",
+        "displayName": "Gain (dark)",
+        "canonical": "#4eb0cd",
+        "tonalRamp": [
+          "#000f19",
+          "#002b3a",
+          "#004b5f",
+          "#006d86",
+          "#348fa9",
+          "#6ab1c7",
+          "#9bd3e6",
+          "#cbf7ff"
+        ]
+      },
+      "night-loss": {
+        "role": "tertiary",
+        "displayName": "Loss (dark)",
+        "canonical": "#d0784e",
+        "tonalRamp": [
+          "#1e0100",
+          "#421500",
+          "#6a2e0c",
+          "#954921",
+          "#ba6a44",
+          "#d89271",
+          "#f5ba9f",
+          "#ffe3cd"
+        ]
+      },
+      "night-warn": {
+        "role": "tertiary",
+        "displayName": "Warn (dark)",
+        "canonical": "#eacb5d",
+        "tonalRamp": [
+          "#140900",
+          "#332200",
+          "#553f00",
+          "#795e00",
+          "#9b8004",
+          "#bba453",
+          "#dbc989",
+          "#fdeebd"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "hero": {
+        "displayName": "Hero",
+        "purpose": "The Overview portfolio value only."
+      },
+      "display": {
+        "displayName": "Display",
+        "purpose": "Page titles and the one lead figure of a page or card."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Card titles."
+      },
+      "figure": {
+        "displayName": "Figure",
+        "purpose": "KPI tiles and big numbers outside the stage."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Text, table cells, controls."
+      },
+      "body-sm": {
+        "displayName": "Body small",
+        "purpose": "Buttons, dense rows, secondary text."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Sentence-case muted eyebrow above a figure."
+      }
+    },
+    "shadows": [
+      {
+        "name": "shadow-1",
+        "value": "0 1px 2px rgba(13, 22, 38, 0.04), 0 1px 1px rgba(13, 22, 38, 0.03)",
+        "purpose": "Every surface at rest (dark: inset hairline + 0 1px 2px rgba(0,0,0,0.35))."
+      },
+      {
+        "name": "shadow-hover",
+        "value": "0 8px 24px rgba(13, 22, 38, 0.07), 0 1px 2px rgba(13, 22, 38, 0.05)",
+        "purpose": "A clickable surface under the pointer, with the strong border."
+      },
+      {
+        "name": "shadow-2",
+        "value": "0 18px 48px rgba(13, 22, 38, 0.14), 0 2px 8px rgba(13, 22, 38, 0.07)",
+        "purpose": "Dialogs, sheets, menus, popovers."
+      }
+    ],
+    "motion": [
+      {
+        "name": "duration-fast",
+        "value": "120ms",
+        "purpose": "Hover and press."
+      },
+      {
+        "name": "duration-base",
+        "value": "200ms",
+        "purpose": "State changes and sheets."
+      },
+      {
+        "name": "duration-slow",
+        "value": "320ms",
+        "purpose": "The one page fade on route change."
+      },
+      {
+        "name": "ease-standard",
+        "value": "cubic-bezier(0.2, 0, 0, 1)",
+        "purpose": "Default easing."
+      },
+      {
+        "name": "ease-out",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Entrances."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "tablet",
+        "value": "640px"
+      },
+      {
+        "name": "desktop",
+        "value": "1024px"
+      },
+      {
+        "name": "wide",
+        "value": "1280px"
+      },
+      {
+        "name": "xl",
+        "value": "1440px"
+      },
+      {
+        "name": "xxl",
+        "value": "1920px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one strong action on a screen: ink, not color.",
+      "html": "<button class=\"ds-btn ds-btn--primary\">Save plan</button>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;gap:8px;height:var(--control-height,36px);padding:0 16px;border:1px solid transparent;border-radius:var(--radius-sm,8px);font:600 0.8125rem/1 var(--font-sans);cursor:pointer;transition:background-color 120ms cubic-bezier(.2,0,0,1),opacity 120ms cubic-bezier(.2,0,0,1)}.ds-btn:active{transform:translateY(1px)}.ds-btn:focus-visible{outline:2px solid var(--color-accent,#3e3cb4);outline-offset:2px}.ds-btn--primary{background:var(--color-ink,#121b2c);color:var(--color-ink-fg,#fff);box-shadow:var(--shadow-1)}.ds-btn--primary:hover{opacity:.88}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Second actions next to a primary.",
+      "html": "<button class=\"ds-btn2\">Import file</button>",
+      "css": ".ds-btn2{display:inline-flex;align-items:center;height:36px;padding:0 16px;border:1px solid var(--color-border-strong,#cbd1db);border-radius:var(--radius-sm,8px);background:var(--color-surface,#fff);color:var(--color-fg,#0d1626);font:600 0.8125rem/1 var(--font-sans);box-shadow:var(--shadow-1);cursor:pointer;transition:background-color 120ms cubic-bezier(.2,0,0,1)}.ds-btn2:hover{background:var(--color-surface-2,#eef0f4)}.ds-btn2:focus-visible{outline:2px solid var(--color-accent,#3e3cb4);outline-offset:2px}"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Tertiary actions in card headers and toolbars.",
+      "html": "<button class=\"ds-btn3\">Show all</button>",
+      "css": ".ds-btn3{display:inline-flex;align-items:center;height:36px;padding:0 16px;border:1px solid transparent;border-radius:var(--radius-sm,8px);background:transparent;color:var(--color-muted,#566173);font:600 0.8125rem/1 var(--font-sans);cursor:pointer;transition:background-color 120ms,color 120ms}.ds-btn3:hover{background:var(--color-surface-2,#eef0f4);color:var(--color-fg,#0d1626)}.ds-btn3:focus-visible{outline:2px solid var(--color-accent,#3e3cb4);outline-offset:2px}"
+    },
+    {
+      "name": "Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "A sunken well with an indigo ring on focus.",
+      "html": "<input class=\"ds-input\" placeholder=\"Search instruments\">",
+      "css": ".ds-input{width:100%;height:44px;padding:0 12px;border:1px solid var(--color-border,#e3e6ec);border-radius:var(--radius-sm,8px);background:var(--color-surface-2,#eef0f4);color:var(--color-fg,#0d1626);font:400 0.9375rem/1.5 var(--font-sans);transition:border-color 120ms,background-color 120ms}.ds-input::placeholder{color:var(--color-faint,#5a6578)}.ds-input:hover{border-color:var(--color-border-strong,#cbd1db)}.ds-input:focus-visible{outline:2px solid var(--color-accent,#3e3cb4);outline-offset:0;border-color:var(--color-accent,#3e3cb4);background:var(--color-surface,#fff)}"
+    },
+    {
+      "name": "Chips",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Statuses and tags: always an icon or a word next to the tone.",
+      "html": "<span class=\"ds-chip\">Live · 14:32 ET</span> <span class=\"ds-chip ds-chip--pos\">▲ +1.2%</span> <span class=\"ds-chip ds-chip--neg\">▼ −0.4%</span>",
+      "css": ".ds-chip{display:inline-flex;align-items:center;gap:4px;height:28px;padding:0 12px;border:1px solid var(--color-border,#e3e6ec);border-radius:999px;background:var(--color-surface-2,#eef0f4);color:var(--color-fg,#0d1626);font:500 0.75rem/1 var(--font-sans);font-variant-numeric:tabular-nums}.ds-chip--pos{background:var(--color-pos-soft,rgba(42,97,129,.1));border-color:transparent;color:var(--color-pos,#2a6181)}.ds-chip--neg{background:var(--color-neg-soft,rgba(116,33,12,.09));border-color:transparent;color:var(--color-neg,#74210c)}"
+    },
+    {
+      "name": "Segmented Control",
+      "kind": "custom",
+      "refersTo": "segmented-track",
+      "description": "Ranges, sub-tabs and the EUR | USD toggle.",
+      "html": "<div class=\"ds-seg\"><button class=\"ds-seg__opt ds-seg__opt--on\">EUR</button><button class=\"ds-seg__opt\">USD</button></div>",
+      "css": ".ds-seg{display:inline-flex;gap:2px;padding:2px;border:1px solid var(--color-border,#e3e6ec);border-radius:var(--radius-md,12px);background:var(--color-surface-2,#eef0f4)}.ds-seg__opt{min-width:36px;height:30px;padding:0 12px;border:0;border-radius:9px;background:transparent;color:var(--color-muted,#566173);font:600 0.8125rem/1 var(--font-sans);cursor:pointer;transition:background-color 120ms,color 120ms}.ds-seg__opt:hover{color:var(--color-fg,#0d1626)}.ds-seg__opt--on{background:var(--color-surface,#fff);color:var(--color-fg,#0d1626);box-shadow:var(--shadow-1)}.ds-seg__opt:focus-visible{outline:2px solid var(--color-accent,#3e3cb4);outline-offset:2px}"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "The section container: title, quiet meta note, body.",
+      "html": "<section class=\"ds-card\"><header class=\"ds-card__head\"><h3 class=\"ds-card__title\">Holdings</h3><span class=\"ds-card__meta\">Prices as of 16:00 ET</span></header><div class=\"ds-card__body\"><span class=\"ds-card__label\">Total value</span><span class=\"ds-card__fig\">€184,320.55</span></div></section>",
+      "css": ".ds-card{background:var(--color-surface,#fff);border:1px solid var(--color-border,#e3e6ec);border-radius:var(--radius-lg,16px);box-shadow:var(--shadow-1);transition:box-shadow 200ms,border-color 200ms}.ds-card:hover{border-color:var(--color-border-strong,#cbd1db);box-shadow:var(--shadow-hover)}.ds-card__head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:20px 24px 0}.ds-card__title{margin:0;font:600 1.0625rem/1.2 var(--font-sans);letter-spacing:-0.015em;color:var(--color-fg,#0d1626)}.ds-card__meta{color:var(--color-muted,#566173);font:400 0.75rem/1.2 var(--font-sans)}.ds-card__body{display:grid;gap:4px;padding:16px 24px 20px}.ds-card__label{color:var(--color-muted,#566173);font:500 0.75rem/1.2 var(--font-sans)}.ds-card__fig{color:var(--color-fg,#0d1626);font:500 1.625rem/1.2 var(--font-sans);letter-spacing:-0.02em;font-variant-numeric:tabular-nums}"
+    },
+    {
+      "name": "Navigation Item",
+      "kind": "nav",
+      "refersTo": "nav-item-active",
+      "description": "Spine rows; the open page is a lit row with an indigo edge bar.",
+      "html": "<nav class=\"ds-nav\"><a class=\"ds-nav__link ds-nav__link--on\" href=\"#\">Overview</a><a class=\"ds-nav__link\" href=\"#\">Holdings</a><a class=\"ds-nav__link\" href=\"#\">Periods</a></nav>",
+      "css": ".ds-nav{display:grid;gap:2px;width:220px;padding:8px;border-radius:var(--radius-lg,16px);background:#f5f7fa}.ds-nav__link{position:relative;display:flex;align-items:center;height:32px;padding:0 12px;border-radius:var(--radius-sm,8px);color:var(--color-muted,#566173);font:500 0.8125rem/1 var(--font-sans);text-decoration:none;transition:background-color 120ms,color 120ms}.ds-nav__link:hover{background:#e4e8f0;color:var(--color-fg,#0d1626)}.ds-nav__link:focus-visible{outline:2px solid var(--color-accent,#3e3cb4);outline-offset:2px}.ds-nav__link--on{background:var(--color-surface,#fff);box-shadow:var(--shadow-1);color:var(--color-fg,#0d1626);font-weight:600}.ds-nav__link--on::before{content:'';position:absolute;left:-8px;top:8px;bottom:8px;width:3px;border-radius:3px;background:var(--color-accent,#3e3cb4)}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Neo-Private Bank",
+    "overview": "The calm of a private-bank statement, built with the polish of the best neobank and neobroker apps. It should feel technical and current without ever feeling busy: generous, even spacing; soft layered surfaces with restrained depth; large, confident figures; one restrained accent; motion so quiet you notice it only when it's missing. The numbers are the loud part. Everything around them steps back.\n\nTwo signatures carry the identity. The **spine** is the grouped navigation with the portfolio's value at its head: a quiet light spine in the light theme, deep navy ink in the dark. The **stage** is a page's one subject on a single lit surface a step above the cards: on Overview, the portfolio value in an oversized serif with today's move and the chart. Each page has at most one stage, and everything else is a quieter panel.\n\nThe dark theme is a theme of its own, not an inverted light one: a deep blue-black canvas lit from above by two faint glows, surfaces that step up in blue-grey, and light hairlines in place of heavier shadows. Confirmed anti-references: a trading terminal (dense, flashing, red/green), a crypto or neon look (glowing gradients, gamified finance), and a hobby or template admin dashboard (default kit cards, walls of charts).",
+    "keyCharacteristics": [
+      "Figures first: tabular numerals everywhere, one oversized serif figure per page at most.",
+      "Ink, not color, for action; one indigo accent for selection, focus and links only.",
+      "Protan-safe values: gains in blue, losses in orange, never red/green, never color alone.",
+      "One stage per page, one rhythm per page, one figure per screen.",
+      "EUR and USD share one shape: switching currency never moves anything.",
+      "Phone and desktop are the same product at two densities."
+    ],
+    "rules": [
+      {
+        "name": "The One Accent Rule",
+        "body": "Indigo means \"selected, focused or clickable\". It never carries a value, a status or a series.",
+        "section": "colors"
+      },
+      {
+        "name": "The Ink-Not-Color Rule",
+        "body": "The primary action is ink on canvas. Colored buttons are reserved for destructive actions (rust, soft fill).",
+        "section": "colors"
+      },
+      {
+        "name": "The Protan Rule",
+        "body": "Gains are blue, losses are orange. Any two colors that appear together with different meanings go into the CVD pair list, and no meaning rides on color alone: statuses carry an icon or a word, secondary series are dashed.",
+        "section": "colors"
+      },
+      {
+        "name": "The Serif Marks the Subject Rule",
+        "body": "Serif for titles and the single lead figure only. Never in tables, tiles or controls.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Rule",
+        "body": "Every figure is `tabular-nums`, right-aligned in tables.",
+        "section": "typography"
+      },
+      {
+        "name": "The Quiet Label Rule",
+        "body": "Labels are sentence case, medium weight, muted; the figure under them is the loud part. Only tickers stay in capitals, because they are names.",
+        "section": "typography"
+      },
+      {
+        "name": "The One Stage Rule",
+        "body": "A page has at most one stage: its single subject, a step above the cards.",
+        "section": "layout"
+      },
+      {
+        "name": "The One Shape Rule",
+        "body": "EUR and USD have one shape. Fitted figures keep a fixed line box, currency-only lines are reserved or held invisibly, and rows keep their line count. A currency switch never moves anything.",
+        "section": "layout"
+      },
+      {
+        "name": "The Once-Per-Screen Rule",
+        "body": "A figure appears once per screen. Charts get a second axis only from 720px of chart width; the right gutter is reserved either way, so the plot never resizes.",
+        "section": "layout"
+      },
+      {
+        "name": "The Lift-Without-Moving Rule",
+        "body": "Hovering a clickable surface changes its border and shadow only. Nothing moves, except a 1px press on buttons.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** take every color, size, space and radius from a `var(--…)` token in `tokens.scss`, with BEM class names.",
+      "**Do** use tabular numerals for every figure and right-align numbers in tables.",
+      "**Do** add every new co-displayed color pair to `tokens.cvd.test.ts`, and pair every status color with an icon or a word.",
+      "**Do** dash every secondary chart series.",
+      "**Do** keep motion quiet: 120ms for hover and press, 200ms for state changes and sheets, 320ms for the one page fade; standard easing `cubic-bezier(0.2, 0, 0, 1)`; turn all of it off under reduced motion.",
+      "**Do** show freshness on every data view and use skeletons, never a spinner over a blank page.",
+      "**Do** keep the information on phones; change the density, not the content."
+    ],
+    "donts": [
+      "**Don't** use red/green for gains and losses, or let color alone carry a meaning.",
+      "**Don't** use the indigo accent as a value, status or series color.",
+      "**Don't** set the serif in tables, tiles or controls, or put more than one oversized figure on a page.",
+      "**Don't** let a EUR/USD switch move, resize or reflow anything.",
+      "**Don't** build a trading-terminal look: dense flashing tickers, red/green walls, cramped grids.",
+      "**Don't** use a crypto or neon look: glowing gradients, saturated color fields, gamified finance styling.",
+      "**Don't** ship a hobby or template-admin dashboard: default kit cards, walls of charts, uneven gaps or a lone tile on its own row.",
+      "**Don't** bounce, slide cards in one by one, or move surfaces on hover."
+    ]
+  }
+}

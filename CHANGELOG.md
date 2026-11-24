@@ -19,6 +19,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [7.3.1] — 2026-11-24
 
+### Added
+- `PRODUCT.md`: the product record (users, purpose, positioning, constraints,
+  principles) that Impeccable design work reads before touching the UI.
+- `DESIGN.md` and `.impeccable/design.json`: the current visual system
+  ("The Neo-Private Bank") recorded from `tokens.scss` and the core components.
+
 ### Fixed
 - Currency › Impact: a deposit of dollars bought earlier no longer shows its rate
   move and conversion spread as "market". It counts as currency, in two new lines:
