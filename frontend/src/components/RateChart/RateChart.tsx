@@ -1,6 +1,7 @@
 import clsx from "clsx";
-import { ArrowDownRight, ArrowUpRight, Eye, EyeOff, Minus, MoveRight, TrendingDown, TrendingUp } from "lucide-react";
-import { useMemo, type ReactNode } from "react";
+import { ArrowDownRight, ArrowUpRight, Eye, EyeOff, Minus, Moon, MoveRight, Sunrise, TrendingDown, TrendingUp } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { forexReopen, useFxMoment } from "./fxWeekend";
 import { Card } from "../Card";
 import { Chart, type ChartMarker, type ChartSeries } from "../Chart";
 import { InfoTip } from "../InfoTip";
@@ -13,6 +14,7 @@ import {
   formatPercent,
   formatShortDay,
   formatTime,
+  formatWeekdayTime,
 } from "../../lib/format";
 import { toNum } from "../../lib/queries/portfolio";
 import {
@@ -271,6 +273,24 @@ export function RateChart({
     [data, shown],
   );
 
+  // The FX week: Friday's close settles the line (moon, a calm end cap); Sunday's reopen
+  // says so (sunrise), and the first new tick after it draws in with a short line-grow.
+  const fx = useFxMoment();
+  const lastT = pts.length ? pts[pts.length - 1].t : null;
+  const [grownFrom, setGrownFrom] = useState<string | null>(null);
+  const [prevLastT, setPrevLastT] = useState<string | null>(lastT);
+  if (lastT !== prevLastT) {
+    // A new point landed (not the first load): grow it in while FX is just back.
+    if (prevLastT !== null && lastT !== null && fx === "back") setGrownFrom(lastT);
+    setPrevLastT(lastT);
+  }
+  useEffect(() => {
+    if (!grownFrom) return;
+    const id = window.setTimeout(() => setGrownFrom(null), 900);
+    return () => window.clearTimeout(id);
+  }, [grownFrom]);
+  const reopenAt = fx === "weekend" ? formatWeekdayTime(forexReopen(Date.now()), timeZone) : null;
+
   const timeFormat = (t: number) =>
     shown === "1d" ? formatTime(new Date(t), timeZone) : shown === "1w" ? formatShortDay(t, timeZone) : formatAxisDate(t, long ? Infinity : 0);
   const tooltipTimeFormat = (t: number) =>
@@ -280,7 +300,7 @@ export function RateChart({
 
   return (
     <Card
-      className={clsx("rate-chart", className)}
+      className={clsx("rate-chart", fx === "weekend" && "rate-chart--fx-weekend", grownFrom && "rate-chart--fx-grow", className)}
       title={
         <span className="rate-chart__title">
           {pair}
@@ -300,6 +320,21 @@ export function RateChart({
         {change !== null ? (
           <span className="rate-chart__change">
             {pct(change)} {shown === "max" || shown === "all" ? rangeLabel : `in ${rangeLabel}`}
+          </span>
+        ) : null}
+        {fx === "weekend" ? (
+          <span
+            className="rate-chart__fx rate-chart__fx--weekend"
+            data-testid="rate-fx-state"
+            title={reopenAt ? `Spot FX is closed from Friday 17:00 to Sunday 17:00 New York time. Back ${reopenAt}.` : undefined}
+          >
+            <Moon aria-hidden className="rate-chart__fx-icon" />
+            FX market&apos;s off for the weekend
+          </span>
+        ) : fx === "back" ? (
+          <span className="rate-chart__fx rate-chart__fx--back" data-testid="rate-fx-state">
+            <Sunrise aria-hidden className="rate-chart__fx-icon" />
+            FX is back
           </span>
         ) : null}
       </p>
