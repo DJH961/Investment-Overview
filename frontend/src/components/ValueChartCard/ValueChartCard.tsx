@@ -165,13 +165,18 @@ export function ValueChartCard({
   const { hide } = useHideAmounts();
   // Same points, scale and baseline in both modes; hide mode only masks labels.
   const built = useMemo(() => (g ? buildValueSeries(g, { hide, showSecondary }) : null), [g, showSecondary, hide]);
-  const series = useMemo<ChartSeries[]>(() => built?.series ?? [], [built]);
+  // The open before the first prices: the line (the previous close, flat) stops at "now" and the
+  // time axis still runs to the closing bell, so the day reads as a day that has just begun.
+  const stubEnd = shown === "1d" && g?.market_open && g.points.length <= 2 ? (g.sessions?.[0]?.close ?? null) : null;
+  const stub = stubEnd !== null;
+  const series = useMemo<ChartSeries[]>(() => {
+    const s = built?.series ?? [];
+    return stubEnd ? s.map((x) => ({ ...x, points: [...x.points, { t: stubEnd, v: null }] })) : s;
+  }, [built, stubEnd]);
 
   const intraday = shown === "1d" || shown === "1w";
-  // The open before the first prices: a stub line (the previous close, flat) on the whole session axis.
-  const stub = shown === "1d" && Boolean(g?.market_open) && (g?.points.length ?? 0) <= 2 && (g?.sessions?.length ?? 0) > 0;
-  const sessions = shown === "1w" || stub ? (g?.sessions ?? []) : [];
-  const xMode: ChartXMode = shown === "1d" && !stub ? "time" : sessions.length ? "session" : "date";
+  const sessions = shown === "1w" ? (g?.sessions ?? []) : [];
+  const xMode: ChartXMode = shown === "1d" ? "time" : sessions.length ? "session" : "date";
   const axisFormat = hide && built ? built.formats.primary : chartMoneyFormat(currency, "axis");
   const tipFormat = chartMoneyFormat(currency, "tooltip");
   const timeFormat = (t: number) =>
