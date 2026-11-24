@@ -97,6 +97,18 @@ export const CVD_PAIRS: { a: string; b: string; why: string }[] = [
   { a: "--color-fg", b: "--color-pos", why: "TopBar: update pulse ring vs health badge OK" },
   { a: "--color-fg", b: "--color-warn", why: "TopBar: update pulse ring vs health badge warning" },
   { a: "--color-fg", b: "--color-neg", why: "TopBar: update pulse ring vs health badge problem" },
+  // Bell moments (7.3.1): the brass bell and its ripple in the market clock, beside the
+  // accent session track / soon digits and the hero's blue/orange day move.
+  { a: "--color-bell", b: "--color-accent", why: "market clock: ringing bell vs session track / soon digits" },
+  { a: "--color-bell", b: "--color-pos", why: "market clock: ringing bell vs the hero's up-day move / live dot" },
+  { a: "--color-bell", b: "--color-neg", why: "market clock: ringing bell vs the hero's down-day move" },
+  // FX weekend (7.3.1): the moon (weekend close) and sunrise (reopen) glyphs in the rate
+  // chart's head, above the rate line (chart-1) and the dashed 200-day average (chart-3).
+  // The two glyphs never show together (one state at a time) and the end cap keeps the line's colour.
+  { a: "--color-fx-moon", b: "--chart-1", why: "rate chart: weekend moon glyph vs rate line" },
+  { a: "--color-fx-moon", b: "--chart-3", why: "rate chart: weekend moon glyph vs 200-day average" },
+  { a: "--color-fx-sunrise", b: "--chart-1", why: "rate chart: reopen sunrise glyph vs rate line" },
+  { a: "--color-fx-sunrise", b: "--chart-3", why: "rate chart: reopen sunrise glyph vs 200-day average" },
 ];
 
 /** Charts with 3+ untoned series (n2..n4) are rare; they get the lower bar plus dashes. */
@@ -117,6 +129,9 @@ const MARK_TOKENS = [
   "--chart-estimate",
   "--color-lot-long",
   "--color-lot-soon",
+  "--color-bell",
+  "--color-fx-moon",
+  "--color-fx-sunrise",
 ];
 
 const here = dirname(fileURLToPath(import.meta.url));

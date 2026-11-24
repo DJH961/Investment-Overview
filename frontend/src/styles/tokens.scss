@@ -62,6 +62,11 @@
   --color-lot-long-soft: rgba(137, 176, 205, 0.16);
   --color-lot-soon: #9c48d8;
   --color-lot-soon-soft: rgba(156, 72, 216, 0.18);
+  // Market moments (glyphs only, always with a word): the brass bell at the US open and
+  // close, the moon of the FX weekend close and the dawn-pink sunrise of its reopen.
+  --color-bell: #ffe9a8;
+  --color-fx-moon: #d8def5;
+  --color-fx-sunrise: #f7a6b8;
   --color-overlay: rgba(3, 5, 9, 0.66);
   // Depth: hairline top highlight + soft drop; the overlay level for sheets and menus.
   --shadow-1: inset 0 1px 0 var(--color-hairline), 0 1px 2px rgba(0, 0, 0, 0.35);
@@ -120,6 +125,9 @@
   --color-lot-long-soft: rgba(38, 68, 89, 0.1);
   --color-lot-soon: #a875f0;
   --color-lot-soon-soft: rgba(168, 117, 240, 0.14);
+  --color-bell: #9a7400;
+  --color-fx-moon: #1f2742;
+  --color-fx-sunrise: #9b2c50;
   --color-overlay: rgba(13, 22, 38, 0.38);
   --shadow-1: 0 1px 2px rgba(13, 22, 38, 0.04), 0 1px 1px rgba(13, 22, 38, 0.03);
   --shadow-hover: 0 8px 24px rgba(13, 22, 38, 0.07), 0 1px 2px rgba(13, 22, 38, 0.05);
