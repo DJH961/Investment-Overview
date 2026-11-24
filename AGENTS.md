@@ -175,6 +175,13 @@ Adapted from the owner's starter-project convention (see plan §4a):
 
 ## Testing for agents
 
+**Fixture data (owner rule):** the fixtures (`frontend/src/fixtures/data/*.json`) are a
+recording of the backend's answers, made by `npm run gen:fixtures` (slow: it rebuilds all of
+them). Regenerate only when a change alters what an endpoint returns, and then only the
+endpoints you touched (`--only /api/<path>[,/api/<path>…]`, any API path or prefix, once the
+option lands). Lanes never run the full regeneration. The main session runs it once, after
+merging, just before the release PR; CI's drift guard checks it.
+
 **Test what you changed, nothing more (owner rule):** `uv run --project backend python
 scripts/test_changed.py [--base main] [--run]` prints (and with `--run` runs) the
 targeted commands below for your diff. Subagents and lanes run only these, plus a single
