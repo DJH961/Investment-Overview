@@ -62,7 +62,8 @@ mkdirSync(outDir, { recursive: true });
 
 /** The fixture server's view switches (src/fixtures/install.ts): currency, theme, sidebar. */
 const viewUrl = (route, ccy, theme) =>
-  `${base}${route}${route.includes("?") ? "&" : "?"}ccy=${ccy}&theme=${theme}&rail=${args.includes("--sidebar") ? 0 : 1}`;
+  `${base}${route}${route.includes("?") ? "&" : "?"}ccy=${ccy}&theme=${theme}&rail=${args.includes("--sidebar") ? 0 : 1}` +
+  (flag("at", null) ? `&at=${encodeURIComponent(flag("at", null))}` : "");
 
 /** Fails loudly when the page does not show the asked currency. */
 async function checkCcy(page, want) {

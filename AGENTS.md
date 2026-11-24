@@ -267,6 +267,7 @@ Without `--serve`, start the fixture dev server yourself on port 5273 (`preview_
 | Own server, no port clash, nothing left running | add `--serve` |
 | EUR left, USD right in one labeled image | add `--pair` (`<route>-pair-<width>-<theme>.png`) |
 | Long phone page readable piece by piece | add `--tiles` (full pages over 2.5 screens also get `-t1.png`, `-t2.png`, … with a little overlap) |
+| A market moment (open, close, FX weekend) | `npm run shots -- <dir> overview --at closing` (`preopen`, `opening`, `firsttick`, `preclose`, `closing`, `closed`, `fxfri`, `fxsun`, or an ISO instant; the same `?at=` works in any browser, `?at=live` clears it) |
 
 Files are `<route>-<ccy>-<width>-<theme>[-elN].png`. Write routes without the leading slash
 (`holding/FAKEL`, not `/holding/FAKEL`): Git Bash turns `/x` into a Windows path. The script
