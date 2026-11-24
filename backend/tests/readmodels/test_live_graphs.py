@@ -393,3 +393,20 @@ def test_live_graphs_absent_without_intraday_history(session: Session) -> None:
 
     out = live_graphs.build(session, context=build_context(session, as_of=_SESSION_DAY), now=_NOW)
     assert out is None or "day" not in out
+
+
+def test_1d_graph_is_a_line_at_the_open_before_any_sample(session: Session) -> None:
+    """09:35 ET Tuesday, no sample yet: the line starts at the open on the previous close."""
+    _seed_usd_holding_with_intraday(session)
+    opening = datetime(2024, 6, 4, 13, 35, tzinfo=UTC)  # 09:35 EDT, market open
+
+    out = live_graphs.build_graph(session, range_key="1d", ccy="USD", now=opening)
+
+    assert out["market_open"] is True
+    assert out["reference"] is not None
+    points = out["points"]
+    assert len(points) >= 2
+    assert points[0]["t"].startswith("2024-06-04T13:30:00")
+    assert points[0]["v"] == out["reference"]
+    assert points[-1]["v"] == out["reference"]
+    assert out["session_date"] == "2024-06-04"

@@ -20,6 +20,7 @@ import { OverviewWarnings } from "../../components/OverviewWarnings";
 import { PageHeader } from "../../components/PageHeader";
 import { Skeleton } from "../../components/Skeleton";
 import { ValueChartCard } from "../../components/ValueChartCard";
+import { useMarketPhase } from "../../lib/marketPhase";
 import { describeFreshness, useLiveGrace, type FreshnessView } from "../../components/Freshness";
 import { formatDate } from "../../lib/format";
 import { useDisplayPrefs } from "../../lib/displayPrefs";
@@ -110,6 +111,7 @@ export function Overview() {
   const timeZone = useTimeZone();
 
   const data = overview.data;
+  const { phase } = useMarketPhase(data?.freshness, Boolean(data?.daily_caption?.live));
   const qc = useQueryClient();
   // The clock reached an open or close: the server's next instants, and maybe a Brief.
   const onClockBoundary = useCallback(() => {
@@ -118,7 +120,7 @@ export function Overview() {
   const { main: mainCol, side: sideCol, height: treemapHeight } = useTreemapHeight(Boolean(data));
   let chip: FreshnessView;
   if (overview.isError) chip = { status: "stale", label: "Offline" };
-  else if (data?.freshness) chip = describeFreshness(data.freshness, { live, refresh, timeZone, sessionDate: data.kpis?.daily_growth_as_of });
+  else if (data?.freshness) chip = describeFreshness(data.freshness, { live, refresh, timeZone, sessionDate: data.kpis?.daily_growth_as_of, phase });
   else chip = { status: "loading", label: "Loading" };
   useShellStatus(chip.status, chip.label, () => void overview.refetch(), overview.isFetching, chip.short, chip.updated);
 

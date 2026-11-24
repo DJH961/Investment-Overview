@@ -4,6 +4,7 @@ import { describeFreshness, useLiveGrace, type FreshnessView } from "../Freshnes
 import { useLiveStatus } from "../../lib/live";
 import type { ReportingCurrency } from "../../lib/prefs";
 import { overviewQuery } from "../../lib/queries/portfolio";
+import { useMarketPhase } from "../../lib/marketPhase";
 import { useRefreshState } from "../../lib/refresh";
 import { useTimeZone } from "../../lib/timezone";
 
@@ -28,11 +29,13 @@ export function useGlobalFreshness(currency: ReportingCurrency, delayMs = 1200):
     return () => clearTimeout(t);
   }, [armed, delayMs]);
   const data = useQuery({ ...overviewQuery(currency), enabled: armed }).data;
+  const { phase } = useMarketPhase(data?.freshness, Boolean(data?.daily_caption?.live));
   if (!data?.freshness) return undefined;
   return describeFreshness(data.freshness, {
     live,
     refresh,
     timeZone,
     sessionDate: data.kpis?.daily_growth_as_of,
+    phase,
   });
 }
