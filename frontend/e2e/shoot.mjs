@@ -2,22 +2,26 @@
 // Review screenshots for agents and the owner's UI feedback loop (AGENTS.md
 // "UI feedback loop: screenshots first"). Not part of the app or of CI.
 //
-// Usage (from frontend/, with a fixture server running, e.g. `npm run dev:fixtures`):
-//   node e2e/shoot.mjs <outDir> <route>[,<route>…] [options]   (routes without a leading slash)
+// Usage (from frontend/, with the fixture dev server on 5273, e.g. `npm run dev:fixtures
+// -- --port 5273` or preview_start "frontend-fixtures"):
+//   npm run shots -- <outDir> <route>[,<route>…] [options]   (routes without a leading slash)
 // Options:
 //   --ccy EUR|USD|both      reporting currency (default both)
 //   --theme light|dark|both color scheme (default light)
-//   --width 390,1280        viewport widths (default 390,1280)
-//   --base http://localhost:5273
+//   --width 390,1280        viewport widths (default 390,1280; add 360 for phone layouts)
+//   --el ".css-selector"    crop each matching element instead of the page
 //   --viewport              shoot the window only, not the full page
-// Example:
-//   node e2e/shoot.mjs ../.claude/ui-shots/currency currency,overview --theme both
+//   --sidebar               keep the desktop sidebar open (it is folded by default)
+//   --base http://localhost:5273
+// Examples:
+//   npm run shots -- ../.claude/ui-shots/currency currency,overview --theme both
+//   npm run shots -- ../.claude/ui-shots/kpi conversions --el ".stat-strip" --width 360,390,800,1280
 //
-// Files are named <route>-<ccy>-<width>-<theme>.png. For each shot the script:
+// Files are named <route>-<ccy>-<width>-<theme>[-elN].png. For each shot the script:
 // sets the currency with the app's own toggle and checks that it took effect (the
-// fixture settings would override a seeded localStorage value); scrolls the page
-// once so lazy sections load; keeps the sidebar and phone nav from stretching or
-// floating mid-page in a full-page capture (screenshot-only CSS); and prints any
+// fixture settings override a seeded localStorage value); folds the sidebar with the
+// app's own button; scrolls the page once so lazy sections load; pins fixed chrome in
+// flow for full-page captures (Chromium mis-draws it otherwise); and prints any
 // horizontal overflow.
 import { chromium } from "playwright";
 import { mkdirSync } from "node:fs";
@@ -40,7 +44,8 @@ const ccys = both(flag("ccy", "both"), ["EUR", "USD"]);
 const themes = both(flag("theme", "light"), ["light", "dark"]);
 const widths = flag("width", "390,1280").split(",").map(Number);
 const base = flag("base", "http://localhost:5273");
-const fullPage = !args.includes("--viewport");
+const el = flag("el", null);
+const fullPage = !args.includes("--viewport") && !el;
 
 mkdirSync(outDir, { recursive: true });
 
@@ -114,8 +119,22 @@ for (const route of routes) {
         await page.waitForTimeout(600);
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
         const name = `${route.replace(/^\//, "").replace(/\//g, "_") || "home"}-${ccy}-${width}-${theme}.png`;
-        await page.screenshot({ path: `${outDir}/${name}`, fullPage });
-        console.log(`${name}${overflow > 0 ? `  OVERFLOW ${overflow}px` : ""}`);
+        if (el) {
+          const items = page.locator(el);
+          const n = await items.count();
+          if (!n) console.log(`${name}  no element matches ${el}`);
+          for (let i = 0; i < n; i++) {
+            const one = items.nth(i);
+            if (!(await one.isVisible())) continue;
+            const crop = name.replace(/\.png$/, `-el${i + 1}.png`);
+            await one.scrollIntoViewIfNeeded();
+            await one.screenshot({ path: `${outDir}/${crop}` });
+            console.log(crop);
+          }
+        } else {
+          await page.screenshot({ path: `${outDir}/${name}`, fullPage });
+          console.log(`${name}${overflow > 0 ? `  OVERFLOW ${overflow}px` : ""}`);
+        }
         await ctx.close();
       }
     }

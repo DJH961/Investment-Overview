@@ -20,6 +20,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [7.3.1] — 2026-11-24
 
 ### Added
+- `npm run shots` (`frontend/e2e/shoot.mjs`): review screenshots of any pages in EUR
+  and USD, light and dark, at chosen widths, or crops of one element, in one command.
+  It switches the currency through the app and checks it, folds the sidebar, loads lazy
+  sections and reports sideways overflow. Documented in AGENTS.md › "Taking shots".
 - `PRODUCT.md`: the product record (users, purpose, positioning, constraints,
   principles) that Impeccable design work reads before touching the UI.
 - `DESIGN.md` and `.impeccable/design.json`: the current visual system

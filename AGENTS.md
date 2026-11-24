@@ -210,11 +210,11 @@ the tests for what you touched, from `backend/` (or the npm folder):
 The owner steers UI work from screenshots, early and often.
 
 1. **Build, then shoot.** As soon as the change compiles (`npm run typecheck`), commit it
-   (a `wip:` commit is fine). Then take Playwright screenshots of the changed views against the
-   fixture dev server, at 390 and 1280 px (360 when a phone layout changed). Save them under
-   `.claude/ui-shots/<topic>/` in the session's worktree. Fixture builds (`--mode fixtures`)
-   never start the welcome tour by themselves, so it cannot cover a shot. Add `?tour=1` to
-   the URL only when the shot is of the tour itself.
+   (a `wip:` commit is fine). Then shoot the changed views with `npm run shots` (see "Taking
+   shots" below), at 390 and 1280 px (360 when a phone layout changed), **in EUR and USD**.
+   Save them under `.claude/ui-shots/<topic>/` in the session's worktree (git-ignored).
+   Fixture builds (`--mode fixtures`) never start the welcome tour by themselves, so it cannot
+   cover a shot. Add `?tour=1` to the URL only when the shot is of the tour itself.
 2. **Reject bad shots yourself before anyone sees them.** Look at every shot critically:
    - clipped or overlapping text or chips;
    - uneven gaps or a lone tile on its own row;
@@ -233,6 +233,44 @@ The owner steers UI work from screenshots, early and often.
 
 Money maths is the exception: it stays test-first (property tests plus golden values, see
 "Testing").
+
+### Taking shots (`npm run shots`)
+
+Use `frontend/e2e/shoot.mjs`; don't write one-off Playwright scripts. Two steps:
+
+1. Start the fixture dev server on port 5273: `preview_start` with `frontend-fixtures`
+   (`.claude/launch.json`), or `npm run dev:fixtures -- --port 5273 --strictPort` in the
+   background. Parallel agents use their own port and pass `--base http://localhost:<port>`.
+2. From `frontend/`, run:
+
+| Want | Command |
+| --- | --- |
+| Pages, both currencies, 390 + 1280 | `npm run shots -- ../.claude/ui-shots/<topic> currency,overview` |
+| Also dark mode | add `--theme both` |
+| Phone layouts | add `--width 360,390,1280` |
+| One card or strip only (crops) | add `--el ".stat-strip"` (any CSS selector; one file per match) |
+| Just the first screen, not the full page | add `--viewport` |
+| One currency only | add `--ccy USD` |
+| Sidebar open (when the navigation is the subject) | add `--sidebar` |
+
+Files are `<route>-<ccy>-<width>-<theme>[-elN].png`. Write routes without the leading slash
+(`holding/FAKEL`, not `/holding/FAKEL`): Git Bash turns `/x` into a Windows path. The script
+does the fiddly parts for you:
+
+- It switches EUR/USD with the app's own toggle and fails loudly if the switch did not take
+  (the fixture settings override a seeded `localStorage` value, so seeding does not work).
+- It folds the desktop sidebar with the app's own button, so the sidebar never covers or
+  stretches over a full-page shot. The sidebar fills the window height by design; check it
+  with `--viewport --sidebar` at real heights (1280×800, 1280×1000), never in a full-page
+  shot.
+- It scrolls once so lazy sections (Scenarios, Conversions) load, pins fixed chrome in flow
+  for the capture, and prints `OVERFLOW <n>px` when a page scrolls sideways.
+
+Then read the shots yourself (crop long phone pages, or use `--el`), run the design
+critique against `DESIGN.md` (Impeccable's `critique`, scoped to the changed views only),
+and send only the good ones to the owner with `SendUserFile`. For market-moment
+shots (open/close, FX weekend), fake the browser clock with Playwright's `page.clock`, and
+make every figure on the page tell the same story at that moment.
 
 ## Workflow
 
