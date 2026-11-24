@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
 
-from investment_dashboard.domain import dividends, kinds, market_hours
+from investment_dashboard.domain import clock, dividends, kinds, market_hours
 from investment_dashboard.domain import tranches as tranches_domain
 from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
 from investment_dashboard.domain.instruments import (
@@ -67,7 +67,7 @@ def build(session: Session, instrument_id: int) -> dict[str, Any] | None:
 
 def build_all(session: Session, *, now: datetime | None = None) -> dict[int, dict[str, Any]]:
     """Preload the peek payload for every currently held instrument in one bulk pass."""
-    now = now or datetime.now(UTC)
+    now = now or clock.now()
     today = market_hours.exchange_today(now)
     positions = positions_service.compute_positions(session, as_of=today)
     if not positions:

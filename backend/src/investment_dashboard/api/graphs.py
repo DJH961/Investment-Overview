@@ -12,7 +12,6 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
@@ -28,6 +27,7 @@ from investment_dashboard.api.schemas.graphs import (
     GraphReloadResponse,
     GraphResponse,
 )
+from investment_dashboard.domain import clock
 from investment_dashboard.readmodels import live_graphs
 from investment_dashboard.services import live_bus
 from investment_dashboard.services.read_cache import (
@@ -70,7 +70,7 @@ def _graph_both(
 ) -> ByCurrency[GraphResponse]:
     # One instant and one memo for both currencies: each series is built once,
     # not once as the primary line and again as the other currency's secondary.
-    now = datetime.now(UTC)
+    now = clock.now()
     memo: dict[Any, Any] = {}
     return ByCurrency[GraphResponse].model_validate(
         {
@@ -123,7 +123,7 @@ def _run_reload(range_key: str) -> None:
         subject.info("graph reload %s done in %.1fs (points=%s)", range_key, elapsed, points)
     else:
         subject.warning("graph reload %s FAILED after %.1fs", range_key, elapsed)
-    now = datetime.now(UTC)
+    now = clock.now()
     live_bus.bus.publish(
         {
             "type": "graphs",

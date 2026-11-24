@@ -51,9 +51,9 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.domain import clock, fx_effect_split, fx_trend
 from investment_dashboard.domain import dividends as dividends_domain
 from investment_dashboard.domain import fx_attribution as fa
-from investment_dashboard.domain import fx_effect_split, fx_trend
 from investment_dashboard.domain.market_hours import exchange_today, is_trading_day
 from investment_dashboard.domain.session_fx import fx_buying_power_split
 from investment_dashboard.readmodels import currency_deposits as deposits_rm
@@ -1324,7 +1324,7 @@ def build_effect_both(
     now: datetime | None = None,
 ) -> dict[str, dict[str, Any]]:
     """``{"EUR": ..., "USD": ...}`` Impact payloads for ``range_key``."""
-    now = now or datetime.now(UTC)
+    now = now or clock.now()
     today = exchange_today(now)
     lives = {c: _safe_lifetime(session, c) for c in ("EUR", "USD")}
     returns = headline_returns(range_key, today, lives, overview)

@@ -12,10 +12,10 @@ import asyncio
 import contextlib
 import logging
 import threading
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
-from investment_dashboard.domain import market_hours
+from investment_dashboard.domain import clock, market_hours
 from investment_dashboard.services import read_cache
 
 log = logging.getLogger(__name__)
@@ -27,7 +27,7 @@ Event = dict[str, Any]
 
 def market_state(now: datetime | None = None) -> str:
     """``"open"`` | ``"holiday"`` | ``"closed"`` for the NYSE at ``now`` (UTC)."""
-    now = now or datetime.now(UTC)
+    now = now or clock.now()
     if market_hours.is_us_market_open(now):
         return "open"
     local_day = market_hours.exchange_today(now)

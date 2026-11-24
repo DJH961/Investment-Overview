@@ -23,6 +23,7 @@ from typing import Any, Literal
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.domain import clock
 from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.services import (
@@ -385,7 +386,7 @@ def build_currency_both(
     session: Session, overview: dict[str, dict[str, Any]], *, now: datetime | None = None
 ) -> dict[str, dict[str, Any]]:
     """``{"EUR": ..., "USD": ...}`` currency payloads from the two Overview payloads."""
-    now = now or datetime.now(UTC)
+    now = now or clock.now()
     out: dict[str, dict[str, Any]] = {}
     for ccy in ("EUR", "USD"):
         payload = overview[ccy]

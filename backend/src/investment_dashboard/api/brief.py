@@ -11,7 +11,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from investment_dashboard.api.deps import SessionDep, visit_heartbeat
 from investment_dashboard.api.overview import _overview_both
 from investment_dashboard.api.schemas.brief import BriefAckIn, BriefAckOut, BriefOut, BriefVisitIn
+from investment_dashboard.domain import clock
 from investment_dashboard.readmodels import brief as brief_readmodel
 from investment_dashboard.services import brief_service, read_cache
 from investment_dashboard.services.read_cache import (
@@ -37,7 +38,7 @@ _DEPS = (LEDGER, PRICES, FX, BRIEF)
 
 def _utcnow() -> datetime:
     """The server clock (a seam for tests)."""
-    return datetime.now(UTC)
+    return clock.now()
 
 
 @cached_read(deps=_DEPS)
