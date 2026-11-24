@@ -175,8 +175,12 @@ Adapted from the owner's starter-project convention (see plan §4a):
 
 ## Testing for agents
 
-**Test what you changed:** `uv run --project backend python scripts/test_changed.py [--base main] [--run]`
-prints (and with `--run` runs) the targeted commands below for your diff.
+**Test what you changed, nothing more (owner rule):** `uv run --project backend python
+scripts/test_changed.py [--base main] [--run]` prints (and with `--run` runs) the
+targeted commands below for your diff. Subagents and lanes run only these, plus a single
+test file while iterating. They never run whole suites (`uv run pytest` without paths,
+`npm run test`, `npm run test:overflow`). The main session runs the full suites
+**once**, at the end of a release, just before the PR; CI runs them again on every push.
 
 `uv run pytest` runs in parallel by default (`-n auto --dist loadfile` in
 `backend/pyproject.toml`); add `-n0` only to debug one test with `pdb` or `-s`. Run
