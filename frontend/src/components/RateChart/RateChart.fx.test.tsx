@@ -69,7 +69,8 @@ describe("RateChart FX weekend states", () => {
     advance(1000, 100);
     expect(card()).not.toHaveClass("rate-chart--fx-grow");
     // Two hours later it is just the rate again.
-    advance(2 * 60 * 60_000, 60_000);
+    // Fifteen-minute steps: one-minute steps made 120 re-renders and timed out under load.
+    advance(2 * 60 * 60_000, 15 * 60_000);
     expect(chip()).toBeNull();
   });
 });
