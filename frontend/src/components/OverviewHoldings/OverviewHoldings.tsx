@@ -397,13 +397,15 @@ export function OverviewHoldings({ currency, movers }: OverviewHoldingsProps) {
   // `weekdays` renders an older session as "Fri" rather than "Yesterday": shorter
   // for the header's corner, and it does not quietly mislead after a long weekend,
   // when the previous session is three days back.
-  const stampOpts = useMemo(() => ({ timeZone, weekdays: true }) as const, [timeZone]);
+  const screen = useScreenPhase();
+  const trading = screen.phase !== "closing" && screen.phase !== "opening";
+  const stampOpts = useMemo(() => ({ timeZone, weekdays: true, trading }) as const, [timeZone, trading]);
   const stamps = useMemo(() => foldStamps(q.data?.holdings ?? [], stampOpts), [q.data, stampOpts]);
   const marks = useMemo(() => holdingMarks(q.data?.holdings ?? [], { timeZone }), [q.data, timeZone]);
   // ☾ once for the card: the night (currency) move is the same for every dollar holding,
   // so it is read from the first row that carries a split (server figure) and said here,
   // not on each row. EUR view only; a euro-priced holding simply has no split.
-  const nightRow = currency === "EUR" ? all.find((r) => hasSplit(r, currency) && !marks.staleMove(r)) : undefined;
+  const nightRow = currency === "EUR" && screen.phase !== "closing" ? all.find((r) => hasSplit(r, currency) && !marks.staleMove(r)) : undefined;
   const night = nightRow ? (
     <span
       className="overview-holdings__night"

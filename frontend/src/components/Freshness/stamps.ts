@@ -20,6 +20,8 @@ export interface StampOptions {
   now?: Date;
   /** Short form (phone top bar): name yesterday by its weekday ("Wed 22:00", not "yesterday 22:00"). */
   weekdays?: boolean;
+  /** False while the screen is closing / opening (the shared phase): no row reads "(live)". Default true. */
+  trading?: boolean;
 }
 
 type Input = string | number | Date;
@@ -241,9 +243,9 @@ export const isNavRow = (row: Pick<HoldingTimeRow, "price_type" | "asset_class">
  * market time, else when it was fetched); otherwise the close (or NAV) of
  * `price_as_of`, at the provider's market time when that is from the same session.
  */
-export function holdingPriceTime(row: HoldingTimeRow): PriceTime {
+export function holdingPriceTime(row: HoldingTimeRow, trading = true): PriceTime {
   const nav = isNavRow(row);
-  const live = !nav && row.market_open && !row.daily_is_stale;
+  const live = !nav && trading && row.market_open && !row.daily_is_stale;
   const ccy = (row.native_currency ?? "USD").toUpperCase();
   return {
     instant: row.price_market_at ?? (live || !row.price_as_of ? (row.updated_at ?? null) : null),
@@ -274,7 +276,7 @@ export function foldStamps<T extends HoldingTimeRow>(rows: T[], opts: StampOptio
   const texts = new Map<T, string | null>();
   const counts = new Map<string, number>();
   for (const r of rows) {
-    const t = priceAsOf(holdingPriceTime(r), opts);
+    const t = priceAsOf(holdingPriceTime(r, opts.trading), opts);
     texts.set(r, t);
     if (t) counts.set(t, (counts.get(t) ?? 0) + 1);
   }
@@ -300,7 +302,7 @@ export function foldStamps<T extends HoldingTimeRow>(rows: T[], opts: StampOptio
     price,
     updated,
     rowPrice: (row) => {
-      const t = texts.has(row) ? (texts.get(row) ?? null) : priceAsOf(holdingPriceTime(row), opts);
+      const t = texts.has(row) ? (texts.get(row) ?? null) : priceAsOf(holdingPriceTime(row, opts.trading), opts);
       return t && t !== price ? t : null;
     },
   };

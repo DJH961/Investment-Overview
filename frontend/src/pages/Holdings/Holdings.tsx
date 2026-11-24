@@ -126,14 +126,15 @@ export function Holdings() {
   const status = query.isPending ? "loading" : query.isError ? "stale" : "closed";
   const timeZone = useTimeZone();
   // The price time is said once (page header + top bar); a row says its own only when it differs.
-  const stamps = useMemo(() => foldStamps(data?.holdings ?? [], { timeZone }), [data, timeZone]);
+  const day = useScreenPhase();
+  const trading = day.phase !== "closing" && day.phase !== "opening";
+  const stamps = useMemo(() => foldStamps(data?.holdings ?? [], { timeZone, trading }), [data, timeZone, trading]);
   const priceText = stamps.price;
   const marks = useMemo(() => holdingMarks(data?.holdings ?? [], { timeZone }), [data, timeZone]);
-  const day = useScreenPhase();
   const label = data ? `Prices as of ${priceText ?? formatDate(data.as_of)}` : query.isPending ? "Loading" : "Offline";
   const shortText = useMemo(
-    () => foldStamps(data?.holdings ?? [], { timeZone, weekdays: true }).price,
-    [data, timeZone],
+    () => foldStamps(data?.holdings ?? [], { timeZone, weekdays: true, trading }).price,
+    [data, timeZone, trading],
   );
   const short = data ? (shortText ?? formatAxisDate(Date.parse(data.as_of), 0)) : undefined;
   const updated = stamps.updated ? `Updated ${formatStamp(stamps.updated, { timeZone })}` : undefined;

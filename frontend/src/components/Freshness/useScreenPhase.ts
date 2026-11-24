@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMarketPhase, type MarketPhase } from "../../lib/marketPhase";
-import { usePrefs } from "../../lib/prefs";
 import { overviewQuery } from "../../lib/queries/portfolio";
 import { useTimeZone } from "../../lib/timezone";
 import { lastSessionLabel } from "./stamps";
@@ -32,12 +31,11 @@ export function dayWords(phase: MarketPhase | null, sessionDate: string | null |
 /**
  * The market phase the whole screen follows, read from the Overview payload the shell
  * already holds (never a fetch of its own), so a list or a holding page says the same
- * thing as the top bar and the hero.
+ * thing as the top bar and the hero. (Freshness and the session date are the same in both currencies.)
  */
 export function useScreenPhase(): DayWords & { phase: MarketPhase | null } {
-  const { currency } = usePrefs();
   const timeZone = useTimeZone();
-  const data = useQuery({ ...overviewQuery(currency), enabled: false }).data;
+  const data = useQuery({ ...overviewQuery("EUR"), enabled: false }).data;
   const { phase } = useMarketPhase(data?.freshness, Boolean(data?.daily_caption?.live));
   return { phase, ...dayWords(phase, data?.kpis?.daily_growth_as_of, timeZone) };
 }

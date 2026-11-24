@@ -168,8 +168,10 @@ export function ValueChartCard({
   const series = useMemo<ChartSeries[]>(() => built?.series ?? [], [built]);
 
   const intraday = shown === "1d" || shown === "1w";
-  const sessions = shown === "1w" ? (g?.sessions ?? []) : [];
-  const xMode: ChartXMode = shown === "1d" ? "time" : sessions.length ? "session" : "date";
+  // The open before the first prices: a stub line (the previous close, flat) on the whole session axis.
+  const stub = shown === "1d" && Boolean(g?.market_open) && (g?.points.length ?? 0) <= 2 && (g?.sessions?.length ?? 0) > 0;
+  const sessions = shown === "1w" || stub ? (g?.sessions ?? []) : [];
+  const xMode: ChartXMode = shown === "1d" && !stub ? "time" : sessions.length ? "session" : "date";
   const axisFormat = hide && built ? built.formats.primary : chartMoneyFormat(currency, "axis");
   const tipFormat = chartMoneyFormat(currency, "tooltip");
   const timeFormat = (t: number) =>
@@ -259,7 +261,12 @@ export function ValueChartCard({
       {graph.isError && !g ? (
         <ErrorState message={graph.error.message} onRetry={() => void graph.refetch()} />
       ) : (
-        <>
+        <div className="value-chart-card__stage">
+          {stub && (g?.points ?? []).every((p) => p.v === g?.reference) && (
+            <p className="value-chart-card__first" data-testid="chart-first-prices">
+              First prices in a moment
+            </p>
+          )}
           <Chart
             headerExtra={split}
             // On the legend row, right-aligned: no extra line under the chart.
@@ -310,7 +317,7 @@ export function ValueChartCard({
               Intraday shape complete for {coverage.covered} of {coverage.total} sessions.
             </p>
           )}
-        </>
+        </div>
       )}
     </Card>
   );

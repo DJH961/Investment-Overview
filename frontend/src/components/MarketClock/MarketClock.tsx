@@ -229,7 +229,8 @@ export function useClockModel(freshness: ClockFreshness | null | undefined, onBo
   const remaining = view.remaining;
   const bellRang = whichBellRang(freshness, now, phase);
   const rung = bellRang !== null;
-  const parts = remaining != null ? splitCountdown(remaining) : rung ? splitCountdown(0) : null;
+  // No zero countdown at a bell: a word says it (see the head).
+  const parts = remaining != null ? splitCountdown(remaining) : null;
   const progress = trackProgress(freshness, now);
   const span = trackSpan(freshness);
   // Notches on the full hours of the owner's clock (16:00, 17:00 … for a 15:30 open),
@@ -339,10 +340,11 @@ export function MarketClock({ freshness, onBoundary, now: fixed, variant = "full
   if (!model) return null;
   const { open, remaining, parts, progress, span, ticks, rung, bellRang, phase, label, short, stateWord, soon, last, bellTime, sentence, still, timeZone } =
     model;
-  if (variant === "near" && !(parts && (rung || (remaining != null && remaining <= NEAR_WINDOW)))) return null;
   // Settling the close / waiting for the first tick: the head says so even without digits.
   const pending = phase === "closing" || phase === "opening";
-  const worded = Boolean(parts) || pending;
+  const worded = Boolean(parts) || pending || rung;
+  const bellWord = parts ? null : phase === "closing" ? "Settling…" : phase === "opening" ? "Opening…" : bellRang === "close" ? "Closed" : bellRang === "open" ? "Open" : null;
+  if (variant === "near" && !(rung || pending || (parts && remaining != null && remaining <= NEAR_WINDOW))) return null;
   return (
     <section
       className={clsx(
@@ -393,6 +395,11 @@ export function MarketClock({ freshness, onBoundary, now: fixed, variant = "full
               </span>
             )}
             <span className="market-clock__time">{parts.clock}</span>
+          </div>
+        )}
+        {bellWord && (
+          <div className="market-clock__digits market-clock__digits--word" data-testid="market-clock-word">
+            <span className="market-clock__time">{bellWord}</span>
           </div>
         )}
         {progress != null && span && (

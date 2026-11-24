@@ -146,6 +146,7 @@ export function OverviewHero({ data, currency, loading, now, aside, onClockBound
   const { phase } = useMarketPhase(data?.freshness, data?.daily_caption?.live ?? false, now);
   const prevPhase = usePrevious(phase);
   const firstTick = useBlip(phase === "live" && prevPhase === "opening", 1400);
+  const trading = phase !== "closing" && phase !== "opening";
   const cls = clsx("overview-hero", side && "overview-hero--split", embedded && "overview-hero--embedded", firstTick && "overview-hero--first-tick");
   if (loading || !data) {
     return (
@@ -240,7 +241,7 @@ export function OverviewHero({ data, currency, loading, now, aside, onClockBound
             )}
             <PriceStamps
               className="overview-hero__stamps"
-              price={heroPriceTime(data)}
+              price={trading ? heroPriceTime(data) : { ...heroPriceTime(data), marketOpen: false }}
               updated={fetched}
               compact
               options={opts}
