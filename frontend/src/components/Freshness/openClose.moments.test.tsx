@@ -80,6 +80,15 @@ describe("the top bar chip, the phase and the day words at every open / close mo
     expect(dayWords("live", "2026-11-24", "UTC")).toMatchObject({ label: "Today", caption: null, live: true });
   });
 
+  it("the overnight chip never shows in a live session, nor while opening or closing", () => {
+    for (const m of MOMENTS) {
+      const now = new Date(m.now);
+      const phase = marketPhase({ freshness: m.f, session: null, pricesLive: null, payloadLive: m.payloadLive, now });
+      const shut = phase === "closed";
+      expect(dayWords(phase, "2026-11-24", "UTC").night, m.name).toBe(shut);
+    }
+  });
+
   it("the phone chip says when the market opens once it is shut, not just a countdown", () => {
     const qc = new QueryClient();
     render(

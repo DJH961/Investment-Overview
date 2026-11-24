@@ -455,7 +455,7 @@ function BriefCard({ brief: b, currency }: { brief: BriefDto; currency: Reportin
         </p>
         {remaining !== null && (
           <span className="daily-brief__timer" data-testid="brief-timer" title="Pauses while you point at or focus the brief">
-            closes in {formatRemaining(remaining)}
+            hides in {formatRemaining(remaining)}
           </span>
         )}
         <IconButton className="daily-brief__dismiss" label="Dismiss the brief" size="sm" icon={<X aria-hidden />} onClick={dismiss} />

@@ -14,20 +14,23 @@ export interface DayWords {
   live: boolean;
   /** "Last session · Mon" while the day figures are an earlier session's (the same words as the hero), else null. */
   earlier: string | null;
+  /** The overnight (night) currency chip may show: only while the US market is shut, never in a live session. */
+  night: boolean;
 }
 
 /** Pure: the wording for one phase (`sessionDate` is the headline move's session). */
 export function dayWords(phase: MarketPhase | null, sessionDate: string | null | undefined, timeZone?: string): DayWords {
   const live = phase === null || phase === "live" || phase === "open";
+  const night = phase === null || phase === "closed" || phase === "holiday";
   const earlier = phase === "closing" ? null : lastSessionLabel(sessionDate, { timeZone });
-  if (phase === "closing") return { label: "Today", caption: "Closing · the closing prices are being settled", live, earlier };
+  if (phase === "closing") return { label: "Today", caption: "Closing · the closing prices are being settled", live, earlier, night };
   if (phase === "opening") {
-    return { label: "Last session", caption: "Market open · figures are the last session's until the first prices land", live, earlier };
+    return { label: "Last session", caption: "Market open · figures are the last session's until the first prices land", live, earlier, night };
   }
   if (earlier && phase !== "live" && phase !== "open") {
-    return { label: "Last session", caption: `${earlier.replace("Last session", "Day figures are from the last session")}`, live, earlier };
+    return { label: "Last session", caption: `${earlier.replace("Last session", "Day figures are from the last session")}`, live, earlier, night };
   }
-  return { label: "Today", caption: null, live, earlier };
+  return { label: "Today", caption: null, live, earlier, night };
 }
 
 /**

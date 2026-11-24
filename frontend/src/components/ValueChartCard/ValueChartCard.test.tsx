@@ -24,7 +24,7 @@ vi.mock("../../lib/queries/portfolio", async (orig) => ({
   rememberGraphRange: (r: GraphRange) => remembered.push(r),
 }));
 vi.mock("../../lib/timezone", () => ({ useTimeZone: () => "UTC" }));
-vi.mock("../Freshness/useScreenPhase", () => ({ useScreenPhase: () => ({ phase: null, label: "Today", caption: null, live: true, earlier: null }) }));
+vi.mock("../Freshness/useScreenPhase", () => ({ useScreenPhase: () => ({ phase: null, label: "Today", caption: null, live: true, earlier: null, night: true }) }));
 vi.mock("../../lib/queries/instruments", () => ({
   useInstruments: () => ({
     data: [

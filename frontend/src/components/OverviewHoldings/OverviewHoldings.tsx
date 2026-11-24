@@ -405,7 +405,7 @@ export function OverviewHoldings({ currency, movers }: OverviewHoldingsProps) {
   // ☾ once for the card: the night (currency) move is the same for every dollar holding,
   // so it is read from the first row that carries a split (server figure) and said here,
   // not on each row. EUR view only; a euro-priced holding simply has no split.
-  const nightRow = currency === "EUR" && screen.phase !== "closing" ? all.find((r) => hasSplit(r, currency) && !marks.staleMove(r)) : undefined;
+  const nightRow = currency === "EUR" && screen.night ? all.find((r) => hasSplit(r, currency) && !marks.staleMove(r)) : undefined;
   const night = nightRow ? (
     <span
       className="overview-holdings__night"

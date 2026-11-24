@@ -327,7 +327,7 @@ describe("DailyBrief", () => {
   it("auto-close: 3 minutes by default, shown as a countdown", async () => {
     stub(() => recorded);
     mount();
-    expect(await screen.findByTestId("brief-timer")).toHaveTextContent("closes in 3:00");
+    expect(await screen.findByTestId("brief-timer")).toHaveTextContent("hides in 3:00");
   });
 
   it("auto-close: 0 means never (no countdown)", async () => {
@@ -340,7 +340,7 @@ describe("DailyBrief", () => {
   it("auto-close: a custom value from the settings", async () => {
     stub(() => recorded);
     mount("EUR", 5);
-    expect(await screen.findByTestId("brief-timer")).toHaveTextContent("closes in 5:00");
+    expect(await screen.findByTestId("brief-timer")).toHaveTextContent("hides in 5:00");
   });
 
   it("auto-close acknowledges like a dismiss; pointing at the card pauses it", async () => {
@@ -351,7 +351,7 @@ describe("DailyBrief", () => {
       const card = await screen.findByRole("region", { name: "Daily brief" });
       act(() => void card.dispatchEvent(new Event("pointerenter")));
       await act(async () => vi.advanceTimersByTime(90_000));
-      expect(screen.getByTestId("brief-timer")).toHaveTextContent(/closes in 0:5\d|closes in 1:00/);
+      expect(screen.getByTestId("brief-timer")).toHaveTextContent(/hides in 0:5\d|hides in 1:00/);
       act(() => void card.dispatchEvent(new Event("pointerleave")));
       await act(async () => vi.advanceTimersByTime(61_000));
       await waitFor(() => expect(screen.queryByRole("region", { name: "Daily brief" })).toBeNull());
