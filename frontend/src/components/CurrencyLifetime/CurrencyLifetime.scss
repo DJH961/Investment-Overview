@@ -87,6 +87,15 @@
     @include m.eyebrow;
   }
 
+  // The FX reopen: the figures that follow the rate ease in once.
+  &--fx-back &__value {
+    animation: currency-lifetime-ease-in 1.2s var(--ease-out) 1;
+
+    @include m.reduced-motion {
+      animation: none;
+    }
+  }
+
   &__value {
     @include m.figure(var(--font-size-md));
     margin: 0;
@@ -148,5 +157,13 @@
     color: var(--color-muted);
     font-size: var(--font-size-xs);
     font-variant-numeric: tabular-nums;
+  }
+}
+
+// The new rate eases in: a short fade up, once.
+@keyframes currency-lifetime-ease-in {
+  from {
+    opacity: 0.2;
+    transform: translateY(3px);
   }
 }

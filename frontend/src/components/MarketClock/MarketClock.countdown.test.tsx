@@ -106,7 +106,9 @@ describe("MarketClock countdown", () => {
     expect(digits()).toBe("00:00:01");
     expect(onBoundary).not.toHaveBeenCalled();
     advance(1000);
-    expect(digits()).toBe("00:00:00");
+    // A word, never a zero countdown.
+    expect(screen.queryByTestId("market-clock-digits")).toBeNull();
+    expect(screen.getByTestId("market-clock-word")).toHaveTextContent(/Settling|Closed/);
     expect(root()).toHaveTextContent("The closing bell has rung");
     expect(onBoundary).toHaveBeenCalledTimes(1);
     // No loop while the same (stale) instant stays on screen; later only the state.

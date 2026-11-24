@@ -164,7 +164,18 @@
     transition: color var(--duration-slow) var(--ease-standard);
   }
 
+  // The first tick of the session: the figures ease in once.
+  &--first-tick &__value,
+  &--first-tick &__value2 {
+    animation: overview-hero-ease-in 1.2s var(--ease-out) 1;
+  }
+
   @include m.reduced-motion {
+    &--first-tick &__value,
+    &--first-tick &__value2 {
+      animation: none;
+    }
+
     &__corner--pulse &__dot {
       animation: none;
     }
@@ -400,5 +411,13 @@
   100% {
     box-shadow: 0 0 0 9px transparent;
     transform: scale(1);
+  }
+}
+
+// The new figures settle into place: a short fade up, once.
+@keyframes overview-hero-ease-in {
+  from {
+    opacity: 0.2;
+    transform: translateY(3px);
   }
 }

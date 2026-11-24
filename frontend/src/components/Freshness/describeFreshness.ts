@@ -2,6 +2,7 @@ import { parseInstant } from "../../lib/format";
 import type { LiveStatus } from "../../lib/live";
 import type { RefreshState } from "../../lib/refresh";
 import type { components } from "../../lib/api-types";
+import type { MarketPhase } from "../../lib/marketPhase";
 import type { FreshnessStatus } from "./Freshness";
 import { formatStamp, priceAsOf, relativeDay, type PriceTime, type StampOptions } from "./stamps";
 
@@ -53,6 +54,8 @@ export function describeFreshness(
     refresh: RefreshState;
     /** Session date of the headline move, so a closed market names its close ("yesterday's close"). */
     sessionDate?: string | null;
+    /** The one market phase the whole screen follows (`useMarketPhase`); closing / opening word the chip. */
+    phase?: MarketPhase | null;
   } & StampOptions,
 ): FreshnessView {
   const { live, refresh } = opts;
@@ -81,7 +84,15 @@ export function describeFreshness(
   const pricesLive = refresh.pricesLive ?? freshness.prices_live;
   // The same moment twice says nothing new: show "Updated" only when it differs.
   const unlessSame = (when: string | null) => (when && updated === `Updated ${when}` ? undefined : updated);
-  if (freshness.market_state === "open") {
+  // The bell rang and the server has not settled it yet: say what is happening, never "Open" / "Live".
+  if (opts.phase === "closing") {
+    return { status: "closed", label: "Closing · settling the closing prices", short: "Closing…", updated };
+  }
+  if (opts.phase === "opening") {
+    return { status: "closed", label: "Market open · first prices in a moment", short: "Opening", updated };
+  }
+  const shut = opts.phase === "closed" || opts.phase === "holiday";
+  if (freshness.market_state === "open" && !shut) {
     // When the newest price was struck on the exchange (falls back to the pull time).
     const struck = latestInstant(freshness.price_market_at, refresh.priceMarketAt);
     if (pricesLive && !freshness.feed_stalled_since) {
@@ -109,7 +120,7 @@ export function describeFreshness(
     };
   }
   // Same wording as the Overview hero: a settled price is named by its close.
-  const word = freshness.market_state === "holiday" ? "Holiday" : "Closed";
+  const word = freshness.market_state === "holiday" || opts.phase === "holiday" ? "Holiday" : "Closed";
   const price: PriceTime = {
     instant: freshness.price_market_at ?? freshness.price_observed_at,
     date: opts.sessionDate,

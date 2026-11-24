@@ -29,7 +29,7 @@ export function MarketChip({ freshness, live = false, currency, now }: MarketChi
   const prev = usePrevious(phase);
   const pulse = useBlip(phase === "live" && prev === "opening", 1400);
   if (!model || !freshness) return null;
-  const { view, remaining, rung, sentence, progress } = model;
+  const { view, remaining, rung, sentence, progress, open: marketOpen, bellTime } = model;
   const span = remaining != null ? formatChipSpan(remaining) : rung ? "bell rang" : null;
   // From the bell until the server's next word the chip says what is happening, in a word.
   const text =
@@ -37,7 +37,10 @@ export function MarketChip({ freshness, live = false, currency, now }: MarketChi
       ? "Closing…"
       : phase === "opening"
         ? "Opening"
-        : remaining != null
+        : remaining != null && !marketOpen && bellTime
+          ? // Shut: as informative as the desktop clock: when it opens, in the owner's zone.
+            `${view.state} · opens ${bellTime}`
+          : remaining != null
           ? `${view.state} for ${span}`
           : span
             ? `${view.state} · ${span}`
@@ -67,7 +70,11 @@ export function MarketChip({ freshness, live = false, currency, now }: MarketChi
         </span>
         {/* No room for the span: one word, never a bare dot (state is not colour alone). */}
         <span className="market-chip__word" aria-hidden>
-          {phase === "closing" || phase === "opening" ? text : view.state}
+          {phase === "closing" || phase === "opening"
+            ? text
+            : remaining != null && !marketOpen && bellTime && bellTime.length <= 5
+              ? `Opens ${bellTime}`
+              : view.state}
         </span>
       </button>
       <Sheet open={open} onOpenChange={setOpen} title="Market clock">

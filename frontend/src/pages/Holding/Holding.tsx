@@ -4,7 +4,7 @@ import { Link, Navigate, useLocation, useNavigate, useParams } from "react-route
 import { Chip } from "../../components/Chip";
 import { EmptyState } from "../../components/EmptyState";
 import { ErrorState } from "../../components/ErrorState";
-import { holdingPriceTime, PriceStamps } from "../../components/Freshness";
+import { holdingPriceTime, PriceStamps, useScreenPhase } from "../../components/Freshness";
 import { HoldingPills } from "../../components/HoldingIdentity";
 import { Money } from "../../components/Money";
 import { Percent } from "../../components/Percent";
@@ -69,6 +69,8 @@ export function Holding() {
   const dividends = useDividends(currency);
   const row = (holdings.data?.holdings ?? []).find((h) => String(h.instrument_id) === id) ?? null;
   const symbol = row?.symbol ?? "";
+  const day = useScreenPhase();
+  const dayNote = day.phase === "closing" ? "closing" : day.label === "Today" ? null : "last session";
 
   const filters: TransactionFilters = {
     symbol,
@@ -164,7 +166,7 @@ export function Holding() {
         name={row.name}
         back={back}
         chips={<HoldingChips row={row} />}
-        pills={<HoldingPills row={row} live={row.market_open && !row.daily_is_stale} />}
+        pills={<HoldingPills row={row} live={row.market_open && day.live && !row.daily_is_stale} />}
         value={<Money amount={toNum(row.value)} currency={currency} />}
         price={
           row.price_native ? (
@@ -179,7 +181,7 @@ export function Holding() {
               {row.native_currency === currency && (
                 <Percent ratio={toNum(row.today_pct)} signed colored={!row.daily_is_stale} />
               )}
-              <PriceStamps price={holdingPriceTime(row)} updated={null} compact />
+              <PriceStamps price={holdingPriceTime(row, day.live)} updated={null} compact />
             </>
           ) : undefined
         }
@@ -187,6 +189,7 @@ export function Holding() {
           <>
             <Money amount={toNum(row.today_move)} currency={currency} signed colored={!row.daily_is_stale} />
             <Percent ratio={toNum(row.today_pct)} signed colored={!row.daily_is_stale} />
+            {dayNote && <span className="holding-page__today-note">{dayNote}</span>}
           </>
         }
       />

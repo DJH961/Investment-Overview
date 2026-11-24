@@ -4,7 +4,7 @@ import { formatTime, formatWeekdayTime, parseInstant } from "../../lib/format";
 import type { OverviewDto } from "../../lib/queries/portfolio";
 import { useTimeZone } from "../../lib/timezone";
 import { Bell } from "lucide-react";
-import { useMarketPhase, type MarketPhase } from "./marketPhase";
+import { useBlip, useMarketPhase, usePrevious, type MarketPhase } from "./marketPhase";
 import "./MarketClock.scss";
 
 type FreshnessDto = NonNullable<OverviewDto["freshness"]>;
@@ -229,7 +229,8 @@ export function useClockModel(freshness: ClockFreshness | null | undefined, onBo
   const remaining = view.remaining;
   const bellRang = whichBellRang(freshness, now, phase);
   const rung = bellRang !== null;
-  const parts = remaining != null ? splitCountdown(remaining) : rung ? splitCountdown(0) : null;
+  // No zero countdown at a bell: a word says it (see the head).
+  const parts = remaining != null ? splitCountdown(remaining) : null;
   const progress = trackProgress(freshness, now);
   const span = trackSpan(freshness);
   // Notches on the full hours of the owner's clock (16:00, 17:00 … for a 15:30 open),
@@ -300,7 +301,8 @@ export function clockLabel(o: {
   now: Date;
   timeZone?: string;
 }): { long: string; short: string } {
-  if (o.bellRang === "close") return { long: "The closing bell has rung", short: "Bell! Closing time" };
+  // Once the close is settled the clock reads like any shut market ("Opens in 17 h"), not "Bell! Closing time".
+  if (o.bellRang === "close" && o.phase !== "closed") return { long: "The closing bell has rung", short: "Bell! Closing time" };
   if (o.bellRang === "open") return { long: "The opening bell has rung", short: "Bell! Market's open" };
   if (o.phase === "closing") return { long: "Settling the closing prices", short: "Settling the close" };
   if (o.phase === "opening") return { long: "Waiting for the first prices", short: "First prices soon" };
@@ -332,13 +334,18 @@ export const NEAR_WINDOW = 15 * MINUTE;
 
 export function MarketClock({ freshness, onBoundary, now: fixed, variant = "full", fire = true }: MarketClockProps) {
   const model = useClockModel(freshness, onBoundary, fixed, fire);
+  // The session bar finishes with one light sweep when the closing bell rings.
+  const modelPhase = model?.phase ?? null;
+  const prevPhase = usePrevious(modelPhase);
+  const sweeping = useBlip(modelPhase === "closing" && prevPhase !== "closing", 1800) && !model?.still;
   if (!model) return null;
   const { open, remaining, parts, progress, span, ticks, rung, bellRang, phase, label, short, stateWord, soon, last, bellTime, sentence, still, timeZone } =
     model;
-  if (variant === "near" && !(parts && (rung || (remaining != null && remaining <= NEAR_WINDOW)))) return null;
   // Settling the close / waiting for the first tick: the head says so even without digits.
   const pending = phase === "closing" || phase === "opening";
-  const worded = Boolean(parts) || pending;
+  const worded = Boolean(parts) || pending || rung;
+  const bellWord = parts ? null : phase === "closing" ? "Settling…" : phase === "opening" ? "Opening…" : bellRang === "close" ? "Closed" : bellRang === "open" ? "Open" : null;
+  if (variant === "near" && !(rung || pending || (parts && remaining != null && remaining <= NEAR_WINDOW))) return null;
   return (
     <section
       className={clsx(
@@ -391,10 +398,16 @@ export function MarketClock({ freshness, onBoundary, now: fixed, variant = "full
             <span className="market-clock__time">{parts.clock}</span>
           </div>
         )}
+        {bellWord && (
+          <div className="market-clock__digits market-clock__digits--word" data-testid="market-clock-word">
+            <span className="market-clock__time">{bellWord}</span>
+          </div>
+        )}
         {progress != null && span && (
           <div className="market-clock__bar" data-testid="market-clock-track">
             <div className="market-clock__track">
               <span className="market-clock__fill" style={{ width: `${(progress * 100).toFixed(2)}%` }} />
+              {sweeping && <span className="market-clock__sweep" data-testid="market-clock-sweep" />}
               {ticks.map((t) => (
                 <span key={t} className="market-clock__tick" style={{ left: `${(t * 100).toFixed(3)}%` }} />
               ))}

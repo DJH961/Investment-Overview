@@ -598,6 +598,28 @@ def _point_time(at: date) -> str:
     return at.isoformat()
 
 
+def _opening_points(
+    points: list[ValueSeriesPoint], reference: Decimal, now: datetime
+) -> list[ValueSeriesPoint]:
+    """A 1D line that is not empty at the open: the previous close, flat, from the bell.
+
+    Before the day's second sample the series holds at most the live tip (or nothing),
+    which a chart cannot draw as a line. Anchor it at the regular open (UTC) with the
+    previous session's close value (the day's own reference), so the first prices
+    extend a line that already starts where the portfolio last closed. With no point
+    at all, a second one at ``now`` keeps it a line.
+    """
+    aware = now if now.tzinfo is not None else now.replace(tzinfo=UTC)
+    opened = market_hours.regular_session_open(market_hours.exchange_today(aware)).astimezone(UTC)
+    first = _aware_utc(points[0].date) if points and isinstance(points[0].date, datetime) else None
+    if first is not None and first <= opened:
+        return points
+    out = [ValueSeriesPoint(date=opened, value=reference), *points]
+    if not points:
+        out.append(ValueSeriesPoint(date=aware.astimezone(UTC), value=reference))
+    return out
+
+
 def _graph_points(
     session: Session, *, range_key: str, ccy: str, now: datetime
 ) -> tuple[list[ValueSeriesPoint], Decimal | None, bool]:
@@ -608,7 +630,15 @@ def _graph_points(
         points = build_intraday_value_series(
             session, currency=ccy, tz=UTC, now=now, freeze_after_hours=True
         )
-        reference = previous_session_close_value(session, currency=ccy, now=now) if points else None
+        open_now = market_hours.is_us_market_open(now)
+        # While the market is open the reference is known even before the first sample.
+        reference = (
+            previous_session_close_value(session, currency=ccy, now=now)
+            if points or open_now
+            else None
+        )
+        if open_now and len(points) < 2 and reference is not None:
+            points = _opening_points(points, reference, now)
         return points, reference, True
     if range_key == "1w":
         points = build_week_value_series(

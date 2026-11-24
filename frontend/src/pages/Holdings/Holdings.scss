@@ -181,6 +181,26 @@
     font-size: var(--font-size-xs);
   }
 
+  // One quiet line while the day figures are not today's live ones (first prices pending,
+  // closing prices settling, last session's close on a weekend): said once, above the list.
+  &__phase {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-sm);
+    animation: holdings-page-settle var(--duration-slow) var(--ease-out) 1;
+
+    &-icon {
+      flex: none;
+    }
+
+    @include m.reduced-motion {
+      animation: none;
+    }
+  }
+
   &__notice {
     display: block;
     margin: 0;
@@ -869,5 +889,12 @@
     min-height: var(--tap-min);
     margin-block: calc((var(--tap-min) - var(--icon-md)) / -2);
     margin-inline: calc(var(--icon-md) - var(--tap-min)) 0;
+  }
+}
+
+@keyframes holdings-page-settle {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
   }
 }

@@ -1,5 +1,9 @@
+import clsx from "clsx";
+import { Moon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Card } from "../Card";
+import { FxState } from "../FxState";
+import { useFxMoment } from "../../lib/fxWeekend";
 import { DivergingBar, type DivergingBarRow } from "../DivergingBar";
 import { Money } from "../Money";
 import { Percent } from "../Percent";
@@ -261,6 +265,7 @@ function EffectPanel({ data }: { data: CurrencyBoxData }) {
  */
 export function CurrencyBox({ data, footer, trend, collapsibleId = "overview.currency" }: CurrencyBoxProps) {
   const timeZone = useTimeZone();
+  const { moment: fx } = useFxMoment();
   const today = data.currency.today;
   const frozen = today.regime?.forex_frozen ?? false;
   const spot = toNum(today.spot_display ?? null);
@@ -268,7 +273,7 @@ export function CurrencyBox({ data, footer, trend, collapsibleId = "overview.cur
 
   return (
     <Card
-      className="currency-box"
+      className={clsx("currency-box", fx === "back" && "currency-box--fx-back")}
       title={
         <span className="currency-box__title" data-truncate-ok>
           Currency
@@ -322,11 +327,16 @@ export function CurrencyBox({ data, footer, trend, collapsibleId = "overview.cur
               </div>
             )}
           </dl>
-          {frozen && (
+          {frozen ? (
             <p className="currency-box__reopen">
-              Frozen at Friday&apos;s close
-              {today.reopen_at ? ` · reopens ${formatWeekdayTime(today.reopen_at, timeZone)}` : ""}
+              <Moon aria-hidden className="currency-box__fx-icon" />
+              <span>
+                Frozen at Friday&apos;s close
+                {today.reopen_at ? ` · reopens ${formatWeekdayTime(today.reopen_at, timeZone)}` : ""}
+              </span>
             </p>
+          ) : (
+            <FxState className="currency-box__fx" />
           )}
           {today.anchor_missing && (
             <p className="currency-box__warning">The previous close rate is missing; the move uses the best earlier rate.</p>
