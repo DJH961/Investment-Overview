@@ -275,7 +275,7 @@ export function RateChart({
 
   // The FX week: Friday's close settles the line (moon, a calm end cap); Sunday's reopen
   // says so (sunrise), and the first new tick after it draws in with a short line-grow.
-  const fx = useFxMoment();
+  const { moment: fx, at: fxAt } = useFxMoment();
   const lastT = pts.length ? pts[pts.length - 1].t : null;
   const [grownFrom, setGrownFrom] = useState<string | null>(null);
   const [prevLastT, setPrevLastT] = useState<string | null>(lastT);
@@ -289,7 +289,7 @@ export function RateChart({
     const id = window.setTimeout(() => setGrownFrom(null), 900);
     return () => window.clearTimeout(id);
   }, [grownFrom]);
-  const reopenAt = fx === "weekend" ? formatWeekdayTime(forexReopen(Date.now()), timeZone) : null;
+  const reopenAt = fx === "weekend" ? formatWeekdayTime(forexReopen(fxAt), timeZone) : null;
 
   const timeFormat = (t: number) =>
     shown === "1d" ? formatTime(new Date(t), timeZone) : shown === "1w" ? formatShortDay(t, timeZone) : formatAxisDate(t, long ? Infinity : 0);
@@ -343,6 +343,9 @@ export function RateChart({
         // Labelled in the legend, not on the plot, where it would cross the line.
         // Far from a short range's line it becomes an edge marker, so the line keeps its scale.
         referenceLine={avg !== null ? { value: avg, softBounds: true } : undefined}
+        // The weekend's calm end cap on the 1D line: a hollow ring just past Friday's last
+        // rate (the chip above says it in words; a label here would cross the line).
+        nowMarker={fx === "weekend" && shown === "1d" && last !== null ? { v: last } : undefined}
         markers={marks.length ? marks : undefined}
         legendExtra={
           avg !== null || allMarks.length || shade.length ? (

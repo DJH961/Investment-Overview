@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { parseInstant } from "../../lib/format";
 import { useRefreshState, type MarketSessionEvent } from "../../lib/refresh";
 import type { ClockFreshness } from "./MarketClock";
@@ -117,21 +117,23 @@ export function useMarketPhase(freshness: ClockFreshness | null | undefined, pay
   const next = fixed ? null : nextPhaseChange({ freshness, session, now });
   useEffect(() => {
     if (next === null) return;
-    const id = window.setTimeout(() => setWall(new Date()), Math.min(2 ** 31 - 1, Math.max(20, next - Date.now() + 20)));
+    const id = window.setTimeout(() => setWall(new Date()), Math.min(2 ** 31 - 1, Math.max(0, next - Date.now())));
     return () => window.clearTimeout(id);
   }, [next]);
-  // A new event re-reads the clock too (its age counts from now).
-  useEffect(() => {
-    if (!fixed && session) setWall(new Date());
-  }, [session, fixed]);
+  // A new event needs no fresh clock read: it wins over the payload by its own `at`, and
+  // the timer above (which counts its expiry) wakes the hook when it runs out.
   return { phase: marketPhase({ freshness, session, pricesLive: refresh.pricesLive, payloadLive, now }), now };
 }
 
 /** The phase it was just before the current one (null on the first render), for one-off cues. */
 export function usePrevious<T>(value: T): T | null {
-  const ref = useRef<{ cur: T; prev: T | null }>({ cur: value, prev: null });
-  if (ref.current.cur !== value) ref.current = { cur: value, prev: ref.current.cur };
-  return ref.current.prev;
+  const [seen, setSeen] = useState<{ cur: T; prev: T | null }>({ cur: value, prev: null });
+  if (seen.cur !== value) {
+    // React's "adjust state while rendering" pattern: no effect, no ref read in render.
+    setSeen({ cur: value, prev: seen.cur });
+    return seen.cur;
+  }
+  return seen.prev;
 }
 
 /**
@@ -139,12 +141,16 @@ export function usePrevious<T>(value: T): T | null {
  * as soon as `on` is false. Drives a one-shot animation class.
  */
 export function useBlip(on: boolean, duration: number): boolean {
-  const [shown, setShown] = useState(false);
+  const [over, setOver] = useState(false);
+  const [was, setWas] = useState(on);
+  if (was !== on) {
+    setWas(on);
+    setOver(false);
+  }
   useEffect(() => {
-    setShown(on);
     if (!on) return undefined;
-    const id = window.setTimeout(() => setShown(false), duration);
+    const id = window.setTimeout(() => setOver(true), duration);
     return () => window.clearTimeout(id);
   }, [on, duration]);
-  return shown;
+  return on && !over && was === on;
 }

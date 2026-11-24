@@ -49,12 +49,12 @@ export function forexReopen(ms: number): number {
   return t;
 }
 
-/** The FX moment, re-read every half minute (the boundaries are minute-exact). */
-export function useFxMoment(): FxMoment {
-  const [moment, setMoment] = useState<FxMoment>(() => fxMoment(Date.now()));
+/** The FX moment and the instant it was read, re-read every half minute (the boundaries are minute-exact). */
+export function useFxMoment(): { moment: FxMoment; at: number } {
+  const [at, setAt] = useState(() => Date.now());
   useEffect(() => {
-    const id = window.setInterval(() => setMoment(fxMoment(Date.now())), 30_000);
+    const id = window.setInterval(() => setAt(Date.now()), 30_000);
     return () => window.clearInterval(id);
   }, []);
-  return moment;
+  return { moment: fxMoment(at), at };
 }

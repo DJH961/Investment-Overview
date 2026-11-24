@@ -289,8 +289,27 @@
   &--near &__head {
     grid-column: 2;
     grid-row: 1;
+    align-self: center;
     justify-content: flex-end;
     min-width: 0;
+    // Beside the big digits a label may take two lines rather than lose its end
+    // ("Bell! That's the close" at 360 px).
+    white-space: normal;
+  }
+
+  &--near &__label {
+    align-items: flex-start;
+    justify-content: flex-end;
+    text-align: right;
+    line-height: var(--line-height-tight);
+  }
+
+  &--near &__bell {
+    margin-top: 1px;
+  }
+
+  &--near &__label-text {
+    overflow: visible;
   }
 
   &--near &__bar {

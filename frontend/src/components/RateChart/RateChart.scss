@@ -62,7 +62,8 @@
 
   // Weekend: the line ends in a calm hollow cap in its own colour (the rate is frozen
   // at Friday's close, nothing is moving).
-  &--fx-weekend .chart__end-pill-dot {
+  &--fx-weekend .chart__end-pill-dot,
+  &--fx-weekend .chart__now-dot {
     fill: var(--color-surface);
     stroke: var(--chart-1);
     stroke-width: 2;
