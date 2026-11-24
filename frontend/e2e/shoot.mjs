@@ -181,7 +181,7 @@ for (const route of routes) {
             content:
               "aside.sidebar{position:absolute !important;top:0 !important;height:900px !important}" +
               "header{position:relative !important;top:0 !important}" +
-              "[class*='bottom-nav'],[class*='mobile-nav']{position:static !important}",
+              ".tab-bar{position:static !important}",
           });
         }
         await page.waitForTimeout(600);
