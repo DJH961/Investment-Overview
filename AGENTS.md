@@ -252,6 +252,7 @@ Use `frontend/e2e/shoot.mjs`; don't write one-off Playwright scripts. Two steps:
 | Just the first screen, not the full page | add `--viewport` |
 | One currency only | add `--ccy USD` |
 | Sidebar open (when the navigation is the subject) | add `--sidebar` |
+| A market moment (open, close, FX weekend) | `npm run shots -- <dir> overview --at closing` (`preopen`, `opening`, `firsttick`, `preclose`, `closing`, `closed`, `fxfri`, `fxsun`, or an ISO instant; the same `?at=` works in any browser, `?at=live` clears it) |
 
 Files are `<route>-<ccy>-<width>-<theme>[-elN].png`. Write routes without the leading slash
 (`holding/FAKEL`, not `/holding/FAKEL`): Git Bash turns `/x` into a Windows path. The script

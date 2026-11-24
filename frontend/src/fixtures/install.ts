@@ -17,10 +17,21 @@
  *
  * View switches (remembered for the tab): `?ccy=EUR|USD`, `?theme=light|dark|auto`,
  * `?rail=1|0` (sidebar folded or open), e.g. `/currency?ccy=USD&theme=dark&rail=1`.
+ *
+ * Market moment (remembered for the tab): `?at=<moment>` puts the whole app at one
+ * moment: the browser clock (Date) reads that instant (and keeps running), and the
+ * freshness, market regime, daily caption, 1D graph, day figures, holdings stamps,
+ * refresh status and `market_session` bells all agree with it (see ./moment.ts).
+ * Moments: `preopen` (10 min before the open), `opening` (open, no prices yet),
+ * `firsttick`, `preclose` (2 min before the close), `closing` (bell rang, close being
+ * settled), `closed`, `fxfri` (Friday after the FX close), `fxsun` (Sunday after the
+ * FX reopen), or an ISO instant such as `2026-11-24T20:58:00Z`. Named moments fall on
+ * the recorded Tuesday of the browser's week, so weekdays line up. `?at=live` clears it.
  */
 
 import { currencyDollarFixture, currencyScenariosFixture } from "./currencyDollar";
 import { currencyEffectFixture, effectScale } from "./currencyEffect";
+import { clockOffset, installClock, marketAt, parseMoment, patchForMoment, sessionEvents, nyDay, type Moment } from "./moment";
 import { rateHistoryFixture } from "./rateHistory";
 import { v71Answer, v71Extend } from "./v71";
 
@@ -42,6 +53,20 @@ function pickDataset(): "full" | "empty" {
     return window.sessionStorage.getItem(STORAGE_KEY) === "empty" ? "empty" : "full";
   } catch {
     return "full";
+  }
+}
+
+const AT_KEY = "iv.fixtures.at";
+
+/** The `?at=` switch, remembered for the tab; `?at=live` clears it. Returns the stored spec or null. */
+function pickAt(): string | null {
+  try {
+    const asked = new URLSearchParams(window.location.search).get("at");
+    if (asked === "live") window.sessionStorage.removeItem(AT_KEY);
+    else if (asked) window.sessionStorage.setItem(AT_KEY, asked);
+    return window.sessionStorage.getItem(AT_KEY);
+  } catch {
+    return null;
   }
 }
 
@@ -328,6 +353,8 @@ class QuietEventSource extends EventTarget {
   readonly CONNECTING = 0;
   readonly OPEN = 1;
   readonly CLOSED = 2;
+  /** Events every new stream delivers right after it opens (the bells of a `?at=` moment). */
+  static script: Fixtures[] = [];
   readyState = 0;
   url: string;
   withCredentials = false;
@@ -341,6 +368,9 @@ class QuietEventSource extends EventTarget {
       if (this.readyState === 2) return;
       this.readyState = 1;
       this.onopen?.(new Event("open"));
+      setTimeout(() => {
+        for (const ev of QuietEventSource.script) this.onmessage?.(new MessageEvent("message", { data: JSON.stringify(ev) }));
+      }, 150);
     }, 0);
   }
   close(): void {
@@ -356,7 +386,18 @@ export async function installFixtures(): Promise<void> {
   // Whole weeks only, so weekdays survive the shift (a recorded Tuesday stays a Tuesday,
   // sessions never land on a weekend). The data can be up to six days old; screenshot
   // scripts set the browser clock to the shifted anchor day.
-  const days = Math.floor((dayNumber(new Date().toISOString().slice(0, 10)) - dayNumber(ANCHOR)) / 7) * 7;
+  const weeksSince = (day: number) => Math.floor((day - dayNumber(ANCHOR)) / 7) * 7;
+  let days = weeksSince(dayNumber(new Date().toISOString().slice(0, 10)));
+  // `?at=`: the moment's own week decides the shift, and the clock is set to it from here on.
+  const atSpec = pickAt();
+  const atInstant = parseMoment(atSpec, dayNumber(ANCHOR) + days);
+  let moment: Moment | null = null;
+  if (atInstant !== null) {
+    days = weeksSince(nyDay(atInstant));
+    installClock(clockOffset(atInstant, Date.now()));
+    moment = marketAt(atInstant);
+    QuietEventSource.script = sessionEvents(moment) as Fixtures[];
+  }
   const version = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "";
   const realFetch = window.fetch.bind(window);
   let briefMode = pickBrief();
@@ -431,11 +472,14 @@ export async function installFixtures(): Promise<void> {
     if (body === undefined || (typeof body === "object" && body !== null && "__status" in body)) {
       return json({ detail: "No fixture for this endpoint." }, 404);
     }
-    return respond(body);
+    return respond(body, url.pathname);
   };
 
-  function respond(body: unknown): Response {
-    const text = shiftDates(JSON.stringify(body), days).split(VERSION_SENTINEL).join(version);
+  function respond(body: unknown, path = ""): Response {
+    let text = shiftDates(JSON.stringify(body), days);
+    // Patched after the shift: the moment's own instants are final.
+    if (moment && dataset === "full") text = JSON.stringify(patchForMoment(path, JSON.parse(text), moment, data));
+    text = text.split(VERSION_SENTINEL).join(version);
     return new Response(text, { status: 200, headers: { "Content-Type": "application/json" } });
   }
 
