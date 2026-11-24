@@ -272,6 +272,13 @@ export function handleLiveEvent(queryClient: QueryClient, data: string): void {
     if (settingsAffectReports(keys)) markStaleAndRefetch(queryClient, "refresh");
   } else if (type === "server") {
     handleServerEvent(queryClient, ev);
+  } else if (type === "market_session" || type === "session_closed" || type === "session_opened") {
+    // A bell (applied to the refresh state above). Once the closing prices are in, the
+    // reports refetch once; at the open the overview fetches the new session's instants.
+    // While the close is still settling nothing refetches (the clock shows "Closing…").
+    const bell = type === "session_closed" ? "closed" : type === "session_opened" ? "opening" : ev.state;
+    if (bell === "closed") markStaleAndRefetch(queryClient, "refresh");
+    else if (bell === "opening") markStaleAndRefetch(queryClient, "tick");
   }
   eventListeners.forEach((l) => l(ev));
 }

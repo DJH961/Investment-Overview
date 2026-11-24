@@ -29,7 +29,24 @@ export interface RefreshState {
    * it). Each new value plays the top bar's one-turn "landed" cue once.
    */
   landed: number;
+  /** The last `market_session` SSE event (the server's bell), or null before the first one. */
+  marketSession: MarketSessionEvent | null;
 }
+
+/** A US-market bell from the server: `closing` at the close while EOD settles, `closed` once it is in, `opening` at the open, `open` with the first tick. */
+export type MarketSessionState = "opening" | "open" | "closing" | "closed";
+
+export interface MarketSessionEvent {
+  state: MarketSessionState;
+  /** When the server published it (ISO). */
+  at: string | null;
+  /** The next bell after this one (ISO), when known. */
+  nextBell: string | null;
+  /** When this client received it (ms): ages the event when the server's clock is not trusted. */
+  receivedAt: number;
+}
+
+const SESSION_STATES: readonly MarketSessionState[] = ["opening", "open", "closing", "closed"];
 
 export const IDLE_REFRESH: RefreshState = {
   running: false,
@@ -43,6 +60,7 @@ export const IDLE_REFRESH: RefreshState = {
   pricesLive: null,
   priceMarketAt: null,
   landed: 0,
+  marketSession: null,
 };
 
 let state: RefreshState = IDLE_REFRESH;
@@ -164,6 +182,22 @@ export function applyRefreshEvent(queryClient: QueryClient, ev: Record<string, u
       else deferAutoRefetch(queryClient);
       return true;
     }
+    case "market_session":
+    case "session_closed":
+    case "session_opened": {
+      // `session_closed` / `session_opened` are the plan's older names for the same bells.
+      const named = ev.type === "session_closed" ? "closed" : ev.type === "session_opened" ? "opening" : ev.state;
+      if (!SESSION_STATES.includes(named as MarketSessionState)) return true;
+      const session = named as MarketSessionState;
+      // From the close until a new session's first tick the last tick's "live" is stale:
+      // clear it, so nothing keeps saying "Live" past the bell.
+      const pricesLive = session === "open" ? (typeof ev.prices_live === "boolean" ? ev.prices_live : state.pricesLive) : false;
+      setRefreshState({
+        pricesLive,
+        marketSession: { state: session, at: str(ev.at), nextBell: str(ev.next_bell), receivedAt: Date.now() },
+      });
+      return true;
+    }
     case "tick":
     case "fx": {
       // A fresh live FX rate moves the "Updated" stamp too (the server sends it on both).
@@ -183,6 +217,15 @@ export function applyRefreshEvent(queryClient: QueryClient, ev: Record<string, u
 }
 
 const POLL_MS = 2000;
+
+/** A 409 from `POST /api/refresh` that means "the close is being settled" (`detail.reason === "settling_close"`). */
+export function isSettlingClose(body: unknown): boolean {
+  if (!body || typeof body !== "object" || !("detail" in body)) return false;
+  const detail = (body as { detail: unknown }).detail;
+  if (!detail || typeof detail !== "object") return false;
+  const { reason, code } = detail as { reason?: unknown; code?: unknown };
+  return reason === "settling_close" || code === "settling_close";
+}
 
 /**
  * Top-bar refresh: `POST /api/refresh?force=true` (409 = already running, which
@@ -204,6 +247,12 @@ export function useServerRefresh(): { start: () => void; state: RefreshState } {
       .then((s) => setRefreshState({ ...fromStatus(s), running: true }))
       .catch((err: unknown) => {
         if (err instanceof ApiError && err.status === 409) {
+          // The bell just rang and the server is settling the closing prices: a calm
+          // note, never an error. The status poll ends "Updating…" when EOD is in.
+          if (isSettlingClose(err.body)) {
+            toast({ title: "Closing prices are being settled…", description: "The day's closing prices appear in a minute." });
+            return;
+          }
           // Already running (another device or the schedule): say so here, keep "Updating…".
           toast({ title: "A refresh is already running", description: "The new prices appear when it finishes." });
           return;
