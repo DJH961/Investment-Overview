@@ -41,10 +41,96 @@ table, "Round 2") and `git log --oneline origin/main..origin/claude/pensive-ptol
    the two agents that did round 1, stopped on the owner's request. Their state is in
    the section below.
 
-## Lanes stopped mid-flight
+## Lanes stopped before round 2 code
 
-See "Lane A" and "Lane B" below (filled from each agent's handover). Their work is on
-local worktree branches; what is not merged here is described there with the next step.
+Both round-2 agents stopped before writing code. Everything round 1 did is merged
+here, so nothing lives only on their (local) worktree branches. Their findings are the
+next steps:
+
+### Lane A: open and close, end to end (nothing coded yet)
+
+1. **1D chart empty at the open (cause found).** `readmodels/live_graphs.py`
+   `_graph_points(range_key="1d")` → `build_intraday_value_series`
+   (`readmodels/queries/overview_query.py`). Before the day's first sample the series
+   holds at most the live tip, so `ValueChartCard`/`Chart` shows its empty state.
+   Fix: in the 1d branch, while `market_hours.is_us_market_open(now)` and fewer than 2
+   points, prepend a point at the regular session open (UTC) holding the previous
+   session's close value; with no points at all, also add one at `now`. Compute
+   `reference` even when `points` is empty. First check that `build_window_value_series`
+   (session_dates / last_session_date, ~lines 395–415) does not hand back yesterday's
+   samples at 09:30. Tests: `tests/readmodels/test_live_graphs.py` or
+   `tests/api/test_graph_consistency.py`.
+2. **One source of truth for the top bar.** Move `components/MarketClock/marketPhase.ts`
+   to `lib/marketPhase.ts` (re-export at the old path). `describeFreshness`
+   (`components/Freshness/describeFreshness.ts`) takes `phase?: MarketPhase | null`:
+   closing → "Closing · settling the closing prices" (short "Closing…"); opening →
+   "Market open · first prices in a moment" (short "Opening"); "open" only when the phase
+   is live/open. Compute it with `useMarketPhase(data.freshness, data.daily_caption?.live)`
+   in `components/AppShell/useGlobalFreshness.ts` and `pages/Overview/Overview.tsx` (~121).
+3. **FX weekend on the home screen.** Move `components/RateChart/fxWeekend.ts` to
+   `lib/fxWeekend.ts` (re-export kept). Subtle moon "FX closed for the weekend" (rate reads
+   as Friday's close) and a brief sunrise "FX is back" (new rate eases in) on `CurrencyBox`,
+   `CurrencyLifetime` and the Overview currency card (`CurrencyBox` already reads
+   `regime.forex_open` / `forex_frozen`).
+4. **Holdings and Holding page:** "Today" vs "Last session" wording and live/est. markers
+   per phase: `pages/Holdings/HoldingMobileRow.tsx`, `Holdings.tsx`,
+   `pages/Holding/HoldingHeader.tsx`.
+5. **Phone chip after the close** says "Closed for 17h 24m", never the "See you…" text:
+   make it as informative as desktop.
+6. **Restrained flair** (~1–2 s, once, off under reduced motion): a sweep along the
+   session bar as it completes at the close, the live dot lighting up and figures easing in
+   at the first tick.
+7. **Tests:** fake timers per moment (10 min before the open, 09:30, first tick, 2 min
+   before the close, closing, closed, FX Fri close / Sun reopen) for the top-bar chip,
+   hero, chart state and a holdings row.
+8. **Shots:** full-page Overview, Holdings, one Holding at every moment, 390 + 1280 (360
+   for phone copy), light + dark, plus a Playwright `recordVideo` WebM of the close and the
+   open. Round-1 script (element shots only, needs `fullPage` and the extra routes):
+   `node shots.mjs <outDir> [close|open|fx]` against `npm run serve:fixtures` (port 4173),
+   fake browser clock, injected SSE events; Chromium at
+   `/opt/pw-browsers/chromium-1243/chrome-linux64/chrome`; fixture bells fall at
+   21:00Z / 14:30Z on 24–25 Nov 2026. (The script lived in the old session's scratchpad;
+   rewrite it if it is gone.)
+
+### Lane B: Currency comparisons and the regular amount (nothing coded yet)
+
+1. **Regular amount instead of 1000** (`investing_power_service.get_amount_eur(session)`;
+   a settings change already clears the read cache):
+   - `readmodels/currency_deposits.py` `AMOUNT_EUR` (`rate_only` in `build_investing`,
+     called from `currency_effect.py` ~1128);
+   - `readmodels/currency_dollar.py` `NEXT_EURO_AMOUNT` (`_next_euro`, spark line,
+     "a year ago");
+   - `readmodels/currency_effect.py` `BUYS_AMOUNT_EUR` (`_buys` ~905);
+   - `readmodels/currency_scenarios.py` `INVEST_UNIT_EUR` → `Invest(monthly, monthly)`
+     (~380);
+   - `readmodels/currency.py` ~278: the USD "effect today" strip tile;
+   - frontend copy: `PositionCard.tsx` ("for the same €1,000", aria label, `?? 1000`),
+     the `effect_today` tip in `Currency.tsx`, `WhatIf.tsx` (merge the unit and regular
+     columns when equal); small amounts need cents. Check whether Overview's `CurrencyBox`
+     shows a fixed €1,000.
+   - Fallback when unset: the service defaults to €100 (what Overview shows). Use that
+     rather than 1000.
+2. **EUR | USD side by side** on 2–4 panels (candidates: Impact returns/effect per range,
+   strip tiles, Exposure position, Scenarios stress); two columns, same rows, each in its
+   own currency, two-lens rule (USD = deposit lens, EUR = book lens).
+3. **Rate chart** (`components/RateChart`, leave fxWeekend alone): print
+   `windowText(window)` (`pages/Currency/numbers.ts`); on Max draw t ≤ `context_until`
+   muted and dashed ("before you started"); All shows nothing before the first transaction.
+4. **Max fixtures:** record `/api/currency/effect/both?range=max` in
+   `backend/.../tools/make_fixtures.py` and regenerate. The sandbox cannot fetch ^IRX:
+   keep alpha, risk_free_rate, sharpe and sortino from the old fixture file (or regenerate
+   where the network works; CI's fixture drift guard may differ otherwise).
+5. **Tests:** extend `pages/Currency/rangeMatrix.test.tsx` to every range (1D … Max) ×
+   EUR/USD, plus the comparison panels and the amount.
+6. **Shots** of every changed panel at 1D, 1M, All, Max × EUR/USD × 390/1280 × light/dark.
+
+### Test status at the stop
+
+- Frontend full vitest last passed after merging both round-1 lanes (115 files / 1124
+  tests); the later commits (Chart phone labels, Exposure/Scenarios/Impact polish, six KPI
+  strip) ran their targeted suites only.
+- Backend targeted suites passed for every commit; the full backend suite has not run
+  locally since round 1 (CI will).
 
 ## Owner's open asks (verbatim intent)
 
