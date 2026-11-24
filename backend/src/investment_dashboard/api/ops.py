@@ -42,6 +42,7 @@ from investment_dashboard.services import (
     live_bus,
     refresh_status,
     restart_notice,
+    scheduler,
 )
 from investment_dashboard.storage.encryption import connect_sqlite
 from investment_dashboard.storage.integrity import backup_database
@@ -118,7 +119,14 @@ def _run_refresh(params: dict[str, object]) -> dict[str, object]:
 
 @router.post("/refresh", response_model=RefreshStatus, status_code=status.HTTP_202_ACCEPTED)
 def start_refresh(request: Request, force: bool = True) -> RefreshStatus:
-    if refresh_status.snapshot().active:
+    snap = refresh_status.snapshot()
+    if snap.active and snap.source == scheduler.EOD_SOURCE:
+        # The bell rang and the closes are being settled: a calm "wait", not an error.
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            {"reason": "settling_close", "message": "Closing prices are being settled"},
+        )
+    if snap.active:
         raise HTTPException(status.HTTP_409_CONFLICT, "A refresh is already running")
     try:
         job_runner.start(
