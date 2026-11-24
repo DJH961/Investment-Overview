@@ -12,6 +12,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from investment_dashboard.domain import fx_spread
+from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.services import fx_conversion_service, fx_service
 
 if TYPE_CHECKING:
@@ -27,7 +28,7 @@ def conversions_with_fixings(session: Session) -> list[fx_spread.Conversion]:
     """
     rows = fx_conversion_service.list_conversions(session)
     rates = fx_service.get_settled_rates(session, base="EUR", quote="USD")
-    today = date.today()
+    today = exchange_today()
     out: list[fx_spread.Conversion] = []
     for r in rows:
         if r.is_estimate:
