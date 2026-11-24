@@ -65,6 +65,10 @@ export function MarketChip({ freshness, live = false, currency, now }: MarketChi
         <span className="market-chip__text" aria-hidden>
           {text}
         </span>
+        {/* No room for the span: one word, never a bare dot (state is not colour alone). */}
+        <span className="market-chip__word" aria-hidden>
+          {phase === "closing" || phase === "opening" ? text : view.state}
+        </span>
       </button>
       <Sheet open={open} onOpenChange={setOpen} title="Market clock">
         <HeroIntraday currency={currency} now={now} clock={<MarketClock freshness={freshness} now={now} variant="sheet" fire={false} />} />

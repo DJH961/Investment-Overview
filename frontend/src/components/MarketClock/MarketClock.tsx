@@ -285,7 +285,7 @@ function dayKey(ms: number, timeZone?: string): string {
 
 /**
  * The clock's head line, long (wide screens) and short (phones, fits 360 px):
- * - a bell just rang: "The closing bell has rung" / "Bell! That's the close";
+ * - a bell just rang: "The closing bell has rung" / "Bell! Closing time";
  * - still settling the close / waiting for the first tick;
  * - open: "Until the closing bell";
  * - closed: under an hour "Until the opening bell", the next morning "Opens in 17 h",
@@ -300,7 +300,7 @@ export function clockLabel(o: {
   now: Date;
   timeZone?: string;
 }): { long: string; short: string } {
-  if (o.bellRang === "close") return { long: "The closing bell has rung", short: "Bell! That's the close" };
+  if (o.bellRang === "close") return { long: "The closing bell has rung", short: "Bell! Closing time" };
   if (o.bellRang === "open") return { long: "The opening bell has rung", short: "Bell! Market's open" };
   if (o.phase === "closing") return { long: "Settling the closing prices", short: "Settling the close" };
   if (o.phase === "opening") return { long: "Waiting for the first prices", short: "First prices soon" };

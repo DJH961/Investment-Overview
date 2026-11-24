@@ -65,12 +65,14 @@
   }
 
   &__label-text {
+    // Two short lines rather than one long line and an orphan ("…closing / bell").
+    text-wrap: balance;
     overflow: hidden;
     min-width: 0;
     text-overflow: ellipsis;
   }
 
-  // Phones get the short bell copy ("Bell! That's the close"), wide screens the long one.
+  // Phones get the short bell copy ("Bell! Closing time"), wide screens the long one.
   &__label-text--short {
     display: none;
   }
@@ -293,7 +295,7 @@
     justify-content: flex-end;
     min-width: 0;
     // Beside the big digits a label may take two lines rather than lose its end
-    // ("Bell! That's the close" at 360 px).
+    // ("Bell! Closing time" at 360 px).
     white-space: normal;
   }
 

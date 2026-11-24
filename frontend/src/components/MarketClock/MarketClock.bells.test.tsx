@@ -79,7 +79,7 @@ describe("the closing bell (Mon 23 Nov 2026, 15:59:50 to 16:05 ET)", () => {
     note();
     expect(corner()).toBe("Closing…");
     expect(clock()).toHaveTextContent("The closing bell has rung");
-    expect(clock()).toHaveTextContent("Bell! That's the close");
+    expect(clock()).toHaveTextContent("Bell! Closing time");
     expect(clock()).toHaveClass("market-clock--ring");
     expect(screen.getByTestId("market-clock-bell")).toHaveClass("market-clock__bell--rang");
 
@@ -187,7 +187,7 @@ describe("the half-day close (Black Friday 27 Nov 2026, 13:00 ET)", () => {
     const { rerender } = render(<Harness f={open} live />);
     advance(10_000);
     expect(corner()).toBe("Closing…");
-    expect(clock()).toHaveTextContent("Bell! That's the close");
+    expect(clock()).toHaveTextContent("Bell! Closing time");
     bell("closing", "2026-11-27T18:00:00Z");
     rerender(<Harness f={closed} live={false} />);
     advance(65_000);

@@ -77,25 +77,29 @@
     }
   }
 
-  // Room check: the hero head row (label, "≈ est." chip, this chip). "Open for 2h 10m" shows when it fits; only a
-  // row with truly no room falls back to the dot (the accessible name and the sheet still say everything).
-  @container hero-head (max-width: 17rem) {
-    justify-content: center;
-    min-width: 32px;
+  // Room check: the hero head row (label, "≈ est." chip, this chip). "Open for 2h 10m"
+  // shows when it fits; a tight row says the state in one word ("Open", "Closing…").
+  &__word {
+    display: none;
+  }
 
+  @container hero-head (max-width: 17rem) {
     &__text {
-      @include m.visually-hidden;
+      display: none;
+    }
+
+    &__word {
+      display: inline;
     }
   }
 
   @container hero-head (max-width: 19.5rem) {
-    .overview-hero__head--est & {
-      justify-content: center;
-      min-width: 32px;
+    .overview-hero__head--est &__text {
+      display: none;
     }
 
-    .overview-hero__head--est &__text {
-      @include m.visually-hidden;
+    .overview-hero__head--est &__word {
+      display: inline;
     }
   }
 
