@@ -14,6 +14,9 @@
  * from the overview fixture the way the server does), `?brief=fx` (the weekend
  * currency line) or `?brief=off` (not due). Dismissing the card acknowledges it for
  * the tab, as the server would; any `?brief=` brings it back.
+ *
+ * View switches (remembered for the tab): `?ccy=EUR|USD`, `?theme=light|dark|auto`,
+ * `?rail=1|0` (sidebar folded or open), e.g. `/currency?ccy=USD&theme=dark&rail=1`.
  */
 
 import { currencyDollarFixture, currencyScenariosFixture } from "./currencyDollar";
@@ -53,6 +56,72 @@ function pickBrief(): BriefMode {
   } catch {
     return "sessions";
   }
+}
+
+/**
+ * View switches for screenshots and reviews (remembered for the tab, like `?brief=`):
+ * `?ccy=EUR|USD` reporting currency, `?theme=light|dark|auto`, `?rail=1|0` sidebar
+ * folded or open. They seed the app's own preferences before it renders and make the
+ * fixture settings answer with them, so the server value does not switch them back.
+ * In-app toggles keep working and update the remembered choice.
+ */
+type View = { ccy?: "EUR" | "USD"; theme?: "light" | "dark" | "auto"; rail?: boolean };
+const VIEW_KEY = "iv.fixtures.view";
+
+function readView(): View {
+  try {
+    return JSON.parse(window.sessionStorage.getItem(VIEW_KEY) ?? "{}") as View;
+  } catch {
+    return {};
+  }
+}
+
+function saveView(view: View): void {
+  try {
+    window.sessionStorage.setItem(VIEW_KEY, JSON.stringify(view));
+    if (view.ccy) window.localStorage.setItem("iv.ccy", view.ccy);
+    if (view.theme === "auto") window.localStorage.removeItem("iv.theme");
+    else if (view.theme) window.localStorage.setItem("iv.theme", view.theme);
+    if (view.rail !== undefined) window.localStorage.setItem("iv.sidebar.rail", view.rail ? "1" : "0");
+  } catch {
+    /* private mode: the switch lasts for this page only */
+  }
+}
+
+function pickView(): View {
+  const view = readView();
+  try {
+    const q = new URLSearchParams(window.location.search);
+    const ccy = q.get("ccy")?.toUpperCase();
+    if (ccy === "EUR" || ccy === "USD") view.ccy = ccy;
+    const theme = q.get("theme");
+    if (theme === "light" || theme === "dark") view.theme = theme;
+    if (theme === "auto" || theme === "system") view.theme = "auto";
+    const rail = q.get("rail");
+    if (rail === "1" || rail === "0") view.rail = rail === "1";
+  } catch {
+    /* no URL switches */
+  }
+  saveView(view);
+  return view;
+}
+
+/** The recorded `GET /api/settings/values` answer (`{ values: {...} }`) with the view switches applied. */
+function withView(body: unknown, view: View): unknown {
+  const values = field(body, "values");
+  if (!values || typeof values !== "object") return body;
+  return { ...(body as Record<string, unknown>), values: viewValues(values, view) };
+}
+
+function viewValues(values: unknown, view: View): Record<string, unknown> {
+  const out = { ...(values as Record<string, unknown>) };
+  const set = (key: string, value: string) => {
+    const cur = out[key];
+    out[key] = cur && typeof cur === "object" ? { ...(cur as object), value } : { value };
+  };
+  if (view.ccy) set("display_currency", view.ccy);
+  if (view.theme) set("theme", view.theme);
+  return out;
 }
 
 type Obj = Record<string, unknown>;
@@ -291,6 +360,7 @@ export async function installFixtures(): Promise<void> {
   const version = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "";
   const realFetch = window.fetch.bind(window);
   let briefMode = pickBrief();
+  const view = pickView();
 
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -307,6 +377,25 @@ export async function installFixtures(): Promise<void> {
       return json({ last_ack_at: new Date().toISOString() });
     }
     if (url.pathname === "/api/brief" && method === "GET") return respond(briefFor(briefMode, data, data["GET /api/brief"]));
+    if (url.pathname === "/api/settings/values") {
+      if (method === "PATCH") {
+        // An in-app toggle: remember it, so the next read does not switch it back.
+        try {
+          const sent = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as { changes?: Record<string, string> };
+          const c = sent.changes ?? {};
+          if (c.display_currency === "EUR" || c.display_currency === "USD") view.ccy = c.display_currency;
+          if (c.theme === "light" || c.theme === "dark" || c.theme === "auto") view.theme = c.theme;
+          saveView(view);
+          return respond({
+            changed: Object.keys(c),
+            values: field(withView(data["GET /api/settings/values"], view), "values") ?? {},
+          });
+        } catch {
+          /* fall through to the recorded answer */
+        }
+      }
+      if (method === "GET") return respond(withView(data["GET /api/settings/values"], view));
+    }
     if (method !== "GET") {
       const body = findBody(data, method, url.pathname + url.search);
       return body === undefined ? json({}) : respond(body);
