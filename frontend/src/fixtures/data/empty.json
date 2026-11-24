@@ -3735,6 +3735,7 @@
      "window_days": 252
     }
    ],
+   "rolling_too_short": false,
    "stats": [],
    "trend": {
     "above_entry_share": null,
@@ -3752,6 +3753,14 @@
     "regime": null,
     "run": null,
     "week52": null
+   },
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "10y",
+    "live": true,
+    "start": "2016-06-30",
+    "through": "2026-06-29"
    }
   },
   "USD": {
@@ -3802,6 +3811,7 @@
      "window_days": 252
     }
    ],
+   "rolling_too_short": false,
    "stats": [],
    "trend": {
     "above_entry_share": null,
@@ -3819,6 +3829,14 @@
     "regime": null,
     "run": null,
     "week52": null
+   },
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "10y",
+    "live": true,
+    "start": "2016-06-30",
+    "through": "2026-06-29"
    }
   },
   "detail": null
@@ -3849,29 +3867,8 @@
     "pair": "USD/EUR"
    },
    "range": "1d",
-   "rolling": [
-    {
-     "normal_limit_pct": null,
-     "points": [],
-     "typical_move_pct": null,
-     "window": "1m",
-     "window_days": 21
-    },
-    {
-     "normal_limit_pct": null,
-     "points": [],
-     "typical_move_pct": null,
-     "window": "3m",
-     "window_days": 63
-    },
-    {
-     "normal_limit_pct": null,
-     "points": [],
-     "typical_move_pct": null,
-     "window": "1y",
-     "window_days": 252
-    }
-   ],
+   "rolling": [],
+   "rolling_too_short": true,
    "stats": [],
    "trend": {
     "above_entry_share": null,
@@ -3889,6 +3886,14 @@
     "regime": null,
     "run": null,
     "week52": null
+   },
+   "window": {
+    "context_until": null,
+    "intraday": true,
+    "key": "1d",
+    "live": true,
+    "start": "2026-06-29",
+    "through": "2026-06-29"
    }
   },
   "USD": {
@@ -3916,29 +3921,8 @@
     "pair": "EUR/USD"
    },
    "range": "1d",
-   "rolling": [
-    {
-     "normal_limit_pct": null,
-     "points": [],
-     "typical_move_pct": null,
-     "window": "1m",
-     "window_days": 21
-    },
-    {
-     "normal_limit_pct": null,
-     "points": [],
-     "typical_move_pct": null,
-     "window": "3m",
-     "window_days": 63
-    },
-    {
-     "normal_limit_pct": null,
-     "points": [],
-     "typical_move_pct": null,
-     "window": "1y",
-     "window_days": 252
-    }
-   ],
+   "rolling": [],
+   "rolling_too_short": true,
    "stats": [],
    "trend": {
     "above_entry_share": null,
@@ -3956,6 +3940,14 @@
     "regime": null,
     "run": null,
     "week52": null
+   },
+   "window": {
+    "context_until": null,
+    "intraday": true,
+    "key": "1d",
+    "live": true,
+    "start": "2026-06-29",
+    "through": "2026-06-29"
    }
   },
   "detail": null
@@ -4009,6 +4001,7 @@
      "window_days": 252
     }
    ],
+   "rolling_too_short": false,
    "stats": [],
    "trend": {
     "above_entry_share": null,
@@ -4026,6 +4019,14 @@
     "regime": null,
     "run": null,
     "week52": null
+   },
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "1m",
+    "live": true,
+    "start": "2026-05-30",
+    "through": "2026-06-29"
    }
   },
   "USD": {
@@ -4076,6 +4077,7 @@
      "window_days": 252
     }
    ],
+   "rolling_too_short": false,
    "stats": [],
    "trend": {
     "above_entry_share": null,
@@ -4093,6 +4095,14 @@
     "regime": null,
     "run": null,
     "week52": null
+   },
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "1m",
+    "live": true,
+    "start": "2026-05-30",
+    "through": "2026-06-29"
    }
   },
   "detail": null
@@ -4123,29 +4133,8 @@
     "pair": "USD/EUR"
    },
    "range": "1w",
-   "rolling": [
-    {
-     "normal_limit_pct": null,
-     "points": [],
-     "typical_move_pct": null,
-     "window": "1m",
-     "window_days": 21
-    },
-    {
-     "normal_limit_pct": null,
-     "points": [],
-     "typical_move_pct": null,
-     "window": "3m",
-     "window_days": 63
-    },
-    {
-     "normal_limit_pct": null,
-     "points": [],
-     "typical_move_pct": null,
-     "window": "1y",
-     "window_days": 252
-    }
-   ],
+   "rolling": [],
+   "rolling_too_short": true,
    "stats": [],
    "trend": {
     "above_entry_share": null,
@@ -4163,6 +4152,14 @@
     "regime": null,
     "run": null,
     "week52": null
+   },
+   "window": {
+    "context_until": null,
+    "intraday": true,
+    "key": "1w",
+    "live": true,
+    "start": "2026-06-23",
+    "through": "2026-06-29"
    }
   },
   "USD": {
@@ -4190,29 +4187,8 @@
     "pair": "EUR/USD"
    },
    "range": "1w",
-   "rolling": [
-    {
-     "normal_limit_pct": null,
-     "points": [],
-     "typical_move_pct": null,
-     "window": "1m",
-     "window_days": 21
-    },
-    {
-     "normal_limit_pct": null,
-     "points": [],
-     "typical_move_pct": null,
-     "window": "3m",
-     "window_days": 63
-    },
-    {
-     "normal_limit_pct": null,
-     "points": [],
-     "typical_move_pct": null,
-     "window": "1y",
-     "window_days": 252
-    }
-   ],
+   "rolling": [],
+   "rolling_too_short": true,
    "stats": [],
    "trend": {
     "above_entry_share": null,
@@ -4230,6 +4206,14 @@
     "regime": null,
     "run": null,
     "week52": null
+   },
+   "window": {
+    "context_until": null,
+    "intraday": true,
+    "key": "1w",
+    "live": true,
+    "start": "2026-06-23",
+    "through": "2026-06-29"
    }
   },
   "detail": null
@@ -4283,6 +4267,7 @@
      "window_days": 252
     }
    ],
+   "rolling_too_short": false,
    "stats": [],
    "trend": {
     "above_entry_share": null,
@@ -4300,6 +4285,14 @@
     "regime": null,
     "run": null,
     "week52": null
+   },
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "1y",
+    "live": true,
+    "start": "2025-06-30",
+    "through": "2026-06-29"
    }
   },
   "USD": {
@@ -4350,6 +4343,7 @@
      "window_days": 252
     }
    ],
+   "rolling_too_short": false,
    "stats": [],
    "trend": {
     "above_entry_share": null,
@@ -4367,6 +4361,14 @@
     "regime": null,
     "run": null,
     "week52": null
+   },
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "1y",
+    "live": true,
+    "start": "2025-06-30",
+    "through": "2026-06-29"
    }
   },
   "detail": null
@@ -4420,6 +4422,7 @@
      "window_days": 252
     }
    ],
+   "rolling_too_short": false,
    "stats": [],
    "trend": {
     "above_entry_share": null,
@@ -4437,6 +4440,14 @@
     "regime": null,
     "run": null,
     "week52": null
+   },
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "3m",
+    "live": true,
+    "start": "2026-03-30",
+    "through": "2026-06-29"
    }
   },
   "USD": {
@@ -4487,6 +4498,7 @@
      "window_days": 252
     }
    ],
+   "rolling_too_short": false,
    "stats": [],
    "trend": {
     "above_entry_share": null,
@@ -4504,6 +4516,14 @@
     "regime": null,
     "run": null,
     "week52": null
+   },
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "3m",
+    "live": true,
+    "start": "2026-03-30",
+    "through": "2026-06-29"
    }
   },
   "detail": null
@@ -4557,6 +4577,7 @@
      "window_days": 252
     }
    ],
+   "rolling_too_short": false,
    "stats": [],
    "trend": {
     "above_entry_share": null,
@@ -4574,6 +4595,14 @@
     "regime": null,
     "run": null,
     "week52": null
+   },
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "5y",
+    "live": true,
+    "start": "2021-06-30",
+    "through": "2026-06-29"
    }
   },
   "USD": {
@@ -4624,6 +4653,7 @@
      "window_days": 252
     }
    ],
+   "rolling_too_short": false,
    "stats": [],
    "trend": {
     "above_entry_share": null,
@@ -4641,6 +4671,14 @@
     "regime": null,
     "run": null,
     "week52": null
+   },
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "5y",
+    "live": true,
+    "start": "2021-06-30",
+    "through": "2026-06-29"
    }
   },
   "detail": null
@@ -4694,6 +4732,7 @@
      "window_days": 252
     }
    ],
+   "rolling_too_short": false,
    "stats": [],
    "trend": {
     "above_entry_share": null,
@@ -4711,6 +4750,14 @@
     "regime": null,
     "run": null,
     "week52": null
+   },
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "all",
+    "live": true,
+    "start": "2026-06-30",
+    "through": "2026-06-29"
    }
   },
   "USD": {
@@ -4761,6 +4808,7 @@
      "window_days": 252
     }
    ],
+   "rolling_too_short": false,
    "stats": [],
    "trend": {
     "above_entry_share": null,
@@ -4778,6 +4826,14 @@
     "regime": null,
     "run": null,
     "week52": null
+   },
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "all",
+    "live": true,
+    "start": "2026-06-30",
+    "through": "2026-06-29"
    }
   },
   "detail": null
@@ -4831,6 +4887,7 @@
      "window_days": 252
     }
    ],
+   "rolling_too_short": false,
    "stats": [],
    "trend": {
     "above_entry_share": null,
@@ -4848,6 +4905,14 @@
     "regime": null,
     "run": null,
     "week52": null
+   },
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "max",
+    "live": true,
+    "start": "1999-01-04",
+    "through": "2026-06-29"
    }
   },
   "USD": {
@@ -4898,6 +4963,7 @@
      "window_days": 252
     }
    ],
+   "rolling_too_short": false,
    "stats": [],
    "trend": {
     "above_entry_share": null,
@@ -4915,6 +4981,14 @@
     "regime": null,
     "run": null,
     "week52": null
+   },
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "max",
+    "live": true,
+    "start": "1999-01-04",
+    "through": "2026-06-29"
    }
   },
   "detail": null
@@ -4968,6 +5042,7 @@
      "window_days": 252
     }
    ],
+   "rolling_too_short": false,
    "stats": [],
    "trend": {
     "above_entry_share": null,
@@ -4985,6 +5060,14 @@
     "regime": null,
     "run": null,
     "week52": null
+   },
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "ytd",
+    "live": true,
+    "start": "2025-12-31",
+    "through": "2026-06-29"
    }
   },
   "USD": {
@@ -5035,6 +5118,7 @@
      "window_days": 252
     }
    ],
+   "rolling_too_short": false,
    "stats": [],
    "trend": {
     "above_entry_share": null,
@@ -5052,6 +5136,14 @@
     "regime": null,
     "run": null,
     "week52": null
+   },
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "ytd",
+    "live": true,
+    "start": "2025-12-31",
+    "through": "2026-06-29"
    }
   },
   "detail": null
@@ -5075,14 +5167,17 @@
     "eur_return": null,
     "kind": "neutral",
     "lead": "effect",
+    "lens_note": null,
     "market": "0.000000",
     "note": null,
     "other_ccy": null,
     "other_effect": null,
+    "other_lens": null,
     "return_basis": "daily_chain",
     "usd_return": null
    },
    "holdings": [],
+   "holdings_note": null,
    "investing": null,
    "missing_deposit_days": 0,
    "months": [],
@@ -5117,6 +5212,14 @@
      "value": "0.000000"
     }
    ],
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "10y",
+    "live": true,
+    "start": "2016-06-30",
+    "through": "2026-06-29"
+   },
    "years": []
   },
   "USD": {
@@ -5137,14 +5240,17 @@
     "eur_return": null,
     "kind": "neutral",
     "lead": "effect",
+    "lens_note": null,
     "market": "0.000000",
     "note": null,
     "other_ccy": null,
     "other_effect": null,
+    "other_lens": null,
     "return_basis": "daily_chain",
     "usd_return": null
    },
    "holdings": [],
+   "holdings_note": "Your holdings are in dollars, so in the dollar view the rate does not move them. Their currency effect shows in the euro view.",
    "investing": null,
    "missing_deposit_days": 0,
    "months": [],
@@ -5179,6 +5285,14 @@
      "value": "0.000000"
     }
    ],
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "10y",
+    "live": true,
+    "start": "2016-06-30",
+    "through": "2026-06-29"
+   },
    "years": []
   },
   "detail": null
@@ -5202,14 +5316,17 @@
     "eur_return": null,
     "kind": "neutral",
     "lead": "effect",
+    "lens_note": null,
     "market": "0.000000",
     "note": null,
     "other_ccy": null,
     "other_effect": null,
+    "other_lens": null,
     "return_basis": "day",
     "usd_return": null
    },
    "holdings": [],
+   "holdings_note": null,
    "investing": null,
    "missing_deposit_days": 0,
    "months": [],
@@ -5244,6 +5361,14 @@
      "value": "0.000000"
     }
    ],
+   "window": {
+    "context_until": null,
+    "intraday": true,
+    "key": "1d",
+    "live": true,
+    "start": "2026-06-29",
+    "through": "2026-06-29"
+   },
    "years": []
   },
   "USD": {
@@ -5264,14 +5389,17 @@
     "eur_return": null,
     "kind": "neutral",
     "lead": "effect",
+    "lens_note": null,
     "market": "0.000000",
     "note": null,
     "other_ccy": null,
     "other_effect": null,
+    "other_lens": null,
     "return_basis": "day",
     "usd_return": null
    },
    "holdings": [],
+   "holdings_note": "Your holdings are in dollars, so in the dollar view the rate does not move them. Their currency effect shows in the euro view.",
    "investing": null,
    "missing_deposit_days": 0,
    "months": [],
@@ -5306,6 +5434,14 @@
      "value": "0.000000"
     }
    ],
+   "window": {
+    "context_until": null,
+    "intraday": true,
+    "key": "1d",
+    "live": true,
+    "start": "2026-06-29",
+    "through": "2026-06-29"
+   },
    "years": []
   },
   "detail": null
@@ -5329,14 +5465,17 @@
     "eur_return": null,
     "kind": "neutral",
     "lead": "effect",
+    "lens_note": null,
     "market": "0.000000",
     "note": null,
     "other_ccy": null,
     "other_effect": null,
+    "other_lens": null,
     "return_basis": "daily_chain",
     "usd_return": null
    },
    "holdings": [],
+   "holdings_note": null,
    "investing": null,
    "missing_deposit_days": 0,
    "months": [],
@@ -5371,6 +5510,14 @@
      "value": "0.000000"
     }
    ],
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "1m",
+    "live": true,
+    "start": "2026-05-30",
+    "through": "2026-06-29"
+   },
    "years": []
   },
   "USD": {
@@ -5391,14 +5538,17 @@
     "eur_return": null,
     "kind": "neutral",
     "lead": "effect",
+    "lens_note": null,
     "market": "0.000000",
     "note": null,
     "other_ccy": null,
     "other_effect": null,
+    "other_lens": null,
     "return_basis": "daily_chain",
     "usd_return": null
    },
    "holdings": [],
+   "holdings_note": "Your holdings are in dollars, so in the dollar view the rate does not move them. Their currency effect shows in the euro view.",
    "investing": null,
    "missing_deposit_days": 0,
    "months": [],
@@ -5433,6 +5583,14 @@
      "value": "0.000000"
     }
    ],
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "1m",
+    "live": true,
+    "start": "2026-05-30",
+    "through": "2026-06-29"
+   },
    "years": []
   },
   "detail": null
@@ -5456,14 +5614,17 @@
     "eur_return": null,
     "kind": "neutral",
     "lead": "effect",
+    "lens_note": null,
     "market": "0.000000",
     "note": null,
     "other_ccy": null,
     "other_effect": null,
+    "other_lens": null,
     "return_basis": "daily_chain",
     "usd_return": null
    },
    "holdings": [],
+   "holdings_note": null,
    "investing": null,
    "missing_deposit_days": 0,
    "months": [],
@@ -5498,6 +5659,14 @@
      "value": "0.000000"
     }
    ],
+   "window": {
+    "context_until": null,
+    "intraday": true,
+    "key": "1w",
+    "live": true,
+    "start": "2026-06-23",
+    "through": "2026-06-29"
+   },
    "years": []
   },
   "USD": {
@@ -5518,14 +5687,17 @@
     "eur_return": null,
     "kind": "neutral",
     "lead": "effect",
+    "lens_note": null,
     "market": "0.000000",
     "note": null,
     "other_ccy": null,
     "other_effect": null,
+    "other_lens": null,
     "return_basis": "daily_chain",
     "usd_return": null
    },
    "holdings": [],
+   "holdings_note": "Your holdings are in dollars, so in the dollar view the rate does not move them. Their currency effect shows in the euro view.",
    "investing": null,
    "missing_deposit_days": 0,
    "months": [],
@@ -5560,6 +5732,14 @@
      "value": "0.000000"
     }
    ],
+   "window": {
+    "context_until": null,
+    "intraday": true,
+    "key": "1w",
+    "live": true,
+    "start": "2026-06-23",
+    "through": "2026-06-29"
+   },
    "years": []
   },
   "detail": null
@@ -5583,14 +5763,17 @@
     "eur_return": null,
     "kind": "neutral",
     "lead": "effect",
+    "lens_note": null,
     "market": "0.000000",
     "note": null,
     "other_ccy": null,
     "other_effect": null,
+    "other_lens": null,
     "return_basis": "daily_chain",
     "usd_return": null
    },
    "holdings": [],
+   "holdings_note": null,
    "investing": null,
    "missing_deposit_days": 0,
    "months": [],
@@ -5625,6 +5808,14 @@
      "value": "0.000000"
     }
    ],
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "1y",
+    "live": true,
+    "start": "2025-06-30",
+    "through": "2026-06-29"
+   },
    "years": []
   },
   "USD": {
@@ -5645,14 +5836,17 @@
     "eur_return": null,
     "kind": "neutral",
     "lead": "effect",
+    "lens_note": null,
     "market": "0.000000",
     "note": null,
     "other_ccy": null,
     "other_effect": null,
+    "other_lens": null,
     "return_basis": "daily_chain",
     "usd_return": null
    },
    "holdings": [],
+   "holdings_note": "Your holdings are in dollars, so in the dollar view the rate does not move them. Their currency effect shows in the euro view.",
    "investing": null,
    "missing_deposit_days": 0,
    "months": [],
@@ -5687,6 +5881,14 @@
      "value": "0.000000"
     }
    ],
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "1y",
+    "live": true,
+    "start": "2025-06-30",
+    "through": "2026-06-29"
+   },
    "years": []
   },
   "detail": null
@@ -5710,14 +5912,17 @@
     "eur_return": null,
     "kind": "neutral",
     "lead": "effect",
+    "lens_note": null,
     "market": "0.000000",
     "note": null,
     "other_ccy": null,
     "other_effect": null,
+    "other_lens": null,
     "return_basis": "daily_chain",
     "usd_return": null
    },
    "holdings": [],
+   "holdings_note": null,
    "investing": null,
    "missing_deposit_days": 0,
    "months": [],
@@ -5752,6 +5957,14 @@
      "value": "0.000000"
     }
    ],
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "3m",
+    "live": true,
+    "start": "2026-03-30",
+    "through": "2026-06-29"
+   },
    "years": []
   },
   "USD": {
@@ -5772,14 +5985,17 @@
     "eur_return": null,
     "kind": "neutral",
     "lead": "effect",
+    "lens_note": null,
     "market": "0.000000",
     "note": null,
     "other_ccy": null,
     "other_effect": null,
+    "other_lens": null,
     "return_basis": "daily_chain",
     "usd_return": null
    },
    "holdings": [],
+   "holdings_note": "Your holdings are in dollars, so in the dollar view the rate does not move them. Their currency effect shows in the euro view.",
    "investing": null,
    "missing_deposit_days": 0,
    "months": [],
@@ -5814,6 +6030,14 @@
      "value": "0.000000"
     }
    ],
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "3m",
+    "live": true,
+    "start": "2026-03-30",
+    "through": "2026-06-29"
+   },
    "years": []
   },
   "detail": null
@@ -5837,14 +6061,17 @@
     "eur_return": null,
     "kind": "neutral",
     "lead": "effect",
+    "lens_note": null,
     "market": "0.000000",
     "note": null,
     "other_ccy": null,
     "other_effect": null,
+    "other_lens": null,
     "return_basis": "daily_chain",
     "usd_return": null
    },
    "holdings": [],
+   "holdings_note": null,
    "investing": null,
    "missing_deposit_days": 0,
    "months": [],
@@ -5879,6 +6106,14 @@
      "value": "0.000000"
     }
    ],
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "3y",
+    "live": true,
+    "start": "2023-06-30",
+    "through": "2026-06-29"
+   },
    "years": []
   },
   "USD": {
@@ -5899,14 +6134,17 @@
     "eur_return": null,
     "kind": "neutral",
     "lead": "effect",
+    "lens_note": null,
     "market": "0.000000",
     "note": null,
     "other_ccy": null,
     "other_effect": null,
+    "other_lens": null,
     "return_basis": "daily_chain",
     "usd_return": null
    },
    "holdings": [],
+   "holdings_note": "Your holdings are in dollars, so in the dollar view the rate does not move them. Their currency effect shows in the euro view.",
    "investing": null,
    "missing_deposit_days": 0,
    "months": [],
@@ -5941,6 +6179,14 @@
      "value": "0.000000"
     }
    ],
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "3y",
+    "live": true,
+    "start": "2023-06-30",
+    "through": "2026-06-29"
+   },
    "years": []
   },
   "detail": null
@@ -5964,14 +6210,17 @@
     "eur_return": null,
     "kind": "neutral",
     "lead": "effect",
+    "lens_note": null,
     "market": "0.000000",
     "note": null,
     "other_ccy": null,
     "other_effect": null,
+    "other_lens": null,
     "return_basis": "daily_chain",
     "usd_return": null
    },
    "holdings": [],
+   "holdings_note": null,
    "investing": null,
    "missing_deposit_days": 0,
    "months": [],
@@ -6006,6 +6255,14 @@
      "value": "0.000000"
     }
    ],
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "5y",
+    "live": true,
+    "start": "2021-06-30",
+    "through": "2026-06-29"
+   },
    "years": []
   },
   "USD": {
@@ -6026,14 +6283,17 @@
     "eur_return": null,
     "kind": "neutral",
     "lead": "effect",
+    "lens_note": null,
     "market": "0.000000",
     "note": null,
     "other_ccy": null,
     "other_effect": null,
+    "other_lens": null,
     "return_basis": "daily_chain",
     "usd_return": null
    },
    "holdings": [],
+   "holdings_note": "Your holdings are in dollars, so in the dollar view the rate does not move them. Their currency effect shows in the euro view.",
    "investing": null,
    "missing_deposit_days": 0,
    "months": [],
@@ -6068,6 +6328,14 @@
      "value": "0.000000"
     }
    ],
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "5y",
+    "live": true,
+    "start": "2021-06-30",
+    "through": "2026-06-29"
+   },
    "years": []
   },
   "detail": null
@@ -6091,14 +6359,17 @@
     "eur_return": null,
     "kind": "neutral",
     "lead": "effect",
+    "lens_note": null,
     "market": "0.000000",
     "note": null,
     "other_ccy": null,
     "other_effect": null,
+    "other_lens": null,
     "return_basis": "daily_chain",
     "usd_return": null
    },
    "holdings": [],
+   "holdings_note": null,
    "investing": null,
    "missing_deposit_days": 0,
    "months": [],
@@ -6133,6 +6404,14 @@
      "value": "0.000000"
     }
    ],
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "all",
+    "live": true,
+    "start": "2026-06-30",
+    "through": "2026-06-29"
+   },
    "years": []
   },
   "USD": {
@@ -6153,14 +6432,17 @@
     "eur_return": null,
     "kind": "neutral",
     "lead": "effect",
+    "lens_note": null,
     "market": "0.000000",
     "note": null,
     "other_ccy": null,
     "other_effect": null,
+    "other_lens": null,
     "return_basis": "daily_chain",
     "usd_return": null
    },
    "holdings": [],
+   "holdings_note": "Your holdings are in dollars, so in the dollar view the rate does not move them. Their currency effect shows in the euro view.",
    "investing": null,
    "missing_deposit_days": 0,
    "months": [],
@@ -6195,6 +6477,14 @@
      "value": "0.000000"
     }
    ],
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "all",
+    "live": true,
+    "start": "2026-06-30",
+    "through": "2026-06-29"
+   },
    "years": []
   },
   "detail": null
@@ -6218,14 +6508,17 @@
     "eur_return": null,
     "kind": "neutral",
     "lead": "effect",
+    "lens_note": null,
     "market": "0.000000",
     "note": null,
     "other_ccy": null,
     "other_effect": null,
+    "other_lens": null,
     "return_basis": "daily_chain",
     "usd_return": null
    },
    "holdings": [],
+   "holdings_note": null,
    "investing": null,
    "missing_deposit_days": 0,
    "months": [],
@@ -6260,6 +6553,14 @@
      "value": "0.000000"
     }
    ],
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "ytd",
+    "live": true,
+    "start": "2025-12-31",
+    "through": "2026-06-29"
+   },
    "years": []
   },
   "USD": {
@@ -6280,14 +6581,17 @@
     "eur_return": null,
     "kind": "neutral",
     "lead": "effect",
+    "lens_note": null,
     "market": "0.000000",
     "note": null,
     "other_ccy": null,
     "other_effect": null,
+    "other_lens": null,
     "return_basis": "daily_chain",
     "usd_return": null
    },
    "holdings": [],
+   "holdings_note": "Your holdings are in dollars, so in the dollar view the rate does not move them. Their currency effect shows in the euro view.",
    "investing": null,
    "missing_deposit_days": 0,
    "months": [],
@@ -6322,6 +6626,14 @@
      "value": "0.000000"
     }
    ],
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "ytd",
+    "live": true,
+    "start": "2025-12-31",
+    "through": "2026-06-29"
+   },
    "years": []
   },
   "detail": null
@@ -6346,7 +6658,15 @@
   "sessions": [],
   "source": "ECB reference rate",
   "trend": null,
-  "us_market_hours": []
+  "us_market_hours": [],
+  "window": {
+   "context_until": null,
+   "intraday": false,
+   "key": "10y",
+   "live": true,
+   "start": "2016-06-30",
+   "through": "2026-06-29"
+  }
  },
  "GET /api/currency/rate-history?range=1d": {
   "as_of": "2026-06-30T18:15:00+00:00",
@@ -6817,7 +7137,15 @@
     "close": "2026-06-30T18:15:00+00:00",
     "open": "2026-06-30T13:30:00+00:00"
    }
-  ]
+  ],
+  "window": {
+   "context_until": null,
+   "intraday": true,
+   "key": "1d",
+   "live": true,
+   "start": "2026-06-29",
+   "through": "2026-06-29"
+  }
  },
  "GET /api/currency/rate-history?range=1m": {
   "as_of": null,
@@ -6839,7 +7167,15 @@
   "sessions": [],
   "source": "ECB reference rate",
   "trend": null,
-  "us_market_hours": []
+  "us_market_hours": [],
+  "window": {
+   "context_until": null,
+   "intraday": false,
+   "key": "1m",
+   "live": true,
+   "start": "2026-05-30",
+   "through": "2026-06-29"
+  }
  },
  "GET /api/currency/rate-history?range=1w": {
   "as_of": "2026-06-30T18:15:00+00:00",
@@ -9267,7 +9603,15 @@
     "close": "2026-06-30T18:15:00+00:00",
     "open": "2026-06-30T13:30:00+00:00"
    }
-  ]
+  ],
+  "window": {
+   "context_until": null,
+   "intraday": true,
+   "key": "1w",
+   "live": true,
+   "start": "2026-06-23",
+   "through": "2026-06-29"
+  }
  },
  "GET /api/currency/rate-history?range=1y": {
   "as_of": null,
@@ -9289,7 +9633,15 @@
   "sessions": [],
   "source": "ECB reference rate",
   "trend": null,
-  "us_market_hours": []
+  "us_market_hours": [],
+  "window": {
+   "context_until": null,
+   "intraday": false,
+   "key": "1y",
+   "live": true,
+   "start": "2025-06-30",
+   "through": "2026-06-29"
+  }
  },
  "GET /api/currency/rate-history?range=3m": {
   "as_of": null,
@@ -9311,7 +9663,15 @@
   "sessions": [],
   "source": "ECB reference rate",
   "trend": null,
-  "us_market_hours": []
+  "us_market_hours": [],
+  "window": {
+   "context_until": null,
+   "intraday": false,
+   "key": "3m",
+   "live": true,
+   "start": "2026-03-30",
+   "through": "2026-06-29"
+  }
  },
  "GET /api/currency/rate-history?range=5y": {
   "as_of": null,
@@ -9333,7 +9693,15 @@
   "sessions": [],
   "source": "ECB reference rate",
   "trend": null,
-  "us_market_hours": []
+  "us_market_hours": [],
+  "window": {
+   "context_until": null,
+   "intraday": false,
+   "key": "5y",
+   "live": true,
+   "start": "2021-06-30",
+   "through": "2026-06-29"
+  }
  },
  "GET /api/currency/rate-history?range=all": {
   "as_of": null,
@@ -9355,7 +9723,15 @@
   "sessions": [],
   "source": "ECB reference rate",
   "trend": null,
-  "us_market_hours": []
+  "us_market_hours": [],
+  "window": {
+   "context_until": null,
+   "intraday": false,
+   "key": "all",
+   "live": true,
+   "start": "2026-06-30",
+   "through": "2026-06-29"
+  }
  },
  "GET /api/currency/rate-history?range=max": {
   "as_of": null,
@@ -9377,7 +9753,15 @@
   "sessions": [],
   "source": "ECB reference rate",
   "trend": null,
-  "us_market_hours": []
+  "us_market_hours": [],
+  "window": {
+   "context_until": null,
+   "intraday": false,
+   "key": "max",
+   "live": true,
+   "start": "1999-01-04",
+   "through": "2026-06-29"
+  }
  },
  "GET /api/currency/rate-history?range=ytd": {
   "as_of": null,
@@ -9399,7 +9783,15 @@
   "sessions": [],
   "source": "ECB reference rate",
   "trend": null,
-  "us_market_hours": []
+  "us_market_hours": [],
+  "window": {
+   "context_until": null,
+   "intraday": false,
+   "key": "ytd",
+   "live": true,
+   "start": "2025-12-31",
+   "through": "2026-06-29"
+  }
  },
  "GET /api/currency/scenarios/both": {
   "EUR": {
@@ -10945,7 +11337,15 @@
    "step": "0.005",
    "stress": [],
    "value_now": null,
-   "value_now_other": null
+   "value_now_other": null,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "max",
+    "live": true,
+    "start": "1999-01-04",
+    "through": "2026-06-29"
+   }
   },
   "USD": {
    "as_of": "2026-06-30",
@@ -13093,7 +13493,15 @@
    "step": "0.005",
    "stress": [],
    "value_now": null,
-   "value_now_other": null
+   "value_now_other": null,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "max",
+    "live": true,
+    "start": "1999-01-04",
+    "through": "2026-06-29"
+   }
   },
   "detail": null
  },
@@ -14641,7 +15049,15 @@
    "step": "0.005",
    "stress": [],
    "value_now": null,
-   "value_now_other": null
+   "value_now_other": null,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "10y",
+    "live": true,
+    "start": "2016-06-30",
+    "through": "2026-06-29"
+   }
   },
   "USD": {
    "as_of": "2026-06-30",
@@ -16789,7 +17205,15 @@
    "step": "0.005",
    "stress": [],
    "value_now": null,
-   "value_now_other": null
+   "value_now_other": null,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "10y",
+    "live": true,
+    "start": "2016-06-30",
+    "through": "2026-06-29"
+   }
   },
   "detail": null
  },
@@ -18337,7 +18761,15 @@
    "step": "0.005",
    "stress": [],
    "value_now": null,
-   "value_now_other": null
+   "value_now_other": null,
+   "window": {
+    "context_until": null,
+    "intraday": true,
+    "key": "1d",
+    "live": true,
+    "start": "2026-06-29",
+    "through": "2026-06-29"
+   }
   },
   "USD": {
    "as_of": "2026-06-30",
@@ -20485,7 +20917,15 @@
    "step": "0.005",
    "stress": [],
    "value_now": null,
-   "value_now_other": null
+   "value_now_other": null,
+   "window": {
+    "context_until": null,
+    "intraday": true,
+    "key": "1d",
+    "live": true,
+    "start": "2026-06-29",
+    "through": "2026-06-29"
+   }
   },
   "detail": null
  },
@@ -22033,7 +22473,15 @@
    "step": "0.005",
    "stress": [],
    "value_now": null,
-   "value_now_other": null
+   "value_now_other": null,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "1m",
+    "live": true,
+    "start": "2026-05-30",
+    "through": "2026-06-29"
+   }
   },
   "USD": {
    "as_of": "2026-06-30",
@@ -24181,7 +24629,15 @@
    "step": "0.005",
    "stress": [],
    "value_now": null,
-   "value_now_other": null
+   "value_now_other": null,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "1m",
+    "live": true,
+    "start": "2026-05-30",
+    "through": "2026-06-29"
+   }
   },
   "detail": null
  },
@@ -25729,7 +26185,15 @@
    "step": "0.005",
    "stress": [],
    "value_now": null,
-   "value_now_other": null
+   "value_now_other": null,
+   "window": {
+    "context_until": null,
+    "intraday": true,
+    "key": "1w",
+    "live": true,
+    "start": "2026-06-23",
+    "through": "2026-06-29"
+   }
   },
   "USD": {
    "as_of": "2026-06-30",
@@ -27877,7 +28341,15 @@
    "step": "0.005",
    "stress": [],
    "value_now": null,
-   "value_now_other": null
+   "value_now_other": null,
+   "window": {
+    "context_until": null,
+    "intraday": true,
+    "key": "1w",
+    "live": true,
+    "start": "2026-06-23",
+    "through": "2026-06-29"
+   }
   },
   "detail": null
  },
@@ -29425,7 +29897,15 @@
    "step": "0.005",
    "stress": [],
    "value_now": null,
-   "value_now_other": null
+   "value_now_other": null,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "1y",
+    "live": true,
+    "start": "2025-06-30",
+    "through": "2026-06-29"
+   }
   },
   "USD": {
    "as_of": "2026-06-30",
@@ -31573,7 +32053,15 @@
    "step": "0.005",
    "stress": [],
    "value_now": null,
-   "value_now_other": null
+   "value_now_other": null,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "1y",
+    "live": true,
+    "start": "2025-06-30",
+    "through": "2026-06-29"
+   }
   },
   "detail": null
  },
@@ -33121,7 +33609,15 @@
    "step": "0.005",
    "stress": [],
    "value_now": null,
-   "value_now_other": null
+   "value_now_other": null,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "3m",
+    "live": true,
+    "start": "2026-03-30",
+    "through": "2026-06-29"
+   }
   },
   "USD": {
    "as_of": "2026-06-30",
@@ -35269,7 +35765,15 @@
    "step": "0.005",
    "stress": [],
    "value_now": null,
-   "value_now_other": null
+   "value_now_other": null,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "3m",
+    "live": true,
+    "start": "2026-03-30",
+    "through": "2026-06-29"
+   }
   },
   "detail": null
  },
@@ -36817,7 +37321,15 @@
    "step": "0.005",
    "stress": [],
    "value_now": null,
-   "value_now_other": null
+   "value_now_other": null,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "5y",
+    "live": true,
+    "start": "2021-06-30",
+    "through": "2026-06-29"
+   }
   },
   "USD": {
    "as_of": "2026-06-30",
@@ -38965,7 +39477,15 @@
    "step": "0.005",
    "stress": [],
    "value_now": null,
-   "value_now_other": null
+   "value_now_other": null,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "5y",
+    "live": true,
+    "start": "2021-06-30",
+    "through": "2026-06-29"
+   }
   },
   "detail": null
  },
@@ -38989,7 +39509,7 @@
     "pair": "USD/EUR"
    },
    "range": "all",
-   "range_start": "1999-01-04",
+   "range_start": "2026-06-30",
    "rate_now": null,
    "rows": [
     {
@@ -40513,7 +41033,15 @@
    "step": "0.005",
    "stress": [],
    "value_now": null,
-   "value_now_other": null
+   "value_now_other": null,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "all",
+    "live": true,
+    "start": "2026-06-30",
+    "through": "2026-06-29"
+   }
   },
   "USD": {
    "as_of": "2026-06-30",
@@ -40537,7 +41065,7 @@
     "pair": "EUR/USD"
    },
    "range": "all",
-   "range_start": "1999-01-04",
+   "range_start": "2026-06-30",
    "rate_now": null,
    "rows": [
     {
@@ -42661,7 +43189,15 @@
    "step": "0.005",
    "stress": [],
    "value_now": null,
-   "value_now_other": null
+   "value_now_other": null,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "all",
+    "live": true,
+    "start": "2026-06-30",
+    "through": "2026-06-29"
+   }
   },
   "detail": null
  },
@@ -44209,7 +44745,15 @@
    "step": "0.005",
    "stress": [],
    "value_now": null,
-   "value_now_other": null
+   "value_now_other": null,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "max",
+    "live": true,
+    "start": "1999-01-04",
+    "through": "2026-06-29"
+   }
   },
   "USD": {
    "as_of": "2026-06-30",
@@ -46357,7 +46901,15 @@
    "step": "0.005",
    "stress": [],
    "value_now": null,
-   "value_now_other": null
+   "value_now_other": null,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "max",
+    "live": true,
+    "start": "1999-01-04",
+    "through": "2026-06-29"
+   }
   },
   "detail": null
  },
@@ -46381,7 +46933,7 @@
     "pair": "USD/EUR"
    },
    "range": "ytd",
-   "range_start": "2026-01-01",
+   "range_start": "2025-12-31",
    "rate_now": null,
    "rows": [
     {
@@ -47905,7 +48457,15 @@
    "step": "0.005",
    "stress": [],
    "value_now": null,
-   "value_now_other": null
+   "value_now_other": null,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "ytd",
+    "live": true,
+    "start": "2025-12-31",
+    "through": "2026-06-29"
+   }
   },
   "USD": {
    "as_of": "2026-06-30",
@@ -47929,7 +48489,7 @@
     "pair": "EUR/USD"
    },
    "range": "ytd",
-   "range_start": "2026-01-01",
+   "range_start": "2025-12-31",
    "rate_now": null,
    "rows": [
     {
@@ -50053,7 +50613,15 @@
    "step": "0.005",
    "stress": [],
    "value_now": null,
-   "value_now_other": null
+   "value_now_other": null,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "ytd",
+    "live": true,
+    "start": "2025-12-31",
+    "through": "2026-06-29"
+   }
   },
   "detail": null
  },
@@ -50384,7 +50952,7 @@
    "currency": "EUR",
    "range": "10y",
    "rows": [],
-   "start": "2016-06-30",
+   "start": "2016-07-01",
    "summary": {
     "all_in_rate": null,
     "avg_off_pct": null,
@@ -50403,6 +50971,14 @@
     "worse": 0
    },
    "unpriced": 0,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "10y",
+    "live": true,
+    "start": "2016-06-30",
+    "through": "2026-06-29"
+   },
    "worst": null
   },
   "USD": {
@@ -50417,7 +50993,7 @@
    "currency": "USD",
    "range": "10y",
    "rows": [],
-   "start": "2016-06-30",
+   "start": "2016-07-01",
    "summary": {
     "all_in_rate": null,
     "avg_off_pct": null,
@@ -50436,6 +51012,14 @@
     "worse": 0
    },
    "unpriced": 0,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "10y",
+    "live": true,
+    "start": "2016-06-30",
+    "through": "2026-06-29"
+   },
    "worst": null
   },
   "detail": null
@@ -50472,6 +51056,14 @@
     "worse": 0
    },
    "unpriced": 0,
+   "window": {
+    "context_until": null,
+    "intraday": true,
+    "key": "1d",
+    "live": true,
+    "start": "2026-06-29",
+    "through": "2026-06-29"
+   },
    "worst": null
   },
   "USD": {
@@ -50505,6 +51097,14 @@
     "worse": 0
    },
    "unpriced": 0,
+   "window": {
+    "context_until": null,
+    "intraday": true,
+    "key": "1d",
+    "live": true,
+    "start": "2026-06-29",
+    "through": "2026-06-29"
+   },
    "worst": null
   },
   "detail": null
@@ -50522,7 +51122,7 @@
    "currency": "EUR",
    "range": "1m",
    "rows": [],
-   "start": "2026-05-30",
+   "start": "2026-05-31",
    "summary": {
     "all_in_rate": null,
     "avg_off_pct": null,
@@ -50541,6 +51141,14 @@
     "worse": 0
    },
    "unpriced": 0,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "1m",
+    "live": true,
+    "start": "2026-05-30",
+    "through": "2026-06-29"
+   },
    "worst": null
   },
   "USD": {
@@ -50555,7 +51163,7 @@
    "currency": "USD",
    "range": "1m",
    "rows": [],
-   "start": "2026-05-30",
+   "start": "2026-05-31",
    "summary": {
     "all_in_rate": null,
     "avg_off_pct": null,
@@ -50574,6 +51182,14 @@
     "worse": 0
    },
    "unpriced": 0,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "1m",
+    "live": true,
+    "start": "2026-05-30",
+    "through": "2026-06-29"
+   },
    "worst": null
   },
   "detail": null
@@ -50591,7 +51207,7 @@
    "currency": "EUR",
    "range": "1w",
    "rows": [],
-   "start": "2026-06-23",
+   "start": "2026-06-24",
    "summary": {
     "all_in_rate": null,
     "avg_off_pct": null,
@@ -50610,6 +51226,14 @@
     "worse": 0
    },
    "unpriced": 0,
+   "window": {
+    "context_until": null,
+    "intraday": true,
+    "key": "1w",
+    "live": true,
+    "start": "2026-06-23",
+    "through": "2026-06-29"
+   },
    "worst": null
   },
   "USD": {
@@ -50624,7 +51248,7 @@
    "currency": "USD",
    "range": "1w",
    "rows": [],
-   "start": "2026-06-23",
+   "start": "2026-06-24",
    "summary": {
     "all_in_rate": null,
     "avg_off_pct": null,
@@ -50643,6 +51267,14 @@
     "worse": 0
    },
    "unpriced": 0,
+   "window": {
+    "context_until": null,
+    "intraday": true,
+    "key": "1w",
+    "live": true,
+    "start": "2026-06-23",
+    "through": "2026-06-29"
+   },
    "worst": null
   },
   "detail": null
@@ -50660,7 +51292,7 @@
    "currency": "EUR",
    "range": "1y",
    "rows": [],
-   "start": "2025-06-30",
+   "start": "2025-07-01",
    "summary": {
     "all_in_rate": null,
     "avg_off_pct": null,
@@ -50679,6 +51311,14 @@
     "worse": 0
    },
    "unpriced": 0,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "1y",
+    "live": true,
+    "start": "2025-06-30",
+    "through": "2026-06-29"
+   },
    "worst": null
   },
   "USD": {
@@ -50693,7 +51333,7 @@
    "currency": "USD",
    "range": "1y",
    "rows": [],
-   "start": "2025-06-30",
+   "start": "2025-07-01",
    "summary": {
     "all_in_rate": null,
     "avg_off_pct": null,
@@ -50712,6 +51352,14 @@
     "worse": 0
    },
    "unpriced": 0,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "1y",
+    "live": true,
+    "start": "2025-06-30",
+    "through": "2026-06-29"
+   },
    "worst": null
   },
   "detail": null
@@ -50729,7 +51377,7 @@
    "currency": "EUR",
    "range": "3m",
    "rows": [],
-   "start": "2026-03-30",
+   "start": "2026-03-31",
    "summary": {
     "all_in_rate": null,
     "avg_off_pct": null,
@@ -50748,6 +51396,14 @@
     "worse": 0
    },
    "unpriced": 0,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "3m",
+    "live": true,
+    "start": "2026-03-30",
+    "through": "2026-06-29"
+   },
    "worst": null
   },
   "USD": {
@@ -50762,7 +51418,7 @@
    "currency": "USD",
    "range": "3m",
    "rows": [],
-   "start": "2026-03-30",
+   "start": "2026-03-31",
    "summary": {
     "all_in_rate": null,
     "avg_off_pct": null,
@@ -50781,6 +51437,14 @@
     "worse": 0
    },
    "unpriced": 0,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "3m",
+    "live": true,
+    "start": "2026-03-30",
+    "through": "2026-06-29"
+   },
    "worst": null
   },
   "detail": null
@@ -50798,7 +51462,7 @@
    "currency": "EUR",
    "range": "5y",
    "rows": [],
-   "start": "2021-06-30",
+   "start": "2021-07-01",
    "summary": {
     "all_in_rate": null,
     "avg_off_pct": null,
@@ -50817,6 +51481,14 @@
     "worse": 0
    },
    "unpriced": 0,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "5y",
+    "live": true,
+    "start": "2021-06-30",
+    "through": "2026-06-29"
+   },
    "worst": null
   },
   "USD": {
@@ -50831,7 +51503,7 @@
    "currency": "USD",
    "range": "5y",
    "rows": [],
-   "start": "2021-06-30",
+   "start": "2021-07-01",
    "summary": {
     "all_in_rate": null,
     "avg_off_pct": null,
@@ -50850,6 +51522,14 @@
     "worse": 0
    },
    "unpriced": 0,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "5y",
+    "live": true,
+    "start": "2021-06-30",
+    "through": "2026-06-29"
+   },
    "worst": null
   },
   "detail": null
@@ -50867,7 +51547,7 @@
    "currency": "EUR",
    "range": "all",
    "rows": [],
-   "start": "1999-01-04",
+   "start": "2026-06-30",
    "summary": {
     "all_in_rate": null,
     "avg_off_pct": null,
@@ -50886,6 +51566,14 @@
     "worse": 0
    },
    "unpriced": 0,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "all",
+    "live": true,
+    "start": "2026-06-30",
+    "through": "2026-06-29"
+   },
    "worst": null
   },
   "USD": {
@@ -50900,7 +51588,7 @@
    "currency": "USD",
    "range": "all",
    "rows": [],
-   "start": "1999-01-04",
+   "start": "2026-06-30",
    "summary": {
     "all_in_rate": null,
     "avg_off_pct": null,
@@ -50919,6 +51607,14 @@
     "worse": 0
    },
    "unpriced": 0,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "all",
+    "live": true,
+    "start": "2026-06-30",
+    "through": "2026-06-29"
+   },
    "worst": null
   },
   "detail": null
@@ -50955,6 +51651,14 @@
     "worse": 0
    },
    "unpriced": 0,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "max",
+    "live": true,
+    "start": "1999-01-04",
+    "through": "2026-06-29"
+   },
    "worst": null
   },
   "USD": {
@@ -50988,6 +51692,14 @@
     "worse": 0
    },
    "unpriced": 0,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "max",
+    "live": true,
+    "start": "1999-01-04",
+    "through": "2026-06-29"
+   },
    "worst": null
   },
   "detail": null
@@ -51024,6 +51736,14 @@
     "worse": 0
    },
    "unpriced": 0,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "ytd",
+    "live": true,
+    "start": "2025-12-31",
+    "through": "2026-06-29"
+   },
    "worst": null
   },
   "USD": {
@@ -51057,6 +51777,14 @@
     "worse": 0
    },
    "unpriced": 0,
+   "window": {
+    "context_until": null,
+    "intraday": false,
+    "key": "ytd",
+    "live": true,
+    "start": "2025-12-31",
+    "through": "2026-06-29"
+   },
    "worst": null
   },
   "detail": null
