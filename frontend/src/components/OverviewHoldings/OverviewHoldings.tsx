@@ -6,7 +6,7 @@ import { Card } from "../Card";
 import { DaySplitLegend, hasSplit } from "../DaySplit";
 import { InfoTip } from "../InfoTip";
 import { ErrorState } from "../ErrorState";
-import { foldStamps, formatStamp, holdingMarks, PriceStamps, PriceTick, sentenceCase } from "../Freshness";
+import { foldStamps, formatStamp, holdingMarks, PriceStamps, PriceTick, sentenceCase, useScreenPhase } from "../Freshness";
 import { HoldingPills } from "../HoldingIdentity";
 import { Money } from "../Money";
 import { Percent } from "../Percent";
@@ -249,7 +249,8 @@ function Row({
 }) {
   const stale = staleMove !== null;
   const weight = toNum(row.weight_pct);
-  const live = row.market_open && !stale;
+  const day = useScreenPhase();
+  const live = row.market_open && day.live && !stale;
   return (
     <li className={clsx("overview-holdings__row", hasTwinLine(row, watch) && "overview-holdings__row--twin")} data-symbol={row.symbol}>
       <span className="overview-holdings__who">
