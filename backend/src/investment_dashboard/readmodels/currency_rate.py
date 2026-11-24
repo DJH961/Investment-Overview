@@ -31,7 +31,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from investment_dashboard.domain import fx_spread, fx_trend, market_hours
+from investment_dashboard.domain import clock, fx_spread, fx_trend, market_hours
 from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.readmodels import currency_range
 from investment_dashboard.readmodels._serialize import dec
@@ -213,7 +213,7 @@ def build_rate_history(
     """
     if range_key not in RANGES:
         raise ValueError(f"unknown range {range_key!r}")
-    now = now or datetime.now(UTC)
+    now = now or clock.now()
     today = exchange_today(now)
     daily = sorted(
         (d, r) for d, r in fx_service.get_settled_rates(session).items() if r > 0 and d <= today

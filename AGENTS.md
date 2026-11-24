@@ -175,6 +175,9 @@ Adapted from the owner's starter-project convention (see plan §4a):
 
 ## Testing for agents
 
+**Test what you changed:** `uv run --project backend python scripts/test_changed.py [--base main] [--run]`
+prints (and with `--run` runs) the targeted commands below for your diff.
+
 `uv run pytest` runs in parallel by default (`-n auto --dist loadfile` in
 `backend/pyproject.toml`); add `-n0` only to debug one test with `pdb` or `-s`. Run
 the tests for what you touched, from `backend/` (or the npm folder):
@@ -200,6 +203,7 @@ the tests for what you touched, from `backend/` (or the npm folder):
   or backups is marked `@pytest.mark.durable_sqlite` (or listed in
   `_DURABLE_SQLITE_MODULES` in `tests/conftest.py`). The API tests copy a schema
   template, so never rely on `create_all` running per test.
+- Time-of-day logic: use the `market_clock` fixture (`market_clock("open")`; also `preopen`, `preclose`, `closing`, `closed`, `weekend` or an aware datetime), never the real clock. Production code reads "now" through `domain/clock.now()`.
 - No `time.sleep` (use fake clocks or events), no real network (`respx`, patched
   downloaders; live calls only under `@pytest.mark.network`), no OS keychain (tests
   use a failing keyring backend) and no real home, AppData or cloud folders

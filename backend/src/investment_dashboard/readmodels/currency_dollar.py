@@ -17,13 +17,13 @@ no portfolio return is involved or converted. All maths is in
 from __future__ import annotations
 
 from bisect import bisect_right
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
 from sqlalchemy.orm import Session
 
-from investment_dashboard.domain import fx_trend
+from investment_dashboard.domain import clock, fx_trend
 from investment_dashboard.domain.fx_scenarios import book_from_holdings, value_at
 from investment_dashboard.domain.late_data import Holding
 from investment_dashboard.domain.market_hours import exchange_today
@@ -485,7 +485,7 @@ def build_dollar_both(
     now: datetime | None = None,
 ) -> dict[str, dict[str, Any]]:
     """``{"EUR": DollarOut, "USD": DollarOut}`` payloads (plain dicts)."""
-    now = now or datetime.now(UTC)
+    now = now or clock.now()
     today = exchange_today(now)
     daily = sorted(
         (d, r) for d, r in fx_service.get_settled_rates(session).items() if r > 0 and d <= today

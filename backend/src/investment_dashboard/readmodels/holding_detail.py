@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
 
-from investment_dashboard.domain import dividends, kinds, market_hours
+from investment_dashboard.domain import clock, dividends, kinds, market_hours
 from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
 from investment_dashboard.domain.instruments import NAV_ASSET_CLASSES, SYNTHETIC_ASSET_CLASSES
 from investment_dashboard.domain.returns import Cashflow, modified_dietz
@@ -250,7 +250,7 @@ def build_history(
     instrument = instruments_repo.get_instrument(session, instrument_id)
     if instrument is None:
         return None
-    now = now or datetime.now(UTC)
+    now = now or clock.now()
     intraday = range_key in INTRADAY_RANGES
     if intraday and is_nav_fund(session, instrument):
         raise ValidationError("A fund priced once a day (NAV) has no 1D / 1W chart.")
@@ -567,7 +567,7 @@ def build_twin(  # noqa: PLR0912, PLR0915
     if not twin_raw:
         return None
     twin = twin_raw.upper()
-    now = now or datetime.now(UTC)
+    now = now or clock.now()
     today = market_hours.exchange_today(now)
     last_session = intraday_snapshots_service.last_session_date(now)
     intraday = range_key in INTRADAY_RANGES

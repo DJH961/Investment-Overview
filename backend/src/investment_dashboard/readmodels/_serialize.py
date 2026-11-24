@@ -14,8 +14,10 @@ JSON ``null``.
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import date
 from decimal import Decimal
+
+from investment_dashboard.domain import clock
 
 
 def dec(value: Decimal | None) -> str | None:
@@ -34,4 +36,4 @@ def iso(value: date | None) -> str | None:
 
 def now_utc_iso() -> str:
     """Current UTC timestamp as an ISO-8601 string."""
-    return datetime.now(tz=UTC).isoformat()
+    return clock.now().isoformat()

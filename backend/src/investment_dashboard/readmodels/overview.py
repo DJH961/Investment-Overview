@@ -15,7 +15,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from investment_dashboard.domain import market_hours
+from investment_dashboard.domain import clock, market_hours
 from investment_dashboard.domain.currency_effect import compute_currency_effect
 from investment_dashboard.domain.returns import years_between
 from investment_dashboard.readmodels import fx_effect, holdings, live_graphs
@@ -632,7 +632,7 @@ def _prepare(
     now: datetime | None = None,
 ) -> _Shared:
     """The currency-independent half of the overview (metrics, positions, cards)."""
-    now = now or datetime.now(UTC)
+    now = now or clock.now()
     ctx = build_context(session, as_of=as_of)
     metrics = compute_portfolio_metrics(session, as_of=ctx.as_of, now=now)
     # Before the open the latest trading day has no prices yet: show the last
