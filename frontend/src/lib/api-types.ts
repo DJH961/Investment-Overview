@@ -4430,7 +4430,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "tailwind" | "headwind" | "neutral";
+            kind: "tailwind" | "headwind" | "neutral" | "mixed";
             /**
              * Lead
              * @default effect
@@ -6815,6 +6815,7 @@ export interface components {
             better_than_share?: string | null;
             /** Change Pct */
             change_pct?: string | null;
+            dollar_lens?: components["schemas"]["NextEuroDollar"] | null;
             /** Spark */
             spark?: components["schemas"]["NextEuroPoint"][];
             /** Usd Now */
@@ -6823,6 +6824,37 @@ export interface components {
             usd_year_ago?: string | null;
             /** Year Ago Date */
             year_ago_date?: string | null;
+        };
+        /**
+         * NextEuroDollar
+         * @description The EUR view of the card ("your dollars in euros"): the dollars the regular amount
+         *     buys today (a native dollar figure) valued in euros at a single rate each.
+         */
+        NextEuroDollar: {
+            /** Better Than Share */
+            better_than_share?: string | null;
+            /** Change Pct */
+            change_pct?: string | null;
+            /** Eur Now */
+            eur_now: string;
+            /** Eur Year Ago */
+            eur_year_ago?: string | null;
+            /** Spark */
+            spark?: components["schemas"]["NextEuroDollarPoint"][];
+            /** Usd Amount */
+            usd_amount: string;
+            /** Year Ago Date */
+            year_ago_date?: string | null;
+        };
+        /**
+         * NextEuroDollarPoint
+         * @description One weekly point of the book-lens sparkline: what ``usd_amount`` was worth in euros.
+         */
+        NextEuroDollarPoint: {
+            /** Eur */
+            eur: string;
+            /** T */
+            t: string;
         };
         /**
          * NextEuroPoint

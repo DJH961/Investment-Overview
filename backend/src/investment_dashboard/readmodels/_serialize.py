@@ -34,6 +34,23 @@ def iso(value: date | None) -> str | None:
     return value.isoformat()
 
 
+_HALF_UNIT = Decimal("0.5")
+_HALF_POINT_TENTH = Decimal("0.0005")
+
+
+def kind_at_display(value: Decimal, *, fraction: bool = False) -> str:
+    """``tailwind`` / ``headwind`` / ``neutral`` from the value as it prints.
+
+    The Currency page prints money in whole units and a fraction as points to one
+    digit, so a figure that prints as zero (|money| < 0.5, |fraction| < 0.0005) is
+    ``neutral``, never a tailwind or a headwind next to a "$0" or "0.0 pp".
+    """
+    threshold = _HALF_POINT_TENTH if fraction else _HALF_UNIT
+    if abs(value) < threshold:
+        return "neutral"
+    return "tailwind" if value > 0 else "headwind"
+
+
 def now_utc_iso() -> str:
     """Current UTC timestamp as an ISO-8601 string."""
     return clock.now().isoformat()

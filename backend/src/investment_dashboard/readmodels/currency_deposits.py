@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 from investment_dashboard.domain import deposit_effect as de
 from investment_dashboard.domain.kinds import DEPOSIT
 from investment_dashboard.readmodels import fx_attribution_rows as rows_rm
-from investment_dashboard.readmodels._serialize import dec
+from investment_dashboard.readmodels._serialize import dec, kind_at_display
 from investment_dashboard.repositories import transactions_repo
 from investment_dashboard.services import fx_conversion_service, investing_power_service
 from investment_dashboard.services.read_cache import cached_read
@@ -44,8 +44,8 @@ def _m(v: Decimal) -> str:
 
 
 def _kind(v: Decimal) -> str:
-    q = v.quantize(Q_MONEY)
-    return "tailwind" if q > 0 else "headwind" if q < 0 else "neutral"
+    # As printed (whole dollars): a figure that prints as $0 is neutral.
+    return kind_at_display(v)
 
 
 def rate_lookup(session: Session) -> Callable[[date], Decimal | None]:
@@ -297,7 +297,7 @@ def build_investing(
             "usd_at_start": _m(amount * r0),
             "usd_now": _m(amount * r_end),
             "change": _m(amount * (r_end - r0)),
-            "kind": _kind(r_end - r0),
+            "kind": _kind(amount * (r_end - r0)),
         },
         "stats": stats,
     }

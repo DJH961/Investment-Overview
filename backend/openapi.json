@@ -6720,7 +6720,8 @@
             "enum": [
               "tailwind",
               "headwind",
-              "neutral"
+              "neutral",
+              "mixed"
             ],
             "title": "Kind",
             "type": "string"
@@ -13517,6 +13518,16 @@
             ],
             "title": "Change Pct"
           },
+          "dollar_lens": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NextEuroDollar"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "spark": {
             "items": {
               "$ref": "#/components/schemas/NextEuroPoint"
@@ -13558,6 +13569,101 @@
           "usd_now"
         ],
         "title": "NextEuro",
+        "type": "object"
+      },
+      "NextEuroDollar": {
+        "description": "The EUR view of the card (\"your dollars in euros\"): the dollars the regular amount\nbuys today (a native dollar figure) valued in euros at a single rate each.",
+        "properties": {
+          "better_than_share": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Better Than Share"
+          },
+          "change_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Pct"
+          },
+          "eur_now": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Eur Now",
+            "type": "string"
+          },
+          "eur_year_ago": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eur Year Ago"
+          },
+          "spark": {
+            "items": {
+              "$ref": "#/components/schemas/NextEuroDollarPoint"
+            },
+            "title": "Spark",
+            "type": "array"
+          },
+          "usd_amount": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd Amount",
+            "type": "string"
+          },
+          "year_ago_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year Ago Date"
+          }
+        },
+        "required": [
+          "usd_amount",
+          "eur_now"
+        ],
+        "title": "NextEuroDollar",
+        "type": "object"
+      },
+      "NextEuroDollarPoint": {
+        "description": "One weekly point of the book-lens sparkline: what ``usd_amount`` was worth in euros.",
+        "properties": {
+          "eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Eur",
+            "type": "string"
+          },
+          "t": {
+            "title": "T",
+            "type": "string"
+          }
+        },
+        "required": [
+          "t",
+          "eur"
+        ],
+        "title": "NextEuroDollarPoint",
         "type": "object"
       },
       "NextEuroPoint": {

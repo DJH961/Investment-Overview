@@ -199,6 +199,45 @@ def test_scenarios_today_row_is_exactly_today(api_client: TestClient, seeded: No
         assert Decimal(row["value"]) == Decimal(side["value_now"])
 
 
+@pytest.mark.parametrize("amount", ["100", "12.50"])
+def test_next_euro_dollar_lens_values_the_same_dollars_in_euros(
+    api_client: TestClient, seeded: None, amount: str
+) -> None:
+    """EUR view of "your next euro": native dollars valued in euros at one rate each.
+
+    The dollar notional is the card's own ``usd_now`` (never rebuilt from euros); the
+    euro values are that figure over a single rate: today's spot, a year ago's settled
+    rate, and each week of the spark.
+    """
+    from investment_dashboard.services import investing_power_service, read_cache
+
+    with ledger_session_scope() as session:
+        investing_power_service.set_amount_eur(session, Decimal(amount))
+    read_cache.invalidate()
+    regular = Decimal(amount)
+    body = _get(api_client, "/api/currency/dollar/both?range=1y")
+    for ccy in ("EUR", "USD"):
+        nxt = body[ccy]["next_euro"]
+        lens = nxt["dollar_lens"]
+        usd = Decimal(nxt["usd_now"])
+        assert Decimal(lens["usd_amount"]) == usd
+        # Today: the dollars are worth exactly the regular amount again.
+        assert abs(Decimal(lens["eur_now"]) - regular) < Decimal("1e-12")
+        # A year ago: the same dollars over that day's rate (rate = usd_year_ago / amount).
+        rate_then = Decimal(nxt["usd_year_ago"]) / regular
+        assert abs(Decimal(lens["eur_year_ago"]) - usd / rate_then) < Decimal("1e-12")
+        assert abs(
+            Decimal(lens["change_pct"])
+            - (Decimal(lens["eur_now"]) / Decimal(lens["eur_year_ago"]) - 1)
+        ) < Decimal("1e-12")
+        # Weekly spark: the same weeks as the dollar spark, eur = usd_amount / rate.
+        assert [p["t"] for p in lens["spark"]] == [p["t"] for p in nxt["spark"]]
+        for e, u in zip(lens["spark"], nxt["spark"], strict=True):
+            assert abs(Decimal(e["eur"]) * Decimal(u["usd"]) - usd * regular) < Decimal("1e-9")
+        share = Decimal(lens["better_than_share"])
+        assert 0 <= share <= 1
+
+
 @pytest.mark.parametrize("amount", ["100", "250", "12.50"])
 def test_every_buys_figure_uses_the_regular_amount(
     api_client: TestClient, seeded: None, amount: str

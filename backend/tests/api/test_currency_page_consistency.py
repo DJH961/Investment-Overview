@@ -80,6 +80,9 @@ def test_eur_headline_sign_kind_and_bridge_agree(
     if head["lead"] == "effect":
         effect = D(head["effect"])
         expected = "tailwind" if effect > 0 else "headwind" if effect < 0 else "neutral"
+        # Money and gap printing opposite signs read "mixed" (and carry the why).
+        if head["note"] is not None:
+            expected = "mixed"
         assert head["kind"] == expected
     b = eur["bridge"]
     if b is not None:

@@ -5,7 +5,7 @@ import { Money } from "../../../../components/Money";
 import type { CurrencyEffectDto } from "../../../../lib/queries/currencyEffect";
 import { toNum } from "../../../../lib/queries/portfolio";
 
-type Kind = "tailwind" | "headwind" | "neutral";
+type Kind = "tailwind" | "headwind" | "neutral" | "mixed";
 
 /** What the rate did on one side, in that side's own currency and lens (no conversion). */
 function sideEffect(d: CurrencyEffectDto): { amount: number | null; kind: Kind; basis: string } {
@@ -15,63 +15,64 @@ function sideEffect(d: CurrencyEffectDto): { amount: number | null; kind: Kind; 
   return { amount: toNum(d.headline.effect), kind: d.headline.kind, basis: "on what you hold" };
 }
 
+/** True when the two lenses genuinely point opposite ways (one helped, the other cost). */
+export function lensesDisagree(a: Kind, b: Kind): boolean {
+  const sign = (k: Kind) => (k === "tailwind" ? 1 : k === "headwind" ? -1 : 0);
+  return sign(a) * sign(b) < 0;
+}
+
+const VERB = { tailwind: "helped", headwind: "cost" } as const;
+
 /**
- * EUR and USD one by one: the same rows, each side in its own currency and its own lens
- * (euros: your book; dollars: your deposits). Every figure is the server's; nothing here is
- * converted or combined.
+ * EUR and USD one by one: two lens tiles, each in its own currency (euros: your book;
+ * dollars: your deposits). Every figure is the server's; nothing here is converted or
+ * combined. When the two lenses point opposite ways it says so in a Mixed line.
  */
 export function ImpactCompare({ eur, usd }: { eur: CurrencyEffectDto; usd: CurrencyEffectDto }) {
   const e = sideEffect(eur);
   const u = sideEffect(usd);
+  const mixed = lensesDisagree(e.kind, u.kind);
+  const tile = (key: string, title: string, lens: string, currency: "EUR" | "USD", s: ReturnType<typeof sideEffect>) => (
+    <section className="impact-compare__tile" aria-label={`${title}, ${lens}`}>
+      <p className="impact-compare__eyebrow">
+        {title}
+        <span className="impact-compare__lens">{lens}</span>
+      </p>
+      <p className="impact-compare__figure" data-key={key}>
+        <Money amount={s.amount} currency={currency} signed colored digits={0} />
+      </p>
+      <p className="impact-compare__tag">
+        <KindTag kind={s.kind} />
+      </p>
+      <p className="impact-compare__basis">{s.basis}</p>
+    </section>
+  );
   return (
     <Card
       className="impact-compare"
       title={
         <span className="impact-compare__title">
-          Euros and dollars, side by side
+          What the rate did, in each currency
           <InfoTip
-            label="Euros and dollars, side by side"
+            label="What the rate did, in each currency"
             content="The same range in each currency on its own. Euros look at what you hold, revalued each day; dollars look at the euros you sent into your dollar accounts. Neither is converted into the other."
           />
         </span>
       }
     >
-      <table className="impact-compare__table">
-        <thead>
-          <tr>
-            <td />
-            <th scope="col" className="impact-compare__head">
-              In euros
-              <span className="impact-compare__lens">your book</span>
-            </th>
-            <th scope="col" className="impact-compare__head">
-              In dollars
-              <span className="impact-compare__lens">your deposits</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <th scope="row" className="impact-compare__row">
-              What the rate did to you
-            </th>
-            <td className="impact-compare__cell">
-              <span className="impact-compare__figure">
-                <Money amount={e.amount} currency="EUR" signed colored digits={0} />
-              </span>
-              <KindTag kind={e.kind} />
-              <span className="impact-compare__basis">{e.basis}</span>
-            </td>
-            <td className="impact-compare__cell">
-              <span className="impact-compare__figure">
-                <Money amount={u.amount} currency="USD" signed colored digits={0} />
-              </span>
-              <KindTag kind={u.kind} />
-              <span className="impact-compare__basis">{u.basis}</span>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <div className="impact-compare__tiles">
+        {tile("eur", "In euros", "your book", "EUR", e)}
+        {tile("usd", "In dollars", "your deposits", "USD", u)}
+      </div>
+      {mixed ? (
+        <p className="impact-compare__mixed" data-testid="lens-mixed">
+          <KindTag kind="mixed" />
+          <span>
+            The same rate move {VERB[e.kind as "tailwind" | "headwind"]} your euro book and {VERB[u.kind as "tailwind" | "headwind"]} the euros you sent in:
+            a stronger euro shrinks dollar holdings in euros, and makes each euro you send buy more dollars.
+          </span>
+        </p>
+      ) : null}
     </Card>
   );
 }

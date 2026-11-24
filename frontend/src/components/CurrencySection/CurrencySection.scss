@@ -85,7 +85,8 @@
       color: var(--color-neg);
     }
 
-    &--neutral {
+    &--neutral,
+    &--mixed {
       color: var(--color-muted);
     }
   }

@@ -90,6 +90,29 @@ class NextEuroPoint(ApiModel):
     usd: DecStr
 
 
+class NextEuroDollarPoint(ApiModel):
+    """One weekly point of the book-lens sparkline: what ``usd_amount`` was worth in euros."""
+
+    t: str
+    eur: DecStr
+
+
+class NextEuroDollar(ApiModel):
+    """The EUR view of the card ("your dollars in euros"): the dollars the regular amount
+    buys today (a native dollar figure) valued in euros at a single rate each."""
+
+    usd_amount: DecStr
+    eur_now: DecStr
+    eur_year_ago: DecStr | None = None
+    year_ago_date: str | None = None
+    #: ``eur_now / eur_year_ago - 1``: the same dollars' value in euros, then to now.
+    change_pct: DecStr | None = None
+    #: Share of days since your first transaction on which these dollars were worth
+    #: fewer euros than now (0..1).
+    better_than_share: DecStr | None = None
+    spark: list[NextEuroDollarPoint] = Field(default_factory=list)
+
+
 class NextEuro(ApiModel):
     """ "The regular amount buys $X now; $Y a year ago" (a euro notional at one rate each)."""
 
@@ -105,6 +128,8 @@ class NextEuro(ApiModel):
     better_than_share: DecStr | None = None
     #: The last year of ``usd_now``-style values, weekly, oldest first.
     spark: list[NextEuroPoint] = Field(default_factory=list)
+    #: The book lens of the same card (the EUR view reads this one).
+    dollar_lens: NextEuroDollar | None = None
 
 
 class DollarRegime(ApiModel):
