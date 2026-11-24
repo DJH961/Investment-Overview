@@ -692,11 +692,9 @@ def test_year_backfill_leaves_a_fresh_done_twin_alone(session: Session) -> None:
     """A "done" twin whose history is still current must not be re-fetched."""
     iss._year_attempts.clear()
     app_config_service.set_value(session, "intraday_twin_year_closes:TWN", "1")
-    last_done = (
-        iss.last_session_date(DURING) - timedelta(days=1)
-        if iss.is_us_market_open(DURING)
-        else iss.last_session_date(DURING)
-    )
+    # DURING is fixed (Mon 13:30 ET, market open): the last completed session is the
+    # day before.
+    last_done = iss.last_session_date(DURING) - timedelta(days=1)
     symbol_prices_repo.upsert_prices(session, "TWN", {_close_instant(last_done): D("100")})
     session.flush()
     calls: list[int] = []

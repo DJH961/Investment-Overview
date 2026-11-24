@@ -26,8 +26,10 @@ from __future__ import annotations
 import logging
 import threading
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
+
+from investment_dashboard.domain import clock
 
 log = logging.getLogger(__name__)
 
@@ -87,7 +89,7 @@ def _publish(event: dict[str, Any]) -> None:
     try:
         from investment_dashboard.services import live_bus  # noqa: PLC0415
 
-        now = datetime.now(UTC)
+        now = clock.now()
         live_bus.bus.publish(
             {"ts": now.isoformat(), "market_state": live_bus.market_state(now), **event}
         )
@@ -164,7 +166,7 @@ def finish(source: str, *, updated: bool, fx_updated: bool = False) -> None:
             # next quick tick shows the plain cue, not a stale full bar.
             _clear_progress()
         if updated or fx_updated:
-            _state["last_update_at"] = datetime.now(UTC)
+            _state["last_update_at"] = clock.now()
         if updated:
             _state["last_price_update_at"] = _state["last_update_at"]
         _state["seq"] = int(_state["seq"]) + 1
@@ -188,7 +190,7 @@ def mark_fx_updated() -> None:
     last fetched data, without touching the price stamp liveness is judged on.
     """
     with _lock:
-        _state["last_update_at"] = datetime.now(UTC)
+        _state["last_update_at"] = clock.now()
         _state["seq"] = int(_state["seq"]) + 1
 
 

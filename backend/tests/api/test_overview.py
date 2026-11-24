@@ -170,32 +170,31 @@ def test_freshness_caption_and_default_range(
         refresh_status.reset()
 
 
-def test_prices_live_needs_open_market_and_fresh_price() -> None:
-    from datetime import UTC, datetime, timedelta
+def test_prices_live_needs_open_market_and_fresh_price(market_clock) -> None:
+    from datetime import timedelta
 
     from investment_dashboard.readmodels import overview as overview_rm
     from investment_dashboard.services import refresh_status
 
-    now = datetime(2026, 10, 28, 15, 0, tzinfo=UTC)  # Wed 11:00 ET
+    open_at = market_clock("open")
     refresh_status.reset()
     try:
-        assert overview_rm._freshness({}, now=now)["prices_live"] is False
-        refresh_status.finish("t", updated=True)  # stamps last_update_at = real now
+        assert overview_rm._freshness({}, now=open_at)["prices_live"] is False
+        refresh_status.finish("t", updated=True)  # stamps last_update_at = pinned open
         snap = refresh_status.snapshot()
-        assert snap.last_update_at is not None
-        fresh_now = snap.last_update_at + timedelta(minutes=1)
-        if overview_rm.market_hours.is_us_market_open(fresh_now):
-            assert overview_rm._freshness({}, now=fresh_now)["prices_live"] is True
-        stale = snap.last_update_at + timedelta(hours=1)
+        assert snap.last_update_at == open_at
+        fresh_now = open_at + timedelta(minutes=1)
+        assert overview_rm._freshness({}, now=fresh_now)["prices_live"] is True
+        stale = open_at + timedelta(hours=1)
         assert (
             overview_rm.market_hours.is_live_now(
                 market_open=True, last_update_at=snap.last_update_at, now=stale
             )
             is False
         )
-        closed = datetime(2026, 10, 31, 15, 0, tzinfo=UTC)
-        assert overview_rm._freshness({}, now=closed)["prices_live"] is False
-        assert overview_rm._freshness({}, now=closed)["market_state"] == "closed"
+        closed_at = market_clock("closed")
+        assert overview_rm._freshness({}, now=closed_at)["prices_live"] is False
+        assert overview_rm._freshness({}, now=closed_at)["market_state"] == "closed"
     finally:
         refresh_status.reset()
 
