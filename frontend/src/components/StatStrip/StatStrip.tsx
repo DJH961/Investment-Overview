@@ -54,16 +54,13 @@ export function StatStrip({ items, label, className, phoneColumns = 2 }: StatStr
   );
 }
 
-/** The label with its (i) glued to the last word, so a wrap never strands the icon. */
+/** The label with its (i) glued to the last word (a CSS word joiner, so the label
+ *  text stays as it is), so a wrap never strands the icon on a line of its own. */
 function LabelWithTip({ label, tip }: { label: string; tip: string }) {
-  const cut = label.lastIndexOf(" ");
-  const head = cut >= 0 ? label.slice(0, cut + 1) : "";
-  const last = cut >= 0 ? label.slice(cut + 1) : label;
   return (
     <>
-      {head}
-      <span className="stat-strip__label-end">
-        {last}
+      {label}
+      <span className="stat-strip__tip">
         <InfoTip label={label} content={tip} />
       </span>
     </>

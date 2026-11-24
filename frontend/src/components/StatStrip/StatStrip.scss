@@ -60,9 +60,15 @@
     }
   }
 
-  &__label-end {
+  &__tip {
     white-space: nowrap;
+
+    // A word joiner: no line break between the label's last word and its (i).
+    &::before {
+      content: "\2060";
+    }
   }
+
 
   &__value {
     @include m.figure(var(--font-size-xl));
