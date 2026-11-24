@@ -159,7 +159,7 @@ describe("ValueChartCard", () => {
     const closed: Partial<GraphDto> = {
       ...day,
       growth: { pct: "0.0035", mode: "reference" },
-      now_point: { t: "2026-11-02T22:00:00Z", v: "1010", overnight_currency: "-4.5", overnight_pct: "-0.0045" },
+      now_point: { t: "2026-11-02T22:00:00Z", v: "1010", overnight_currency: "-4.5", overnight_pct: "-0.0045", funds_estimated: false },
     };
     const ls = { move_pct: "0.008", overnight_currency: "-4.5", overnight_pct: "-0.0045" } as never;
 

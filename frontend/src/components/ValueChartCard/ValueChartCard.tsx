@@ -203,12 +203,14 @@ export function ValueChartCard({
   const overnightPct = toNum(now?.overnight_pct ?? lastSession?.overnight_pct);
   const moved =
     overnightPct !== null ? Math.abs(overnightPct) >= 0.00005 : overnight !== null && Math.abs(overnight) >= 0.005;
+  // "≈ Now" while a fund's NAV is pending: the dot sits on the twin-estimated book.
+  const nowWord = now?.funds_estimated ? "≈ Now" : "Now";
   const nowLabel = hide
     ? growth !== null
-      ? `Now ${formatPercent(growth, { signed: true })}`
+      ? `${nowWord} ${formatPercent(growth, { signed: true })}`
       : null
     : nowV !== null
-      ? `Now ${tipFormat(nowV)}`
+      ? `${nowWord} ${tipFormat(nowV)}`
       : null;
   const nowMarker = now && moved && nowV !== null ? { v: nowV, lines: nowLabel ? [nowLabel] : [] } : undefined;
   // The split explains the 1D figure only; 1W's header is the week, not a session.

@@ -8259,6 +8259,12 @@
       "GraphNowPoint": {
         "description": "The live \"now\" marker drawn after the close (the session line ends at the close).",
         "properties": {
+          "funds_estimated": {
+            "default": false,
+            "description": "A fund's NAV is pending: the value is on the twin-estimated book",
+            "title": "Funds Estimated",
+            "type": "boolean"
+          },
           "overnight_currency": {
             "anyOf": [
               {

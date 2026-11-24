@@ -4974,6 +4974,12 @@ export interface components {
          */
         GraphNowPoint: {
             /**
+             * Funds Estimated
+             * @description A fund's NAV is pending: the value is on the twin-estimated book
+             * @default false
+             */
+            funds_estimated: boolean;
+            /**
              * Overnight Currency
              * @description Currency-only change since the session close (close prices x close rate -> live rate), in this line's currency; null when it cannot be computed
              */

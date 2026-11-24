@@ -571,18 +571,17 @@ def _tick_now_point(
         split = metrics_service.last_session_split(session, now=now, fx_now=rate)
         if split is None:
             return None
-        return {
-            "EUR": {
-                "v": _dec(split.value_now_eur),
-                "overnight_currency": _dec(split.overnight_eur),
-                "overnight_pct": _dec(split.overnight_pct_eur),
-            },
-            "USD": {
-                "v": _dec(split.value_now_usd),
-                "overnight_currency": _dec(split.overnight_usd),
-                "overnight_pct": _dec(split.overnight_pct_usd),
-            },
-        }
+        out: dict[str, Any] = {}
+        for ccy in ("EUR", "USD"):
+            # On the twin-estimated book while a NAV is pending (7.3.1), as the hero.
+            v, night, pct, estimated = metrics_service.now_point_values(split, ccy)
+            out[ccy] = {
+                "v": _dec(v),
+                "overnight_currency": _dec(night),
+                "overnight_pct": _dec(pct),
+                "funds_estimated": estimated,
+            }
+        return out
     except Exception:
         log.warning("tick now point unavailable", exc_info=True)
         return None

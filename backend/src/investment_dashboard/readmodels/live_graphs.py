@@ -851,7 +851,7 @@ def _growth(
 
 def _now_values(
     session: Session, *, ccy: str, now: datetime
-) -> tuple[Decimal, Decimal | None, Decimal | None] | None:
+) -> tuple[Decimal, Decimal | None, Decimal | None, bool] | None:
     """``(live value, overnight currency, overnight %)`` in ``ccy`` once the market has shut, else ``None``.
 
     ``overnight %`` is the overnight currency over the previous-close baseline value.
@@ -878,11 +878,16 @@ def _now_values(
         )
         overnight = usd if ccy == "USD" else eur
     overnight_pct: Decimal | None = None
-    if overnight is not None:
-        split = metrics_service.last_session_split(session, now=now, fx_now=live_fx)
-        if split is not None:
-            overnight_pct = split.overnight_pct_usd if ccy == "USD" else split.overnight_pct_eur
-    return value, overnight, overnight_pct
+    split = metrics_service.last_session_split(session, now=now, fx_now=live_fx)
+    if split is not None:
+        v, night, pct, estimated = metrics_service.now_point_values(split, ccy)
+        if estimated:
+            # A fund's NAV is pending: the dot sits on the twin-estimated book, where
+            # the hero and the 1D line end (7.3.1).
+            return v, night, pct, True
+        if overnight is not None:
+            overnight_pct = pct
+    return value, overnight, overnight_pct, False
 
 
 def now_point(session: Session, *, ccy: str, now: datetime) -> dict[str, Any] | None:
@@ -890,12 +895,13 @@ def now_point(session: Session, *, ccy: str, now: datetime) -> dict[str, Any] | 
     values = _now_values(session, ccy=ccy, now=now)
     if values is None:
         return None
-    value, overnight, overnight_pct = values
+    value, overnight, overnight_pct, estimated = values
     return {
         "t": _utc_iso(now),
         "v": dec(value),
         "overnight_currency": dec(overnight),
         "overnight_pct": dec(overnight_pct),
+        "funds_estimated": estimated,
     }
 
 
@@ -994,7 +1000,7 @@ def build_graph(
         eur_flow, usd_flow = memo["ref_flows"]
         return usd_flow if c == "USD" else eur_flow  # type: ignore[no-any-return]
 
-    def now_values(c: str) -> tuple[Decimal, Decimal | None, Decimal | None] | None:
+    def now_values(c: str) -> tuple[Decimal, Decimal | None, Decimal | None, bool] | None:
         """Live "now" value after the close (the 1D and 1W lines)."""
         if range_key not in ("1d", "1w") or not intraday:
             return None

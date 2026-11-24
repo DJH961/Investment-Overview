@@ -195,6 +195,26 @@ describe("applyTick golden", () => {
     expect(g.EUR.growth.pct).toBe("0.01");
   });
 
+  it("after the close a tick without a line point still moves the now marker (twin-estimated)", () => {
+    const qc = seed();
+    const g0 = qc.getQueryData<any>(["graphs", "1d", "both"]);
+    const np = (v: string) => ({ t: "2026-11-04T22:00:00Z", v, overnight_currency: "-1", overnight_pct: "-0.001" });
+    qc.setQueryData(["graphs", "1d", "both"], {
+      EUR: { ...g0.EUR, now_point: np("9500") },
+      USD: { ...g0.USD, now_point: np("11875") },
+    });
+    const now = {
+      EUR: { v: "9620", overnight_currency: "-3", overnight_pct: "-0.0003", funds_estimated: true },
+      USD: { v: "12010", overnight_currency: "-4", overnight_pct: "-0.0003", funds_estimated: true },
+    };
+    applyTick(qc, { ...tick, point: null, now_point: now });
+    const g = qc.getQueryData<any>(["graphs", "1d", "both"]);
+    expect(g.EUR.points).toHaveLength(2);
+    expect(g.EUR.now_point.v).toBe("9620");
+    expect(g.EUR.now_point.funds_estimated).toBe(true);
+    expect(g.USD.now_point.v).toBe("12010");
+  });
+
   it("daily ranges: appends today when newer, replaces when same day, ignores older", () => {
     const qc = seed();
     applyTick(qc, tick);

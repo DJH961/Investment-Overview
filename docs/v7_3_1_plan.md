@@ -7,7 +7,7 @@
 | 0 Evidence (consistency matrix) | done: `tests/api/test_currency_page_consistency.py`, `tests/readmodels/test_deposit_carry.py` |
 | 1 Backend money maths | done (carry fix, `currency_range`, 1D live, two lenses); docs §3 pending |
 | 2 Currency page frontend | in progress (lane) |
-| 3 EUR Now dot + twins | to do |
+| 3 EUR Now dot + twins | done (dot on the estimated book, "≈ Now", tick moves it after the close) |
 | 4 Refresh speed + indicator | done (tick ~5.7 s → ~0.5 s on the benchmark); leftover: duplicate FX job |
 | 5 Bells | backend done (grace 60 s, 409 settling_close, `market_session`, re-pull); UI lane in progress |
 | 6 Faster tests + guideline | done (AGENTS.md "Testing for agents") |
