@@ -17,6 +17,63 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [7.3.1] — 2026-11-24
+
+### Fixed
+- Currency › Impact: a deposit of dollars bought earlier no longer shows its rate
+  move and conversion spread as "market". It counts as currency, in two new lines:
+  "While your dollars waited" and "Conversion cost". The euro total and the return
+  gap now point the same way (the EUR return itself is unchanged).
+- Currency page: one meaning per range in every section. 1D is today, live; 1W is the
+  last seven days up to now; ranges ending today include today's live move; **All**
+  is only your investing window (nothing before your first transaction is quoted);
+  **Max** reaches back to 1999, and the part before you started is context only.
+  Every section reports the same window. Changes over a range are measured from the
+  close the range starts from.
+- Currency › Impact 1D: headline, bridge, months and records describe the same day
+  (today). "Effect today" has one source (the Overview's day split), so the strip,
+  Impact and the hero agree.
+- Currency, USD view: the dollar headline (what the rate did to the euros you send)
+  and the euro-vs-dollar gap are two labelled lenses ("Seen from euros"), with one
+  sentence on how they relate; an all-dollar book says why it shows no currency
+  effect in the dollar view.
+- Currency › Exposure: 1D and 1W no longer show a month of rolling changes (the card
+  says the range is too short); All's rolling chart starts at your first transaction.
+- Currency › Scenarios: 1D and 1W are measured from the close before the range,
+  instead of collapsing to one point.
+- Conversions costs ran on the UTC date: between midnight UTC and midnight New York
+  its range was one day ahead of the rest of the page.
+- Graphs: the EUR "Now" dot after the close includes the ETF-twin estimate of a fund
+  whose NAV is pending (labelled "≈ Now"), so it sits where the hero and the 1D line
+  end, and a live tick now moves it (it only moved on a reload before).
+- Market close: the end-of-day job waits a short grace after the bell (60 s,
+  `INV_DASHBOARD_EOD_GRACE_SECONDS`) and pulls the closes once more 5 minutes later
+  (`INV_DASHBOARD_CLOSE_REPULL_MINUTES`). A refresh while the closes are being settled
+  gets a calm "Closing prices are being settled" instead of racing the job. Cached
+  pages are dropped at each bell, so nothing says "Live" after the close.
+
+### Changed
+- The per-minute price refresh is much faster (about 0.5 s instead of about 6 s on
+  the benchmark): each price's market time comes with the price itself, the EUR/USD
+  spot and the ETF twins download alongside the holdings, the graph top-up runs only
+  when a graph has a gap, and the separate FX fetch is skipped right after a good tick.
+- After a tick the server rebuilds only the pages a client actually has open.
+- Automatic updates are quiet: the refresh icon stays still with a soft pulse ring
+  while one runs, then turns once and the "Updated" time flips when it lands. Only a
+  manual refresh spins the whole time. One round of page refetches per tick (was two).
+- Mutual funds waiting for their NAV no longer trigger a wasted 10-day re-download.
+- New `market_session` live event (opening / open / closing / closed) for the bell
+  moments.
+
+### Tests and docs
+- `uv run pytest` runs in parallel by default; API tests copy a schema template and
+  reuse the built app; test databases skip fsync except durability tests; a local
+  Hypothesis `dev` profile caps examples (CI runs full counts and lists the 25 slowest
+  tests); cloud/path tests no longer read the real AppData (fixes the laptop-only
+  failures); frontend and web vitest use the `vmThreads` pool (frontend about 4×
+  faster). AGENTS.md has a "Testing for agents" guide.
+- New consistency matrix for the Currency page (`tests/api/test_currency_page_consistency.py`).
+
 ## [7.3.0] — 2026-11-23
 
 ### Changed
