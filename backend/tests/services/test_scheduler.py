@@ -86,13 +86,13 @@ async def test_after_close_runs_eod_once_then_fx() -> None:
     r = Rig(et(2026, 11, 2, 16, 30))
     sub = r.bus.subscribe()
     assert await r.sched.step() == ["eod"]
-    ev = await asyncio.wait_for(sub.get(), 1)
+    ev = await _next(sub)
     assert ev["type"] == "refresh"
     assert ev["market_state"] == "closed"
     assert await r.sched.step() == []  # eod done, fx + prices stamped by eod
     r.now += timedelta(minutes=1)
     assert await r.sched.step() == ["fx"]  # currencies still trade: every minute
-    assert (await asyncio.wait_for(sub.get(), 1))["type"] == "fx"
+    assert (await _next(sub))["type"] == "fx"
     r.now += timedelta(minutes=9)
     assert await r.sched.step() == ["fx"]  # every close is in: no price pull at all
 
@@ -152,16 +152,16 @@ async def test_unchanged_check_keeps_the_read_cache() -> None:
     sub = r.bus.subscribe()
     await r.sched.step()  # eod
     r.missing = True  # e.g. a NAV not published yet: closed ticks keep checking
-    await asyncio.wait_for(sub.get(), 1)
+    await _next(sub)
     r.now += timedelta(minutes=10)
     await r.sched.step()  # first closed tick: nothing seen before, so a change
-    first = await asyncio.wait_for(sub.get(), 1)
+    first = await _next(sub)
     assert first["type"] == "tick"
     assert "unchanged" not in first
     mid = read_cache.generations()
     r.now += timedelta(minutes=10)
     await r.sched.step()  # same prices and rate again
-    second = await asyncio.wait_for(sub.get(), 1)
+    second = await _next(sub)
     assert second["unchanged"] is True
     assert read_cache.generations() == mid
 
@@ -178,7 +178,7 @@ async def test_holiday_market_state() -> None:
     r = Rig(et(2026, 11, 26, 11))
     sub = r.bus.subscribe()
     await r.sched.step()
-    assert (await asyncio.wait_for(sub.get(), 1))["market_state"] == "holiday"
+    assert (await _next(sub))["market_state"] == "holiday"
 
 
 async def test_new_session_triggers_eod_again() -> None:
@@ -193,11 +193,12 @@ async def test_error_resilience_and_no_event_on_failure() -> None:
     r.fail.add("tick")
     sub = r.bus.subscribe()
     assert await r.sched.step() == ["tick"]
+    _drop_sessions(sub)
     assert sub.queue.empty()
     r.fail.clear()
     r.now += timedelta(seconds=61)
     await r.sched.step()
-    assert (await asyncio.wait_for(sub.get(), 1))["type"] == "tick"
+    assert (await _next(sub))["type"] == "tick"
 
 
 async def test_run_loop_survives_step_errors() -> None:
@@ -402,3 +403,17 @@ def test_eod_job_fetches_the_live_spot_first(monkeypatch: pytest.MonkeyPatch) ->
     scheduler.default_eod_job()
     assert calls[0] == "_refresh_live_fx"
     assert "_refresh_fx" in calls
+
+
+async def _next(sub: Any) -> dict[str, Any]:
+    """The next data event (bell-moment ``market_session`` events are skipped)."""
+    while True:
+        ev: dict[str, Any] = await asyncio.wait_for(sub.get(), 1)
+        if ev.get("type") != "market_session":
+            return ev
+
+
+def _drop_sessions(sub: Any) -> None:
+    kept = [e for e in list(sub.queue._queue) if e.get("type") != "market_session"]
+    sub.queue._queue.clear()
+    sub.queue._queue.extend(kept)

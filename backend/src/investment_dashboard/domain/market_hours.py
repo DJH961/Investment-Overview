@@ -26,6 +26,8 @@ from zoneinfo import ZoneInfo
 #: dashboard. The portfolio is US-equity heavy, so NYSE/Nasdaq hours are the
 #: relevant clock for intraday vs. settled wording.
 _MARKET_TZ = ZoneInfo("America/New_York")
+#: The exchange time zone (public alias).
+MARKET_TZ = _MARKET_TZ
 
 #: Regular cash session bounds (local exchange time). Half days close at
 #: :data:`_EARLY_CLOSE` instead (see :data:`EARLY_CLOSE_DAYS`).

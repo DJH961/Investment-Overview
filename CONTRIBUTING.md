@@ -33,6 +33,11 @@ uv run pre-commit install
    cd web; npm run typecheck; npm run test
    ```
 
+   `uv run pytest` runs on every core (`-n auto`, set in `backend/pyproject.toml`);
+   use `-n0` to debug a single test. Which tests to run for which change, the
+   Hypothesis profiles and the rules for fast tests are in
+   [Testing for agents](AGENTS.md#testing-for-agents).
+
 4. CI runs the same gate on push and PR. Don't leave `main` red.
 
 Layering, the cache-tier rule, the currency rule and test expectations are in

@@ -165,3 +165,16 @@ def test_api_token_cannot_download_backup(
     resp = real_client.get("/api/backup", params={"kind": "db"}, headers=headers)
     assert resp.status_code == 403
     assert resp.json()["detail"]["code"] == "session_required"
+
+
+def test_refresh_while_the_close_settles_is_a_calm_409(api_client: TestClient) -> None:
+    """7.3.1: the bell rang and the end-of-day job runs: a wait, not an error."""
+    from investment_dashboard.services import refresh_status, scheduler
+
+    refresh_status.begin(scheduler.EOD_SOURCE)
+    try:
+        resp = api_client.post("/api/refresh")
+    finally:
+        refresh_status.finish(scheduler.EOD_SOURCE, updated=False)
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["reason"] == "settling_close"

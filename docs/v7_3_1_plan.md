@@ -1,5 +1,18 @@
 # 7.3.1: one honest Currency page, faster quiet refresh, nicer bells, faster tests
 
+## Status
+
+| Phase | State |
+| --- | --- |
+| 0 Evidence (consistency matrix) | done: `tests/api/test_currency_page_consistency.py`, `tests/readmodels/test_deposit_carry.py` |
+| 1 Backend money maths | done (carry fix, `currency_range`, 1D live, two lenses); docs §3 pending |
+| 2 Currency page frontend | in progress (lane) |
+| 3 EUR Now dot + twins | to do |
+| 4 Refresh speed + indicator | done (tick ~5.7 s → ~0.5 s on the benchmark); leftover: duplicate FX job |
+| 5 Bells | backend done (grace 60 s, 409 settling_close, `market_session`, re-pull); UI lane in progress |
+| 6 Faster tests + guideline | done (AGENTS.md "Testing for agents") |
+| Release 7.3.1 | to do |
+
 ## Context
 
 7.3.0 (PR DJH961/Investment-Overview#431, branch `feat/v7.3.0`) is about to merge. The owner says
