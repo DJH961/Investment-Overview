@@ -21,6 +21,8 @@ export interface StatStripProps {
   className?: string;
   /** Phone: three narrow columns instead of two (a strip of exactly three figures). */
   phoneColumns?: 2 | 3;
+  /** Six figures: one row of six on desktop, 3 × 2 on tablets, 2 × 3 on phones. */
+  six?: boolean;
 }
 
 /**
@@ -28,14 +30,22 @@ export interface StatStripProps {
  * page's always-visible tile strip). Wraps to two columns on phones, never clips;
  * tiles that have no figure yet are simply left out by the caller.
  */
-export function StatStrip({ items, label, className, phoneColumns = 2 }: StatStripProps) {
+export function StatStrip({ items, label, className, phoneColumns = 2, six = false }: StatStripProps) {
   // Phones: a short last row stretches across the width instead of leaving an empty
   // cell (5 figures in 3 columns = 3 + 2 wide; 3 in 2 = 2 + 1 full).
   const rest = items.length % phoneColumns;
   const fillFrom = rest === 0 ? items.length : items.length - rest;
   const fill = rest === 1 ? "full" : "half";
   return (
-    <section className={clsx("stat-strip", phoneColumns === 3 && "stat-strip--phone-3", className)} aria-label={label}>
+    <section
+      className={clsx(
+        "stat-strip",
+        phoneColumns === 3 && "stat-strip--phone-3",
+        six && items.length === 6 && "stat-strip--six",
+        className,
+      )}
+      aria-label={label}
+    >
       <dl className="stat-strip__list">
         {items.map((s, i) => (
           <div

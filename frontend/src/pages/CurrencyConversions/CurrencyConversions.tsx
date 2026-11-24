@@ -459,6 +459,7 @@ export function CurrencyConversions() {
         <>
           <StatStrip
             label="Conversions at a glance"
+            six
             items={[
               {
                 key: "pool",

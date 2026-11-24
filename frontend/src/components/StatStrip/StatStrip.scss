@@ -163,4 +163,15 @@
       }
     }
   }
+
+  // Six figures: a fixed grid, so no width ever leaves a lone tile or an empty cell.
+  &--six &__list {
+    @include m.tablet-up {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    @include m.desktop {
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+  }
 }

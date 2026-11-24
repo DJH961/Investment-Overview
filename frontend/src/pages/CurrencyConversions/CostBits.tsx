@@ -30,7 +30,15 @@ export function costStatItems(costs: FxCostsDto | undefined): StatItem[] {
     costs.cheaper_provider && costs.cheaper_than
       ? `${providerLabel(costs.cheaper_provider)} cheaper than ${providerLabel(costs.cheaper_than)}`
       : null;
+  const rate = toNum(s.all_in_rate);
   return [
+    {
+      key: "rate",
+      label: "Your average rate",
+      tip: "Dollars you got per euro on average, with fees counted in, weighted by the euros converted.",
+      value: rate === null ? "–" : formatNumber(rate, 4),
+      note: "$ per €, fees included",
+    },
     {
       key: "cost",
       label: "Total cost",
