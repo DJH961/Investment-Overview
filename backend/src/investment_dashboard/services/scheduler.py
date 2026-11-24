@@ -1124,7 +1124,19 @@ class Scheduler:
                 every = self.jobs.fx_interval()
             except Exception:
                 every = FX_INTERVAL
-            return ["fx"] if st.last_fx is None or now - st.last_fx >= every else []
+            # A good stock tick fetched the live EUR/USD spot as well and sent it
+            # (``fx_eur_usd``): no second fetch within the same FX interval (7.3.1).
+            tick = st.last_runs.get("tick")
+            fresh_tick = (
+                tick is not None
+                and not st.last_failed.get("tick")
+                and now - tick < every
+                and market_hours.is_us_market_open(now)
+            )
+            last = max(st.last_fx, tick) if fresh_tick and st.last_fx and tick else st.last_fx
+            if fresh_tick and last is None:
+                last = tick
+            return ["fx"] if last is None or now - last >= every else []
         # Weekend: the rate is frozen at Friday's close. Fetch only if no good
         # reading exists since then (retry every minute until one lands).
         closed_at = market_hours.last_forex_close(now)

@@ -71,6 +71,17 @@ async def test_market_open_ticks_every_interval() -> None:
     assert r.calls == ["tick", "tick"]
 
 
+async def test_fx_runs_on_its_own_setting_when_ticks_fail() -> None:
+    r = Rig(et(2026, 11, 2, 10))
+    r.sched.jobs.fx_interval = lambda: timedelta(minutes=5)
+    r.fail.add("tick")
+    ran: list[str] = []
+    for _ in range(11):
+        ran += await r.sched.step()
+        r.now += timedelta(minutes=1)
+    assert ran.count("fx") == 2  # at 5 and 10 min, as set
+
+
 async def test_fx_follows_its_own_setting_while_stocks_trade() -> None:
     r = Rig(et(2026, 11, 2, 10))  # Monday, both markets open
     r.sched.jobs.fx_interval = lambda: timedelta(minutes=5)
@@ -79,7 +90,8 @@ async def test_fx_follows_its_own_setting_while_stocks_trade() -> None:
         ran += await r.sched.step()
         r.now += timedelta(minutes=1)
     assert ran.count("tick") == 11  # every live interval (60 s)
-    assert ran.count("fx") == 2  # at 5 and 10 min, as set
+    # Each good tick fetched the live spot too (7.3.1): no second FX fetch meanwhile.
+    assert ran.count("fx") == 0
 
 
 async def test_after_close_runs_eod_once_then_fx() -> None:
