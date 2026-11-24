@@ -127,7 +127,7 @@ export function Holdings() {
   const timeZone = useTimeZone();
   // The price time is said once (page header + top bar); a row says its own only when it differs.
   const day = useScreenPhase();
-  const trading = day.phase !== "closing" && day.phase !== "opening";
+  const trading = day.live;
   const stamps = useMemo(() => foldStamps(data?.holdings ?? [], { timeZone, trading }), [data, timeZone, trading]);
   const priceText = stamps.price;
   const marks = useMemo(() => holdingMarks(data?.holdings ?? [], { timeZone }), [data, timeZone]);

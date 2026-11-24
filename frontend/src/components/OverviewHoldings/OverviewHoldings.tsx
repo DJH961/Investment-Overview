@@ -398,7 +398,7 @@ export function OverviewHoldings({ currency, movers }: OverviewHoldingsProps) {
   // for the header's corner, and it does not quietly mislead after a long weekend,
   // when the previous session is three days back.
   const screen = useScreenPhase();
-  const trading = screen.phase !== "closing" && screen.phase !== "opening";
+  const trading = screen.live;
   const stampOpts = useMemo(() => ({ timeZone, weekdays: true, trading }) as const, [timeZone, trading]);
   const stamps = useMemo(() => foldStamps(q.data?.holdings ?? [], stampOpts), [q.data, stampOpts]);
   const marks = useMemo(() => holdingMarks(q.data?.holdings ?? [], { timeZone }), [q.data, timeZone]);

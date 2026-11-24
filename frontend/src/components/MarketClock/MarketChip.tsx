@@ -70,7 +70,11 @@ export function MarketChip({ freshness, live = false, currency, now }: MarketChi
         </span>
         {/* No room for the span: one word, never a bare dot (state is not colour alone). */}
         <span className="market-chip__word" aria-hidden>
-          {phase === "closing" || phase === "opening" ? text : view.state}
+          {phase === "closing" || phase === "opening"
+            ? text
+            : remaining != null && !marketOpen && bellTime && bellTime.length <= 5
+              ? `Opens ${bellTime}`
+              : view.state}
         </span>
       </button>
       <Sheet open={open} onOpenChange={setOpen} title="Market clock">
