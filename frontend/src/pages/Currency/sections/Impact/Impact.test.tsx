@@ -63,7 +63,11 @@ describe("Impact, USD view: the investing perspective", () => {
     const value = Number(inv.effect);
     expect(screen.getByText(value < 0 ? "Headwind" : "Tailwind")).toBeInTheDocument();
     expect(screen.queryByText(/Euros against dollars/)).not.toBeInTheDocument();
-    expect(screen.getByText(/Euro return [\d.]+ pp (lower|higher) than the dollar return/)).toBeInTheDocument();
+    // The euro lens: a labelled line of its own with its own sign, and one lens sentence.
+    const lens = usd.headline.other_lens!;
+    expect(lens.label).toBe("Seen from euros");
+    expect(screen.getByText("Seen from euros:")).toBeInTheDocument();
+    expect(screen.getByText(usd.headline.lens_note!)).toBeInTheDocument();
   });
 
   it("says so in one line when there were no deposits, with the rate alone", () => {

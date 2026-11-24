@@ -110,6 +110,19 @@ describe("Currency page", () => {
     expect(strip.textContent).toMatch(/pp/);
     const usd = cur.USD.stats!.filter((s) => s.key.startsWith("effect_"));
     expect(usd.every((s) => s.unit === "money" && s.currency === "USD")).toBe(true);
+    // The fraction beside the dollars is the euro lens, labelled as such (never a bare gap).
+    const withLens = usd.filter((s) => s.secondary_unit === "fraction");
+    expect(withLens.length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/^Seen from euros/)).toHaveLength(withLens.length);
+  });
+
+  it("EUR view: the gap beside the euros is a signed one-digit pp, no lens label", () => {
+    mount();
+    const strip = document.querySelector(".stat-strip")!;
+    expect(strip.textContent).not.toMatch(/Seen from euros/);
+    for (const m of strip.textContent!.matchAll(/([+\-−]?\d+[.,]\d+) pp/g)) {
+      expect(m[1]).toMatch(/^([+\-−]\d+[.,]\d|0[.,]0)$/);
+    }
   });
 
   it("leads with the rate chart, then the strip", () => {

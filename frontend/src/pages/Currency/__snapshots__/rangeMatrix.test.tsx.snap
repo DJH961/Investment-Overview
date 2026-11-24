@@ -1,0 +1,145 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Impact > 1d EUR: hero, lens and bridge 1`] = `
+{
+  "bridge": [
+    "start",
+    "deposits",
+    "market",
+    "currency",
+    "end",
+  ],
+  "headline": "-€2,267",
+  "holdingsNote": null,
+  "lens": null,
+  "lensNote": null,
+  "meta": "1D · today, since the 29 Jun 2026 close · live",
+  "parts": [],
+  "tag": "Headwind",
+}
+`;
+
+exports[`Impact > 1d USD: hero, lens and bridge 1`] = `
+{
+  "bridge": [],
+  "headline": "$0",
+  "holdingsNote": "Your holdings are in dollars, so in the dollar view the rate does not move them. Their currency effect shows in the euro view.",
+  "lens": "Seen from euros:-0.2 ppreturn gap, euros against dollars",
+  "lensNote": "One rate move, two lenses: a stronger euro shrinks your dollar book in euros and makes each euro you send buy more dollars.",
+  "meta": "1D · today, since the 29 Jun 2026 close · live",
+  "parts": [],
+  "tag": "Neutral",
+}
+`;
+
+exports[`Impact > 1w EUR: hero, lens and bridge 1`] = `
+{
+  "bridge": [
+    "start",
+    "deposits",
+    "market",
+    "currency",
+    "end",
+  ],
+  "headline": "+€5,368",
+  "holdingsNote": null,
+  "lens": null,
+  "lensNote": null,
+  "meta": "1W · 23 Jun 2026 – 29 Jun 2026 · live",
+  "parts": [],
+  "tag": "Tailwind",
+}
+`;
+
+exports[`Impact > 1w USD: hero, lens and bridge 1`] = `
+{
+  "bridge": [],
+  "headline": "-$5",
+  "holdingsNote": "Your holdings are in dollars, so in the dollar view the rate does not move them. Their currency effect shows in the euro view.",
+  "lens": "Seen from euros:+0.3 ppreturn gap, euros against dollars",
+  "lensNote": "One rate move, two lenses: a stronger euro shrinks your dollar book in euros and makes each euro you send buy more dollars.",
+  "meta": "1W · 23 Jun 2026 – 29 Jun 2026 · live",
+  "parts": [],
+  "tag": "Headwind",
+}
+`;
+
+exports[`Impact > all EUR: hero, lens and bridge 1`] = `
+{
+  "bridge": [
+    "start",
+    "deposits",
+    "market",
+    "currency",
+    "end",
+  ],
+  "headline": "-€89,683",
+  "holdingsNote": null,
+  "lens": null,
+  "lensNote": null,
+  "meta": "All · 1 Mar 2023 – 29 Jun 2026 · live",
+  "parts": [
+    "Revaluation-€89,129",
+    "While your dollars waited+€22",
+    "Conversion cost-€575",
+  ],
+  "tag": "Headwind",
+}
+`;
+
+exports[`Impact > all USD: hero, lens and bridge 1`] = `
+{
+  "bridge": [
+    "start",
+    "currency",
+    "end",
+  ],
+  "headline": "+$14,895",
+  "holdingsNote": "Your holdings are in dollars, so in the dollar view the rate does not move them. Their currency effect shows in the euro view.",
+  "lens": "Seen from euros:-13.2 ppreturn gap, euros against dollars",
+  "lensNote": "One rate move, two lenses: a stronger euro shrinks your dollar book in euros and makes each euro you send buy more dollars.",
+  "meta": "All · 1 Mar 2023 – 29 Jun 2026 · live",
+  "parts": [],
+  "tag": "Tailwind",
+}
+`;
+
+exports[`Impact > max EUR: hero, lens and bridge 1`] = `
+{
+  "bridge": [
+    "start",
+    "deposits",
+    "market",
+    "currency",
+    "end",
+  ],
+  "headline": "-€89,683",
+  "holdingsNote": null,
+  "lens": null,
+  "lensNote": null,
+  "meta": "Max · 4 Jan 1999 – 29 Jun 2026 · live",
+  "parts": [
+    "Revaluation-€89,129",
+    "While your dollars waited+€22",
+    "Conversion cost-€575",
+  ],
+  "tag": "Headwind",
+}
+`;
+
+exports[`Impact > max USD: hero, lens and bridge 1`] = `
+{
+  "bridge": [
+    "start",
+    "currency",
+    "end",
+  ],
+  "headline": "+$14,895",
+  "holdingsNote": "Your holdings are in dollars, so in the dollar view the rate does not move them. Their currency effect shows in the euro view.",
+  "lens": "Seen from euros:-13.2 ppreturn gap, euros against dollars",
+  "lensNote": "One rate move, two lenses: a stronger euro shrinks your dollar book in euros and makes each euro you send buy more dollars.",
+  "meta": "Max · 4 Jan 1999 – 29 Jun 2026 · live",
+  "parts": [],
+  "tag": "Tailwind",
+}
+`;
