@@ -114,7 +114,7 @@ export const sentenceCase = (text: string): string => text.charAt(0).toUpperCase
  * reduced to nothing.
  */
 export const shortStamp = (text: string): string =>
-  sentenceCase(/^today ./.test(text) ? text.replace(/^today /, "") : text.replace(/ \d{1,2}:\d{2}/, ""));
+  sentenceCase(/^today ./.test(text) ? text.replace(/^today /, "") : text.replace(/ \d{1,2}:\d{2}( ?[AP]M)?/i, ""));
 
 /** The closing bell a "close" refers to: US listings, 16:00 New York. */
 export const US_CLOSE = { zone: "America/New_York", hour: 16 } as const;

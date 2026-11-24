@@ -244,7 +244,7 @@ export function OverviewHero({ data, currency, loading, now, aside, onClockBound
               price={trading ? heroPriceTime(data) : { ...heroPriceTime(data), marketOpen: false }}
               updated={fetched}
               compact
-              options={opts}
+              options={{ ...opts, weekdays: true }}
             />
           </span>
         </div>

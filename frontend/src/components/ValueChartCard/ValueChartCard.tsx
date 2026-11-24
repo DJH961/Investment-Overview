@@ -5,7 +5,7 @@ import { Card } from "../Card";
 import { DaySplit } from "../DaySplit";
 import { Chart, type ChartSeries, type ChartXMode } from "../Chart";
 import { ErrorState } from "../ErrorState";
-import { formatStamp } from "../Freshness";
+import { formatStamp, useScreenPhase } from "../Freshness";
 import { IconButton } from "../IconButton";
 import { InfoTip } from "../InfoTip";
 import { Percent } from "../Percent";
@@ -169,6 +169,7 @@ export function ValueChartCard({
   // time axis still runs to the closing bell, so the day reads as a day that has just begun.
   const stubEnd = shown === "1d" && g?.market_open && g.points.length <= 2 ? (g.sessions?.[0]?.close ?? null) : null;
   const stub = stubEnd !== null;
+  const day = useScreenPhase();
   const series = useMemo<ChartSeries[]>(() => {
     const s = built?.series ?? [];
     return stubEnd ? s.map((x) => ({ ...x, points: [...x.points, { t: stubEnd, v: null }] })) : s;
@@ -193,6 +194,8 @@ export function ValueChartCard({
   if (shown === "1d" && g?.session_date) {
     subtitle = g.session_date === todayIn(timeZone) ? "Today" : formatDayLabel(g.session_date);
   }
+  // Until the first prices land the % is still the last session's: say so, in the hero's words.
+  if (stub && day.label === "Last session") subtitle = day.earlier ?? "Last session";
   const growth = g?.growth ? toNum(g.growth.pct) : null;
   const coverage = intraday && g?.coverage && !g.coverage.complete ? g.coverage : null;
   const other = g?.secondary?.ccy ?? (currency === "EUR" ? "USD" : "EUR");

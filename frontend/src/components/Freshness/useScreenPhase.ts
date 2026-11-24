@@ -12,20 +12,22 @@ export interface DayWords {
   caption: string | null;
   /** The holding's live dot may show: the market trades and prices stream (or the phase is unknown). */
   live: boolean;
+  /** "Last session · Mon" while the day figures are an earlier session's (the same words as the hero), else null. */
+  earlier: string | null;
 }
 
 /** Pure: the wording for one phase (`sessionDate` is the headline move's session). */
 export function dayWords(phase: MarketPhase | null, sessionDate: string | null | undefined, timeZone?: string): DayWords {
   const live = phase === null || phase === "live" || phase === "open";
-  if (phase === "closing") return { label: "Today", caption: "Closing · the closing prices are being settled", live };
-  const earlier = lastSessionLabel(sessionDate, { timeZone });
+  const earlier = phase === "closing" ? null : lastSessionLabel(sessionDate, { timeZone });
+  if (phase === "closing") return { label: "Today", caption: "Closing · the closing prices are being settled", live, earlier };
   if (phase === "opening") {
-    return { label: "Last session", caption: "Market open · figures are the last session's until the first prices land", live };
+    return { label: "Last session", caption: "Market open · figures are the last session's until the first prices land", live, earlier };
   }
   if (earlier && phase !== "live" && phase !== "open") {
-    return { label: "Last session", caption: `${earlier.replace("Last session", "Day figures are from the last session")}`, live };
+    return { label: "Last session", caption: `${earlier.replace("Last session", "Day figures are from the last session")}`, live, earlier };
   }
-  return { label: "Today", caption: null, live };
+  return { label: "Today", caption: null, live, earlier };
 }
 
 /**
