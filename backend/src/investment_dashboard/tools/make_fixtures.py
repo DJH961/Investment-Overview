@@ -9,6 +9,7 @@ never drift from the read models) and writes one JSON file per data set:
   and tiny values, a NAV fund with an ETF twin, a EUR-native instrument, a
   stale price, an empty account.
 * ``empty.json`` - a ledger with nothing in it (the empty states).
+* ``nice.json``  - a plain book of about EUR 50k for the owner (``?fixtures=nice``).
 
 The clock is frozen (2026-06-30 18:15 UTC, a Tuesday 14:15 New York, the US cash
 session open, with a seeded intraday series, live quotes and FX samples) and the
@@ -26,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import datetime as _dt
 import json
 import os
@@ -1172,6 +1174,260 @@ def prices_repo_close(session: Any, instrument_id: int, day: _dt.date) -> Decima
     return Decimal(row)
 
 
+# -- the "nice" ledger (a realistic book for showing the owner) ---------------------
+
+#: First day of the nice book's history (about two and a half years before the frozen day).
+NICE_FIRST_DAY = _dt.date(2024, 1, 2)
+#: What the nice book does: EUR converted on the 2nd of each month (Revolut-like spread),
+#: the dollars deposited two sessions later into the money-market fund, and a weekly
+#: Monday buy drawn from that fund.
+NICE_MONTHLY_EUR = D("1300")
+NICE_WEEKLY_BUYS = (("FAKEL", D("175")), ("FAKEG", D("90")), ("FAKEB", D("60")))
+
+
+def _next_session(day: _dt.date) -> _dt.date:
+    while day.weekday() >= 5:
+        day += _dt.timedelta(days=1)
+    return day
+
+
+def seed_nice(session: Any) -> None:
+    """Insert the plain ledger: about EUR 50k, four funds, monthly top-ups, weekly buys."""
+    from investment_dashboard.models import (
+        FxConversion,
+        RecurringPlan,
+        RecurringPlanLeg,
+        Transaction,
+    )
+    from investment_dashboard.repositories import (
+        accounts_repo,
+        fx_repo,
+        instrument_overrides_repo,
+        instruments_repo,
+        intraday_repo,
+        prices_repo,
+    )
+    from investment_dashboard.services import brief_service
+
+    rng = random.Random(SEED + 31)
+    today = FROZEN_NOW.date()
+    days = _weekdays(NICE_FIRST_DAY - _dt.timedelta(days=3), today)
+    fx = _walk(rng, days, D("1.0950"), D("1.1650"), 0.002)
+    fx[today - _dt.timedelta(days=1)] = FX_PREV_CLOSE
+    fx[today] = FX_ECB_TODAY
+    fx_repo.upsert_rates(session, fx)
+
+    specs = {
+        "FAKEL": ("Fake World Stock Fund", "etf", "Global Stocks"),
+        "FAKEB": ("Fake Bond Fund", "etf", "Bonds"),
+        "FAKEG": ("Fake Growth Fund", "etf", "US Stocks"),
+        "FAKENX": ("Fake US Index Fund", "mutual_fund", "US Stocks"),
+        "FAKEMM": ("Fake Money Market Fund", "mutual_fund", "Bonds"),
+    }
+    inst: dict[str, Any] = {}
+    for sym, (name, klass, cat) in specs.items():
+        inst[sym] = instruments_repo.get_or_create(
+            session, symbol=sym, name=name, asset_class=klass
+        )
+        instrument_overrides_repo.set_category(session, inst[sym].id, cat)
+    instrument_overrides_repo.upsert(session, inst["FAKENX"].id, intraday_twin="FAKEL")
+
+    paths = {
+        "FAKEL": (D("61.40"), D("84.35"), 0.008, 0),
+        "FAKEB": (D("48.60"), D("46.90"), 0.003, 0),
+        "FAKEG": (D("38.20"), D("63.80"), 0.012, 0),
+        "FAKENX": (D("212.00"), D("281.40"), 0.007, 1),  # NAV: yesterday's close only
+    }
+    walks: dict[str, dict[_dt.date, Decimal]] = {}
+    for sym, (start, end, vol, lag) in paths.items():
+        last = max(d for d in days if d <= today - _dt.timedelta(days=lag))
+        walks[sym] = _walk(rng, [d for d in days if d <= last], start, end, vol)
+        prices_repo.upsert_closes(session, inst[sym].id, walks[sym])
+    prices_repo.upsert_closes(session, inst["FAKEMM"].id, {d: D("1") for d in days})
+
+    benchmark = instruments_repo.get_or_create(
+        session, symbol="VT", asset_class="etf", native_currency="USD"
+    )
+    bench_rng = random.Random(SEED + 32)
+    drift = 1.0
+    bench: dict[_dt.date, Decimal] = {}
+    for day, close in walks["FAKEL"].items():
+        drift *= 1 + bench_rng.gauss(-0.0002, 0.003)
+        bench[day] = D(str(round(float(close) * 0.62 * drift, 4)))
+    prices_repo.upsert_closes(session, benchmark.id, bench)
+
+    account = accounts_repo.create_account(
+        session,
+        broker="fidelity",
+        account_label="Brokerage",
+        native_currency="USD",
+        account_type="brokerage",
+    )
+
+    def rate_on(day: _dt.date) -> Decimal:
+        while day not in fx:
+            day -= _dt.timedelta(days=1)
+        return fx[day]
+
+    rows: list[Transaction] = []
+
+    def add(day: _dt.date, kind: str, native: str, **extra: object) -> None:
+        extra.setdefault("created_at", _dt.datetime.combine(day, _dt.time(12, 0)))
+        r = rate_on(day)
+        amount = D(native)
+        rows.append(
+            Transaction(
+                account_id=account.id,
+                date=day,
+                kind=kind,
+                source="manual",
+                net_native=amount,
+                net_usd=amount,
+                net_eur=(amount / r).quantize(D("0.01")),
+                fx_rate_to_eur=r,
+                **extra,
+            )
+        )
+
+    def buy(sym: str, day: _dt.date, amount: Decimal) -> None:
+        price = D(str(prices_repo_close(session, inst[sym].id, day)))
+        qty = (amount / price).quantize(D("0.0001"))
+        gross = (qty * price).quantize(D("0.01"))
+        add(
+            day,
+            "buy",
+            f"-{gross}",
+            instrument_id=inst[sym].id,
+            quantity=qty,
+            price_native=price,
+            gross_native=gross,
+        )
+        # The money-market draw, in the shape a broker import gives a real buy.
+        add(
+            day,
+            "sell",
+            f"{gross}",
+            instrument_id=inst["FAKEMM"].id,
+            quantity=-gross,
+            price_native=D("1"),
+        )
+
+    def deposit(day: _dt.date, usd: Decimal) -> None:
+        add(day, "deposit", f"{usd:.2f}")
+        add(
+            day,
+            "buy",
+            f"-{usd:.2f}",
+            instrument_id=inst["FAKEMM"].id,
+            quantity=usd,
+            price_native=D("1"),
+            gross_native=usd,
+        )
+
+    conversions: list[tuple[_dt.date, Decimal, Decimal]] = []
+
+    def convert(day: _dt.date, eur: Decimal) -> Decimal:
+        usd = (eur * rate_on(day) * D("0.9965")).quantize(D("0.01"))  # a Revolut-like spread
+        conversions.append((day, eur, usd))
+        return usd
+
+    # Opening: a first lump, a core of the world, bond and index funds.
+    opening = NICE_FIRST_DAY + _dt.timedelta(days=2)
+    deposit(opening, convert(NICE_FIRST_DAY, D("7500")))
+    buy("FAKEL", opening + _dt.timedelta(days=1), D("3500"))
+    buy("FAKEB", opening + _dt.timedelta(days=1), D("1500"))
+    buy("FAKENX", opening + _dt.timedelta(days=2), D("1500"))
+    month = _dt.date(2024, 2, 1)
+    while month <= today:
+        convert_day = _next_session(month.replace(day=2))
+        deposit_day = _next_session(convert_day + _dt.timedelta(days=2))
+        if deposit_day <= today:
+            deposit(deposit_day, convert(convert_day, NICE_MONTHLY_EUR))
+        month = (month + _dt.timedelta(days=32)).replace(day=1)
+    first_monday = NICE_FIRST_DAY + _dt.timedelta(days=(7 - NICE_FIRST_DAY.weekday()) % 7 + 7)
+    monday = first_monday
+    while monday < today:
+        for sym, amount in NICE_WEEKLY_BUYS:
+            buy(sym, monday, amount)
+        monday += _dt.timedelta(days=7)
+
+    # The plans behind the rhythm (settled rows only, nothing estimated).
+    through = today - _dt.timedelta(days=1)
+    session.add_all(
+        [
+            RecurringPlan(
+                kind="conversion",
+                unit="months",
+                every=1,
+                anchor=2,
+                start_date=_dt.date(2024, 2, 2),
+                generated_through=through,
+                amount=NICE_MONTHLY_EUR,
+                provider="revolut",
+                created_at=_dt.datetime(2024, 1, 20, 9, 0),
+            ),
+            RecurringPlan(
+                kind="deposit",
+                unit="months",
+                every=1,
+                anchor=4,
+                start_date=_dt.date(2024, 2, 4),
+                generated_through=through,
+                account_id=account.id,
+                amount=D("1500"),
+                created_at=_dt.datetime(2024, 1, 20, 9, 5),
+            ),
+        ]
+    )
+    buy_plan = RecurringPlan(
+        kind="buy",
+        unit="weeks",
+        every=1,
+        anchor=0,
+        start_date=first_monday,
+        generated_through=through,
+        account_id=account.id,
+        created_at=_dt.datetime(2024, 1, 20, 9, 10),
+    )
+    session.add(buy_plan)
+    session.flush()
+    session.add_all(
+        RecurringPlanLeg(plan_id=buy_plan.id, instrument_id=inst[sym].id, amount=amount, position=i)
+        for i, (sym, amount) in enumerate(NICE_WEEKLY_BUYS)
+    )
+    for day, eur, usd in conversions:
+        session.add(
+            FxConversion(
+                date=day,
+                eur_sent=eur,
+                usd_received=usd,
+                provider="revolut",
+                created_at=_dt.datetime.combine(day, _dt.time(9, 0)),
+                updated_at=_dt.datetime.combine(day, _dt.time(9, 0)),
+            )
+        )
+    session.add_all(rows)
+    session.flush()
+
+    from investment_dashboard.services import intraday_snapshots_service, positions_service
+
+    previous_seen = _dt.datetime(2026, 6, 25, 21, 0, tzinfo=_dt.UTC)
+    brief_service._store(session, brief_service.FROM_KEY, previous_seen)
+    brief_service._store(session, brief_service.START_KEY, FROZEN_NOW)
+    brief_service._store(session, brief_service.SEEN_KEY, FROZEN_NOW)
+    then = positions_service.compute_positions(session, as_of=previous_seen.date())
+    usd_then = intraday_snapshots_service.market_value_usd(then, FX_LAST_VISIT)
+    assert usd_then is not None
+    intraday_repo.insert_sample(
+        session,
+        (previous_seen - _dt.timedelta(minutes=5)).replace(tzinfo=None),
+        usd_then / FX_LAST_VISIT,
+        fx_eur_usd=FX_LAST_VISIT,
+        market_value_usd=usd_then,
+    )
+    _seed_open_session(session, inst, today)
+
+
 # -- running the app ---------------------------------------------------------------
 
 #: Stands in for the app version; ``frontend/src/fixtures/mock.ts`` replaces it.
@@ -1214,7 +1470,9 @@ def _normalise(value: Any, key: str = "") -> Any:
     return value
 
 
-def _build(dataset: str, workdir: Path) -> dict[str, Any]:
+def _build(
+    dataset: str, workdir: Path, only: tuple[str, ...] | None = None
+) -> dict[str, Any]:
     """Hermetically create the database, call every endpoint, return ``{"GET path": body}``.
 
     No network (every non-loopback connection is refused and recorded), no
@@ -1223,7 +1481,7 @@ def _build(dataset: str, workdir: Path) -> dict[str, Any]:
     """
     NETWORK_ATTEMPTS.clear()
     with _clean_environment(), _pinned_host(), _no_network():
-        out = _build_inner(dataset, workdir)
+        out = _build_inner(dataset, workdir, only)
     if NETWORK_ATTEMPTS:
         raise RuntimeError(
             "make_fixtures tried to reach the network: " + "; ".join(NETWORK_ATTEMPTS)
@@ -1231,7 +1489,9 @@ def _build(dataset: str, workdir: Path) -> dict[str, Any]:
     return out
 
 
-def _build_inner(dataset: str, workdir: Path) -> dict[str, Any]:
+def _build_inner(
+    dataset: str, workdir: Path, only: tuple[str, ...] | None = None
+) -> dict[str, Any]:
     global _WORKDIR  # noqa: PLW0603
     _WORKDIR = str(workdir)
     db = workdir / f"{dataset}.sqlite"
@@ -1274,7 +1534,7 @@ def _build_inner(dataset: str, workdir: Path) -> dict[str, Any]:
     fx_service.eur_usd_forex_bars = _synthetic_forex_bars  # type: ignore[assignment]
     restore_clock = _freeze_clock()
     try:
-        return _collect(app, dataset, ledger_session_scope, TestClient)
+        return _collect(app, dataset, ledger_session_scope, TestClient, only)
     finally:
         restore_clock()
         fx_service.eur_usd_forex_bars = real_bars  # type: ignore[assignment]
@@ -1282,12 +1542,26 @@ def _build_inner(dataset: str, workdir: Path) -> dict[str, Any]:
         get_settings.cache_clear()
 
 
-def _collect(app: Any, dataset: str, ledger_session_scope: Any, test_client: Any) -> dict[str, Any]:
+def _selected(path: str, only: tuple[str, ...] | None) -> bool:
+    """Is this API path (query included) asked for by ``--only``? ``None`` means everything."""
+    return only is None or any(path.startswith(prefix) for prefix in only)
+
+
+def _collect(
+    app: Any,
+    dataset: str,
+    ledger_session_scope: Any,
+    test_client: Any,
+    only: tuple[str, ...] | None = None,
+) -> dict[str, Any]:
     with ledger_session_scope() as session:
         _seed_provider_state(session)
         if dataset == "full":
             seed_full(session)
-    if dataset == "full":
+        elif dataset == "nice":
+            seed_nice(session)
+    if dataset in ("full", "nice"):
+        first_day = NICE_FIRST_DAY if dataset == "nice" else FIRST_DAY
         # A running server warms every daily snapshot at boot (boot.py); do the same,
         # so the equity curve, Periods and Risk read a daily history like the real app
         # instead of the sparse month ends a cold first render would compute.
@@ -1295,18 +1569,20 @@ def _collect(app: Any, dataset: str, ledger_session_scope: Any, test_client: Any
 
         with ledger_session_scope() as session:
             snapshots_service.warm_range(
-                session, FIRST_DAY, FROZEN_NOW.date() - _dt.timedelta(days=1)
+                session, first_day, FROZEN_NOW.date() - _dt.timedelta(days=1)
             )
     out: dict[str, Any] = {}
     with test_client(app) as client:
         endpoints = list(GET_ENDPOINTS)
-        if dataset == "full":
+        if dataset in ("full", "nice"):
             ids = [row["id"] for row in client.get("/api/instruments").json()]
             endpoints += [
                 f"/api/holdings/{i}/history?range={r}" for i in ids[:2] for r in HISTORY_RANGES
             ]
             endpoints += [f"/api/transactions/{i}" for i in (1, 2)]
         for path in endpoints:
+            if not _selected(path, only):
+                continue
             resp = client.get(path)
             if resp.status_code != 200:
                 out[f"GET {path}"] = {
@@ -1316,10 +1592,12 @@ def _collect(app: Any, dataset: str, ledger_session_scope: Any, test_client: Any
                 continue
             out[f"GET {path}"] = _normalise(resp.json())
         # No login in fixture mode: the guard is overridden above, so say so explicitly.
-        out["GET /api/auth/me"] = {"authenticated": True, "passkeys": 1}
-        proj = client.get("/api/calculator/both")
-        if proj.status_code == 200:
-            out["POST /api/calculator"] = _projection(client, proj.json())
+        if _selected("/api/auth/me", only):
+            out["GET /api/auth/me"] = {"authenticated": True, "passkeys": 1}
+        if _selected("/api/calculator", only):
+            proj = client.get("/api/calculator/both")
+            if proj.status_code == 200:
+                out["POST /api/calculator"] = _projection(client, proj.json())
     return out
 
 
@@ -1337,16 +1615,77 @@ def render(data: dict[str, Any]) -> str:
     return json.dumps(data, indent=1, sort_keys=True, ensure_ascii=False) + "\n"
 
 
+# -- skip when nothing changed -------------------------------------------------------
+
+DATASETS = ("full", "empty", "nice")
+FINGERPRINT_FILE = "fingerprints.json"
+
+
+def fingerprint(dataset: str) -> str:
+    """Hash of the data set's name and every backend source file (this generator included).
+
+    Line endings are normalised so a Windows checkout and a Linux one agree.
+    """
+    src = Path(__file__).resolve().parents[2]
+    digest = hashlib.sha256(dataset.encode())
+    for path in sorted(src.rglob("*.py")):
+        digest.update(path.relative_to(src).as_posix().encode())
+        digest.update(path.read_bytes().replace(b"\r\n", b"\n"))
+    return digest.hexdigest()
+
+
+def _read_fingerprints(out_dir: Path) -> dict[str, str]:
+    try:
+        return json.loads((out_dir / FINGERPRINT_FILE).read_text(encoding="utf-8"))  # type: ignore[no-any-return]
+    except (OSError, ValueError):
+        return {}
+
+
+def _write_fingerprint(out_dir: Path, dataset: str, value: str) -> None:
+    known = _read_fingerprints(out_dir)
+    known[dataset] = value
+    (out_dir / FINGERPRINT_FILE).write_text(render(known), encoding="utf-8", newline="\n")
+
+
+def _parse_only(text: str) -> tuple[str, ...]:
+    """``--only`` prefixes; tolerates a missing leading slash and Git Bash's path rewriting.
+
+    Git Bash turns ``/api/x`` into ``C:/Program Files/Git/api/x`` before Python sees it.
+    """
+    out: list[str] = []
+    for raw in text.split(","):
+        item = re.sub(r"^[A-Za-z]:[/\\].*?[/\\]Git(?=[/\\])", "", raw.strip()).replace("\\", "/")
+        if item:
+            out.append(item if item.startswith("/") else "/" + item)
+    return tuple(out)
+
+
+def _merge_only(existing: dict[str, Any], fresh: dict[str, Any], only: tuple[str, ...]) -> Any:
+    """The old file with the asked-for keys replaced by the fresh answers."""
+    kept = {k: v for k, v in existing.items() if not _selected(k.split(" ", 1)[1], only)}
+    return {**kept, **fresh}
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="make_fixtures", description=__doc__.splitlines()[0])
-    parser.add_argument("out_dir", type=Path, help="folder that receives full.json and empty.json")
-    parser.add_argument("--dataset", choices=("full", "empty"), help=argparse.SUPPRESS)
+    parser.add_argument(
+        "out_dir", type=Path, help="folder that receives full.json, empty.json and nice.json"
+    )
+    parser.add_argument("--dataset", choices=DATASETS, help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--only",
+        help="comma-separated API paths or prefixes (/api/currency,/api/holdings): re-record "
+        "just those requests and keep every other key of the existing files",
+    )
+    parser.add_argument(
+        "--force", action="store_true", help="rebuild even when the sources are unchanged"
+    )
     args = parser.parse_args(argv)
     args.out_dir.mkdir(parents=True, exist_ok=True)
     if args.dataset is None:
         # One process per data set: the frozen clock must not leak between them.
         code = 0
-        for dataset in ("full", "empty"):
+        for dataset in DATASETS:
             cmd = [
                 sys.executable,
                 "-m",
@@ -1355,14 +1694,38 @@ def main(argv: list[str] | None = None) -> int:
                 "--dataset",
                 dataset,
             ]
+            if args.only:
+                cmd += ["--only", args.only]
+            if args.force:
+                cmd.append("--force")
             code |= subprocess.run(cmd, check=False).returncode
         return code
+    only = _parse_only(args.only) if args.only else None
+    target = args.out_dir / f"{args.dataset}.json"
+    stamp = fingerprint(args.dataset)
+    if (
+        only is None
+        and not args.force
+        and target.exists()
+        and _read_fingerprints(args.out_dir).get(args.dataset) == stamp
+    ):
+        print(f"{args.dataset}.json: fixtures up to date")
+        return 0
+    if only is not None and not target.exists():
+        print(f"{args.dataset}.json: --only needs the existing file; run without it first")
+        return 1
     with tempfile.TemporaryDirectory(prefix="make-fixtures-", ignore_cleanup_errors=True) as tmp:
-        data = _build(args.dataset, Path(tmp))
+        data = _build(args.dataset, Path(tmp), only)
     bad = sorted(k for k, v in data.items() if isinstance(v, dict) and "__status" in v)
     for key in bad:
         print(f"  {args.dataset}: {key} -> HTTP {data[key]['__status']}", file=sys.stderr)
-    (args.out_dir / f"{args.dataset}.json").write_text(render(data), encoding="utf-8", newline="\n")
+    if only is not None:
+        existing = json.loads(target.read_text(encoding="utf-8"))
+        data = _merge_only(existing, data, only)
+    target.write_text(render(data), encoding="utf-8", newline="\n")
+    if only is None and not bad:
+        # A partial (--only) run never stamps: the rest of the file may be stale.
+        _write_fingerprint(args.out_dir, args.dataset, stamp)
     print(f"{args.dataset}.json: {len(data)} endpoints")
     return 1 if bad else 0
 

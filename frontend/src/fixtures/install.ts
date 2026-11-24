@@ -46,11 +46,12 @@ type BriefMode = "sessions" | "session" | "fx" | "off";
 
 declare const __APP_VERSION__: string;
 
-function pickDataset(): "full" | "empty" {
+function pickDataset(): "full" | "empty" | "nice" {
   try {
     const asked = new URLSearchParams(window.location.search).get("fixtures");
-    if (asked === "empty" || asked === "full") window.sessionStorage.setItem(STORAGE_KEY, asked);
-    return window.sessionStorage.getItem(STORAGE_KEY) === "empty" ? "empty" : "full";
+    if (asked === "empty" || asked === "full" || asked === "nice") window.sessionStorage.setItem(STORAGE_KEY, asked);
+    const kept = window.sessionStorage.getItem(STORAGE_KEY);
+    return kept === "empty" || kept === "nice" ? kept : "full";
   } catch {
     return "full";
   }
@@ -381,7 +382,11 @@ class QuietEventSource extends EventTarget {
 export async function installFixtures(): Promise<void> {
   const dataset = pickDataset();
   const data = (
-    dataset === "empty" ? await import("./data/empty.json") : await import("./data/full.json")
+    dataset === "empty"
+      ? await import("./data/empty.json")
+      : dataset === "nice"
+        ? await import("./data/nice.json")
+        : await import("./data/full.json")
   ).default as Fixtures;
   // Whole weeks only, so weekdays survive the shift (a recorded Tuesday stays a Tuesday,
   // sessions never land on a weekend). The data can be up to six days old; screenshot
@@ -448,15 +453,15 @@ export async function installFixtures(): Promise<void> {
       const fx = fixtureBook(data);
       return json(rateHistoryFixture(url.searchParams.get("range") ?? "1y", fx));
     }
-    if (url.pathname === "/api/currency/effect/both" && !recordedPath(url.pathname) && dataset === "full") {
+    if (url.pathname === "/api/currency/effect/both" && !recordedPath(url.pathname) && dataset !== "empty") {
       const fx = fixtureBook(data);
       return json(currencyEffectFixture(url.searchParams.get("range") ?? "ytd", { now: fx.now, scale: fx.scale, data }));
     }
-    if (url.pathname === "/api/currency/dollar/both" && !recordedPath(url.pathname) && dataset === "full") {
+    if (url.pathname === "/api/currency/dollar/both" && !recordedPath(url.pathname) && dataset !== "empty") {
       const fx = fixtureBook(data);
       return json(currencyDollarFixture(url.searchParams.get("range") ?? "1y", fx.now));
     }
-    if (url.pathname === "/api/currency/scenarios/both" && !recordedPath(url.pathname) && dataset === "full") {
+    if (url.pathname === "/api/currency/scenarios/both" && !recordedPath(url.pathname) && dataset !== "empty") {
       const fx = fixtureBook(data);
       return json(currencyScenariosFixture(fx.now));
     }
@@ -468,7 +473,7 @@ export async function installFixtures(): Promise<void> {
     }
     const recorded = findBody(data, "GET", url.pathname + url.search);
     const extended = recorded === undefined ? undefined : v71Extend(url.pathname, recorded, data);
-    const body = url.pathname === "/api/currency/both" && dataset === "full" ? withStripTiles(extended, data) : extended;
+    const body = url.pathname === "/api/currency/both" && dataset !== "empty" ? withStripTiles(extended, data) : extended;
     if (body === undefined || (typeof body === "object" && body !== null && "__status" in body)) {
       return json({ detail: "No fixture for this endpoint." }, 404);
     }
@@ -478,7 +483,7 @@ export async function installFixtures(): Promise<void> {
   function respond(body: unknown, path = ""): Response {
     let text = shiftDates(JSON.stringify(body), days);
     // Patched after the shift: the moment's own instants are final.
-    if (moment && dataset === "full") text = JSON.stringify(patchForMoment(path, JSON.parse(text), moment, data));
+    if (moment && dataset !== "empty") text = JSON.stringify(patchForMoment(path, JSON.parse(text), moment, data));
     text = text.split(VERSION_SENTINEL).join(version);
     return new Response(text, { status: 200, headers: { "Content-Type": "application/json" } });
   }

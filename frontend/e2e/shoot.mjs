@@ -15,6 +15,8 @@
 //   --base http://localhost:5273
 //   --serve                 start (and always stop) our own fixture dev server on a free port;
 //                           then no server needs to be running and --base is ignored
+//   --nice                  the realistic EUR 50k data set (`?fixtures=nice`) for shots the owner sees;
+//                           everything else uses the default stress set
 //   --pair                  also write <route>-pair-<width>-<theme>.png: EUR left, USD right,
 //                           labeled (needs both currencies, not with --el)
 //   --tiles                 also cut full-page shots taller than 2.5 screens into screen-sized
@@ -63,7 +65,8 @@ mkdirSync(outDir, { recursive: true });
 /** The fixture server's view switches (src/fixtures/install.ts): currency, theme, sidebar. */
 const viewUrl = (route, ccy, theme) =>
   `${base}${route}${route.includes("?") ? "&" : "?"}ccy=${ccy}&theme=${theme}&rail=${args.includes("--sidebar") ? 0 : 1}` +
-  (flag("at", null) ? `&at=${encodeURIComponent(flag("at", null))}` : "");
+  (flag("at", null) ? `&at=${encodeURIComponent(flag("at", null))}` : "") +
+  (args.includes("--nice") ? "&fixtures=nice" : "");
 
 /** Fails loudly when the page does not show the asked currency. */
 async function checkCcy(page, want) {

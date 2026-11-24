@@ -178,9 +178,16 @@ Adapted from the owner's starter-project convention (see plan §4a):
 **Fixture data (owner rule):** the fixtures (`frontend/src/fixtures/data/*.json`) are a
 recording of the backend's answers, made by `npm run gen:fixtures` (slow: it rebuilds all of
 them). Regenerate only when a change alters what an endpoint returns, and then only the
-endpoints you touched (`--only /api/<path>[,/api/<path>…]`, any API path or prefix, once the
-option lands). Lanes never run the full regeneration. The main session runs it once, after
-merging, just before the release PR; CI's drift guard checks it.
+endpoints you touched:
+
+    npm run gen:fixtures -- --only /api/currency,/api/holdings   # any API paths or prefixes
+    npm run gen:fixtures -- --force                              # full rebuild, ignores the stamp
+
+`--only` re-records just the matching requests in every data set (`full`, `empty`, `nice`) and
+keeps every other key byte-identical. A plain run first compares a hash of `backend/src/**/*.py`
+with `fingerprints.json` next to the data and prints "fixtures up to date" when nothing changed;
+`--only` never updates that stamp. CI's drift guard runs with `--force`. Lanes never run the full
+regeneration. The main session runs it once, after merging, just before the release PR.
 
 **Test what you changed, nothing more (owner rule):** `uv run --project backend python
 scripts/test_changed.py [--base main] [--run]` prints (and with `--run` runs) the
@@ -265,6 +272,7 @@ Without `--serve`, start the fixture dev server yourself on port 5273 (`preview_
 | Want | Command |
 | --- | --- |
 | Pages, both currencies, 390 + 1280 | `npm run shots -- ../.claude/ui-shots/<topic> currency,overview` |
+| Shots for the owner | add `--nice` (realistic book of about €50k, plain fund names; same as `?fixtures=nice` in any browser). Everything else (tests, overflow, agent checks) uses the default stress set |
 | Also dark mode | add `--theme both` |
 | Phone layouts | add `--width 360,390,1280` |
 | One card or strip only (crops) | add `--el ".stat-strip"` (any CSS selector; one file per match) |
