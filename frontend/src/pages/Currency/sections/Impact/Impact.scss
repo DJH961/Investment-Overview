@@ -5,6 +5,14 @@
   gap: var(--page-gap);
   min-width: 0;
 
+  // The section's window line, with its tips spaced from the dates.
+  &__meta {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1);
+  }
+
   &__pair {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -108,7 +116,71 @@
 
   &__months { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); min-width: 0; }
 
-  &__rolling { min-width: 0; }
+  &__rolling {
+    min-width: 0;
+
+    // Max: the stretch before you started is context, drawn dashed as well as muted.
+    .chart__series--muted .chart__line { stroke-dasharray: 4 4; }
+  }
+
+  // The currency step in parts (revaluation, waiting, conversion cost), under the bridge.
+  &__parts {
+    display: grid;
+    gap: var(--space-1);
+    margin: var(--space-3) 0 0;
+    padding: var(--space-2) 0 0 var(--space-3);
+    border-top: 1px solid var(--color-border);
+  }
+
+  &__part {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  &__part-label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  &__part-value {
+    margin: 0;
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+  }
+
+  // The other lens (USD view: "Seen from euros"), muted and labelled, its own sign.
+  &__lens {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-2);
+    margin: var(--space-1) 0 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  &__lens-label { font-weight: var(--font-weight-medium); }
+
+  &__lens-value {
+    font-variant-numeric: tabular-nums;
+
+    &--pos { color: var(--color-pos); }
+    &--neg { color: var(--color-neg); }
+  }
+
+  &__lens-note {
+    margin: var(--space-1) 0 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-base);
+  }
 
   &__run {
     display: flex;

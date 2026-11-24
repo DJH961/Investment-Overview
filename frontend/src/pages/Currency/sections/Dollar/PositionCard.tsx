@@ -111,7 +111,7 @@ export function PositionCard({ data }: { data: DollarDto }) {
           visual={<SinceStarted data={data} lean={holdingsLean} />}
           figs={[
             { key: "bought", label: "Bought at", value: rateText(bought, field), note: "your average" },
-            { key: "now", label: "Now", value: rateText(nowRate, field), note: `${pct(today, 2)} today` },
+            { key: "now", label: "Now", value: rateText(nowRate, field), note: `${pct(today)} today` },
             {
               key: "since",
               label: "Since buying",
@@ -152,7 +152,7 @@ function BuyingPower({ data }: { data: DollarDto }) {
       value: rateText(q(pos.avg_rate), field),
       note: "euros into dollars",
     },
-    { key: "now", label: "Now", value: rateText(q(pos.rate_now), field), note: `${pct(today, 2)} today` },
+    { key: "now", label: "Now", value: rateText(q(pos.rate_now), field), note: `${pct(today)} today` },
     {
       key: "range",
       label: "Over this range",

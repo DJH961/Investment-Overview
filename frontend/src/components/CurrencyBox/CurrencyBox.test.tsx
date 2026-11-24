@@ -145,7 +145,7 @@ describe("CurrencyBox", () => {
       );
       const panel = screen.getByRole("region", { name: "Investing power since yesterday" });
       // $1.25 on the $538.75 the €500 bought at the previous rate = +0.23 %.
-      expect(within(panel).getAllByText("+0.23%").length).toBeGreaterThan(0);
+      expect(within(panel).getAllByText("+0.2%").length).toBeGreaterThan(0);
       expect(within(panel).queryByText("+0.00%")).toBeNull();
     } finally {
       localStorage.removeItem("iv.privacy.hideAmounts");

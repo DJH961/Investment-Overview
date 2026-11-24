@@ -3,7 +3,7 @@ import { MemoryRouter } from "react-router";
 import { describe, expect, it, vi } from "vitest";
 import full from "../../../../fixtures/data/full.json";
 import { HideAmountsProvider } from "../../../../lib/hideAmounts";
-import { effectRangeFor, type CurrencyEffectDto } from "../../../../lib/queries/currencyEffect";
+import { type CurrencyEffectDto } from "../../../../lib/queries/currencyEffect";
 import { Impact } from "./Impact";
 import { ImpactHero } from "./ImpactPanels";
 
@@ -63,7 +63,11 @@ describe("Impact, USD view: the investing perspective", () => {
     const value = Number(inv.effect);
     expect(screen.getByText(value < 0 ? "Headwind" : "Tailwind")).toBeInTheDocument();
     expect(screen.queryByText(/Euros against dollars/)).not.toBeInTheDocument();
-    expect(screen.getByText(/Euro return [\d.]+ pp (lower|higher) than the dollar return/)).toBeInTheDocument();
+    // The euro lens: a labelled line of its own with its own sign, and one lens sentence.
+    const lens = usd.headline.other_lens!;
+    expect(lens.label).toBe("Seen from euros");
+    expect(screen.getByText("Seen from euros:")).toBeInTheDocument();
+    expect(screen.getByText(usd.headline.lens_note!)).toBeInTheDocument();
   });
 
   it("says so in one line when there were no deposits, with the rate alone", () => {
@@ -96,14 +100,4 @@ describe("Impact, both views have the same cards", () => {
       expect(seen.USD.filter(Boolean).length).toBeGreaterThanOrEqual(5);
     });
   }
-});
-
-describe("effectRangeFor", () => {
-  it("keeps 5Y and 10Y, maps Max and All to all", () => {
-    expect(effectRangeFor("5y")).toBe("5y");
-    expect(effectRangeFor("10y")).toBe("10y");
-    expect(effectRangeFor("max")).toBe("all");
-    expect(effectRangeFor("all")).toBe("all");
-    expect(effectRangeFor("1y")).toBe("1y");
-  });
 });

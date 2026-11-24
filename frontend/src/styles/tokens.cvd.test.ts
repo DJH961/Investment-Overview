@@ -72,6 +72,8 @@ export const CVD_PAIRS: { a: string; b: string; why: string }[] = [
   // (benchmark, chart-3) and the dashed "your average" reference (muted).
   { a: "--chart-1", b: "--chart-3", why: "rate chart: rate line vs 200-day average" },
   { a: "--chart-1", b: "--color-muted", why: "rate chart: rate line vs your average rate" },
+  { a: "--chart-1", b: "--color-muted", why: "Currency Max: your line vs the dashed before-you-started context" },
+  { a: "--color-pos", b: "--color-neg", why: "Currency USD view: headline vs the 'Seen from euros' lens of the other sign" },
   { a: "--chart-3", b: "--color-muted", why: "rate chart: 200-day average vs your average rate" },
   // Conversion markers on the rate chart: a neutral ink ring (kind = null), ▲ pos above /
   // ▼ neg below the reference (7.3), each outlined in ink, over the three lines above.

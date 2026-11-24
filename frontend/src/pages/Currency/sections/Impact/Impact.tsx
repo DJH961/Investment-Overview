@@ -6,8 +6,9 @@ import { Money } from "../../../../components/Money";
 import type { StatItem } from "../../../../components/StatStrip";
 import { formatDate, formatNumber, formatPercent } from "../../../../lib/format";
 import { RATE_RANGE_LABELS } from "../../../../lib/queries/currencyRate";
-import { effectRangeFor, useCurrencyEffect, type CurrencyEffectDto, type EffectStatDto } from "../../../../lib/queries/currencyEffect";
+import { useCurrencyEffect, type CurrencyEffectDto, type EffectStatDto } from "../../../../lib/queries/currencyEffect";
 import { toNum } from "../../../../lib/queries/portfolio";
+import { windowText } from "../../numbers";
 import type { CurrencyRange } from "../../range";
 import type { CurrencySectionComponentProps } from "../../sections";
 import { BridgeCard, foreignOf, HoldingsCard, ImpactHero, isGapLead, MonthsCard, RecordsCard, RollingCard, SessionCard } from "./ImpactPanels";
@@ -89,25 +90,33 @@ export function stripItems(stats: EffectStatDto[], ccy: string, investing = fals
     });
 }
 
+/**
+ * Short ranges keep only the figures that mean something inside them: no month counts
+ * on 1D / 1W, and on 1D no "typical" or "largest" day (today is the only day).
+ */
+export function shortFigures(items: StatItem[], range: string): StatItem[] {
+  if (range !== "1d" && range !== "1w") return items;
+  const drop = new Set(["tailwind_share", "typical_month", ...(range === "1d" ? ["typical_day", "largest_day"] : [])]);
+  return items.filter((i) => !drop.has(i.key));
+}
+
+/** The window the server resolved (the same dates in every section), else the payload's own. */
 function rangeMeta(range: CurrencyRange, data: CurrencyEffectDto | undefined): string {
+  const fromServer = windowText(data?.window, range);
+  if (fromServer) return fromServer;
   const label = RATE_RANGE_LABELS[range];
   if (!data?.start_on || !data.end_on) return label;
-  const all = effectRangeFor(range) === "all";
-  // 5Y / 10Y / Max are not split further than your own time: say which window this is.
-  return all
-    ? `${label}: all your time, since ${formatDate(data.start_on)}`
-    : `${label} · ${formatDate(data.start_on)} – ${formatDate(data.end_on)}`;
+  return `${label} · ${formatDate(data.start_on)} – ${formatDate(data.end_on)}`;
 }
 
 /** Impact: what the exchange rate did to you over the page range. */
 export function Impact({ id, label, currency, range }: CurrencySectionComponentProps) {
-  const effectRange = effectRangeFor(range);
-  const q = useCurrencyEffect(effectRange, currency);
+  const q = useCurrencyEffect(range, currency);
   const { refetch: qRefetch } = q;
   const refetch = useCallback(() => void qRefetch(), [qRefetch]);
   const data = q.data;
-  const shownRange = data?.range ?? effectRange;
-  const intraday = data?.granularity === "intraday";
+  const shownRange = data?.range ?? range;
+  const intraday = data?.window?.intraday ?? data?.granularity === "intraday";
   // The USD view reads the investing side: the same cards, on the euros sent in.
   const inv = data?.investing ?? null;
   const view = data ? investingView(data) : undefined;
@@ -143,15 +152,16 @@ export function Impact({ id, label, currency, range }: CurrencySectionComponentP
     >
       {data && view ? (
         <div className="impact">
-          <ImpactHero data={data} range={shownRange} figures={stripItems((inv ? inv.stats : data.stats) ?? [], data.ccy, !!inv)} />
+          <ImpactHero data={data} range={shownRange} figures={shortFigures(stripItems((inv ? inv.stats : data.stats) ?? [], data.ccy, !!inv), range)} />
           <div className="impact__pair">
             {intraday ? <SessionCard data={data} /> : null}
             {inv ? <InvestingBridgeCard inv={inv} /> : <BridgeCard data={data} />}
             {!intraday ? <RecordsCard data={view} dayLabel={inv ? "Deposit" : "Day"} /> : null}
           </div>
-          <MonthsCard data={view} />
-          <RollingCard data={view} range={shownRange} />
-          {inv ? <DepositsCard inv={inv} range={range} /> : <HoldingsCard data={data} range={range} />}
+          {/* 1D / 1W sit inside one month: months, years and a rolling year say nothing there. */}
+          {!intraday ? <MonthsCard data={view} /> : null}
+          {!intraday ? <RollingCard data={view} range={shownRange} /> : null}
+          {inv ? <DepositsCard inv={inv} range={range} holdingsNote={data.holdings_note} /> : <HoldingsCard data={data} range={range} />}
         </div>
       ) : null}
     </CurrencySection>

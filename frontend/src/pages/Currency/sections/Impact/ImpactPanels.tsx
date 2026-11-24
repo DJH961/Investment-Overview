@@ -17,7 +17,6 @@ import {
   formatMoney,
   formatNumber,
   formatPercent,
-  formatPp,
   formatShortDay,
   formatTime,
   signOf,
@@ -25,7 +24,8 @@ import {
 import { toNum } from "../../../../lib/queries/portfolio";
 import type { CurrencyEffectDto, EffectBarDto, EffectRecordDto, HoldingEffectDto } from "../../../../lib/queries/currencyEffect";
 import { useTimeZone } from "../../../../lib/timezone";
-import { compactSigned, monthShort, periodLabel, ppFlat, ppSize, RETURNS_TIP } from "./impactFormat";
+import { contextUntilMs, fractionTone, pctText, ppText, spanOf } from "../../numbers";
+import { compactSigned, gapWords, monthShort, periodLabel, ppDirection, ppFlat, ppSize, RETURNS_TIP } from "./impactFormat";
 import { CurrencyBar, InvestingHeadline } from "./ImpactInvesting";
 
 type Kind = "tailwind" | "headwind" | "neutral";
@@ -64,7 +64,7 @@ function ReturnBars({ eur, usd, pp, ccy }: { eur: number | null; usd: number | n
   return (
     <figure
       className="return-bars"
-      aria-label={`Return in EUR ${formatPercent(eur, { signed: true, digits: 1 })}, in USD ${formatPercent(usd, { signed: true, digits: 1 })}`}
+      aria-label={`Return in EUR ${pctText(eur)}, in USD ${pctText(usd)}`}
     >
       {rows.map(([c, v], i) => (
         <div key={c} className={clsx("return-bars__row", i === 0 ? "return-bars__row--mine" : "return-bars__row--other")}>
@@ -73,7 +73,7 @@ function ReturnBars({ eur, usd, pp, ccy }: { eur: number | null; usd: number | n
             <span className="return-bars__zero" style={{ left: `${zero}%` }} />
             <span className="return-bars__bar" style={{ left: `${Math.min(zero, at(v))}%`, width: `${Math.abs(at(v) - zero)}%` }} />
           </span>
-          <span className="return-bars__value">{formatPercent(v, { signed: true, digits: 1 })}</span>
+          <span className="return-bars__value">{pctText(v)}</span>
         </div>
       ))}
       <div className="return-bars__row return-bars__row--gap">
@@ -81,7 +81,7 @@ function ReturnBars({ eur, usd, pp, ccy }: { eur: number | null; usd: number | n
         <span className="return-bars__track return-bars__track--bare" aria-hidden>
           <span className="return-bars__gap" style={{ left: `${gapFrom}%`, width: `${Math.max(0.8, gapTo - gapFrom)}%` }} />
         </span>
-        <span className="return-bars__value">{pp === null ? "–" : formatPp(pp, 1)}</span>
+        <span className="return-bars__value">{ppText(pp)}</span>
       </div>
     </figure>
   );
@@ -147,11 +147,7 @@ function EffectHeadline({ data }: { data: CurrencyEffectDto }) {
       <p className="impact__fig-line">
         <KindTag kind={h.kind} />
         {pp !== null ? (
-          <span>
-            {ppFlat(pp)
-              ? "Euro and dollar returns about the same"
-              : `Euro return ${ppSize(pp)} ${pp < 0 ? "lower" : "higher"} than the dollar return`}
-          </span>
+          <span>{gapWords(pp)}</span>
         ) : null}
         <NoteTip note={h.note} />
       </p>
@@ -170,7 +166,7 @@ function GapHeadline({ data }: { data: CurrencyEffectDto }) {
   const pp = toNum(h.effect_pp ?? null);
   const other = toNum(h.other_effect ?? null);
   const otherCcy = h.other_ccy ?? null;
-  const tone = signOf(pp, 3);
+  const tone = fractionTone(pp);
   return (
     <div className="impact__headline">
       <p className="impact__fig-label">
@@ -181,12 +177,12 @@ function GapHeadline({ data }: { data: CurrencyEffectDto }) {
         />
       </p>
       <p className={clsx("impact__headline-value", tone !== "flat" && `impact__headline-value--${tone}`)}>
-        {pp === null || ppFlat(pp) ? "0.0 pp" : formatPp(pp, 1)}
+        {ppText(pp ?? 0)}
       </p>
       <p className="impact__lede">
         {pp === null || ppFlat(pp)
           ? "Your result was about the same in euros and in dollars."
-          : `Your result in euros was ${ppSize(pp)} ${pp < 0 ? "lower" : "higher"} than in dollars.`}
+          : `Your result in euros was ${ppSize(pp)} ${ppDirection(pp)} than in dollars.`}
       </p>
       <p className="impact__fig-line">
         <KindTag kind={h.kind} />
@@ -214,33 +210,32 @@ export function ImpactHero({ data, range, figures = [] }: { data: CurrencyEffect
   const inv = data.investing ?? null;
   const pts = useMemo(() => (inv ? inv.series : data.series) ?? [], [inv, data.series]);
   // The investing line is one point per deposit day, never intraday.
-  const intraday = data.granularity === "intraday" && !inv;
-
-  const series = useMemo<ChartSeries[]>(
-    () => [
+  const intraday = (data.window?.intraday ?? data.granularity === "intraday") && !inv;
+  // Max: the days before you started are context only (never part of your figures).
+  const ctx = contextUntilMs(data.window);
+  const series = useMemo<ChartSeries[]>(() => {
+    const own = (t: string) => ctx === null || Date.parse(t) > ctx;
+    return [
       {
         id: "value",
         label: inv ? "Dollars received" : "Actual value",
-        points: pts.map((p) => ({ t: p.t, v: toNum(p.value) })),
+        points: pts.map((p) => ({ t: p.t, v: own(p.t) ? toNum(p.value) : null })),
         tone: "primary",
       },
       {
         id: "constant",
         label: "At the start rate",
-        points: pts.map((p) => ({ t: p.t, v: toNum(p.constant_currency) })),
+        points: pts.map((p) => ({ t: p.t, v: own(p.t) ? toNum(p.constant_currency) : null })),
         tone: "ink",
       },
-    ],
-    [pts, inv],
-  );
+    ];
+  }, [pts, inv, ctx]);
   const byTime = useMemo(() => new Map(pts.map((p) => [Date.parse(p.t), toNum(p.currency)])), [pts]);
-  const long = range === "all" || range === "3y" || range === "1y" || /^\d{4}$/.test(range);
+  const before = ctx !== null && pts.length > 0 && Date.parse(pts[0].t) <= ctx ? { from: pts[0].t, to: ctx } : null;
+  // The real span of what is drawn, so a 1M axis reads days and a 5Y one months.
+  const span = spanOf(pts.map((p) => Date.parse(p.t)));
   const timeFormat = (t: number) =>
-    !intraday
-      ? formatAxisDate(t, long ? Infinity : 0)
-      : range === "1d"
-        ? formatTime(new Date(t), timeZone)
-        : formatShortDay(t, timeZone);
+    !intraday ? formatAxisDate(t, span) : range === "1d" ? formatTime(new Date(t), timeZone) : formatShortDay(t, timeZone);
   const tooltipTimeFormat = (t: number) =>
     !intraday ? formatDate(new Date(t), "medium") : range === "1d" ? formatTime(new Date(t), timeZone) : formatDayTime(t, timeZone);
 
@@ -265,6 +260,7 @@ export function ImpactHero({ data, range, figures = [] }: { data: CurrencyEffect
           }}
           valueFormat={chartMoneyFormat(ccy, "axis")}
           xMode={intraday && range === "1d" ? "time" : "date"}
+          shade={before ? [before] : undefined}
           timeFormat={timeFormat}
           tooltipTimeFormat={tooltipTimeFormat}
           height={240}
@@ -276,6 +272,7 @@ export function ImpactHero({ data, range, figures = [] }: { data: CurrencyEffect
           {inv
             ? "The hatched gap is what the exchange rate did to your deposits: where the line runs above the dashed one your euros bought more dollars than at the start rate, below it fewer."
             : "The hatched gap is what the exchange rate did: where the line runs above the dashed one it helped, below it it cost."}
+          {before && data.window?.context_until ? ` The shaded part is before you started (until ${formatDate(data.window.context_until)}): context only, not in these figures.` : ""}
         </p>
       ) : null}
       {figures.length ? (
@@ -408,12 +405,58 @@ export function BridgeCard({ data }: { data: CurrencyEffectDto }) {
           );
         })}
       </ul>
+      {showCurrency ? <CurrencyParts bridge={b} ccy={ccy} /> : null}
       {truncated ? (
         <p className="impact__caption">
           The bars start at {formatMoney(base, ccy, { compact: true, narrow: true })}, not zero, so the steps stay visible.
         </p>
       ) : null}
     </Card>
+  );
+}
+
+/** The currency step's parts, as the server splits it (they add up to it exactly). */
+export const CURRENCY_PARTS = [
+  {
+    key: "revaluation",
+    label: "Revaluation",
+    tip: "What the rate's moves did to the dollars you already held, day by day.",
+  },
+  {
+    key: "waiting",
+    label: "While your dollars waited",
+    tip: "The rate's move between converting your euros and depositing the dollars.",
+  },
+  {
+    key: "conversion_cost",
+    label: "Conversion cost",
+    tip: "Fees and spread against the ECB reference when you converted. Minus means it cost you.",
+  },
+] as const;
+
+/**
+ * Revaluation + waiting + conversion cost = currency (exact on the server). Lines that
+ * are exactly zero are left out; with a single line it would only repeat the currency step.
+ */
+export function CurrencyParts({ bridge, ccy }: { bridge: NonNullable<CurrencyEffectDto["bridge"]>; ccy: string }) {
+  const parts = CURRENCY_PARTS.map((p) => ({ ...p, v: toNum(bridge[p.key] ?? null) })).filter(
+    (p): p is (typeof p) & { v: number } => p.v !== null && p.v !== 0,
+  );
+  if (parts.length < 2) return null;
+  return (
+    <dl className="impact__parts" aria-label="The currency step in parts">
+      {parts.map((p) => (
+        <div key={p.key} className="impact__part" data-part={p.key}>
+          <dt className="impact__part-label">
+            {p.label}
+            <InfoTip label={p.label} content={p.tip} />
+          </dt>
+          <dd className="impact__part-value">
+            <Money amount={p.v} currency={ccy} signed colored digits={0} />
+          </dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 
@@ -586,14 +629,32 @@ export function MonthsCard({ data }: { data: CurrencyEffectDto }) {
 
 // ---- rolling 12 months -------------------------------------------------------------------
 
-export function RollingCard({ data, range }: { data: CurrencyEffectDto; range: string }) {
+export function RollingCard({ data }: { data: CurrencyEffectDto; range?: string }) {
   const pts = useMemo(() => data.rolling ?? [], [data.rolling]);
-  const series = useMemo<ChartSeries[]>(
-    () => [{ id: "rolling", label: "Rolling 12 months", points: pts.map((p) => ({ t: p.t, v: toNum(p.currency) })), tone: "primary" }],
-    [pts],
-  );
+  const ctx = contextUntilMs(data.window);
+  const series = useMemo<ChartSeries[]>(() => {
+    const before = (t: string) => ctx !== null && Date.parse(t) <= ctx;
+    const out: ChartSeries[] = [
+      {
+        id: "rolling",
+        label: "Rolling 12 months",
+        points: pts.map((p) => ({ t: p.t, v: before(p.t) ? null : toNum(p.currency) })),
+        tone: "primary",
+      },
+    ];
+    // Max: the stretch before you started, muted and dashed, never summed into your figures.
+    if (pts.some((p) => before(p.t))) {
+      out.push({
+        id: "context",
+        label: "Before you started",
+        points: pts.map((p) => ({ t: p.t, v: before(p.t) ? toNum(p.currency) : null })),
+        tone: "muted",
+      });
+    }
+    return out;
+  }, [pts, ctx]);
   if (pts.length < 2) return null;
-  const long = range === "all" || range === "3y" || range === "1y";
+  const span = spanOf(pts.map((p) => Date.parse(p.t)));
   return (
     <Card
       className="impact__rolling"
@@ -615,7 +676,7 @@ export function RollingCard({ data, range }: { data: CurrencyEffectDto; range: s
         series={series}
         referenceLine={{ value: 0 }}
         valueFormat={chartMoneyFormat(data.ccy, "axis")}
-        timeFormat={(t) => formatAxisDate(t, long ? Infinity : 0)}
+        timeFormat={(t) => formatAxisDate(t, span)}
         tooltipTimeFormat={(t) => formatDate(new Date(t), "medium")}
         height={180}
         ariaLabel="Rolling 12-month currency effect"
@@ -793,7 +854,7 @@ export function HoldingsCard({ data, range }: { data: CurrencyEffectDto; range: 
   if (!rows.length) {
     return (
       <Card className="impact__holdings" title="Per holding">
-        <p className="impact__note">{noEffectLine(all, data.ccy)}</p>
+        <p className="impact__note">{data.holdings_note || noEffectLine(all, data.ccy)}</p>
       </Card>
     );
   }

@@ -32,8 +32,8 @@ describe("CurrencyLifetime", () => {
     expect(screen.getByText("1.1600")).toBeInTheDocument();
     expect(screen.getByText("avg in 1.1000")).toBeInTheDocument();
     expect(screen.getByText("headwind")).toBeInTheDocument();
-    expect(container.querySelector(".currency-lifetime__value--neg")).toHaveTextContent("+5.45%");
-    expect(screen.getByText("-3.10 pp")).toBeInTheDocument();
+    expect(container.querySelector(".currency-lifetime__value--neg")).toHaveTextContent("+5.5%");
+    expect(screen.getByText("-3.1 pp")).toBeInTheDocument();
     expect(screen.getByText("-€2,500")).toBeInTheDocument();
     expect(screen.getByText("€180,000")).toBeInTheDocument();
     expect(screen.getByText("1.0850")).toBeInTheDocument();
@@ -55,11 +55,11 @@ describe("CurrencyLifetime", () => {
     } as unknown as OverviewDto;
     const { container } = render(<CurrencyLifetime data={usd} />);
     expect(screen.getByText("Dollar vs euro since buying")).toBeInTheDocument();
-    expect(screen.getByTestId("lifetime-rate-move")).toHaveTextContent("-5.17%");
+    expect(screen.getByTestId("lifetime-rate-move")).toHaveTextContent("-5.2%");
     expect(screen.getByText("headwind")).toBeInTheDocument();
     expect(screen.getByText("In euros vs dollars")).toBeInTheDocument();
-    expect(screen.getByTestId("lifetime-fx-gap")).toHaveTextContent("-3.10 pp");
-    expect(screen.queryByText("0.00 pp")).not.toBeInTheDocument();
+    expect(screen.getByTestId("lifetime-fx-gap")).toHaveTextContent("-3.1 pp");
+    expect(screen.queryByText("0.0 pp")).not.toBeInTheDocument();
     // One shape in both views: same tiles, same lines.
     const nUsd = container.querySelectorAll(".currency-lifetime__stat dd").length;
     const eur = render(<CurrencyLifetime data={data("0.0545")} />);
@@ -76,7 +76,7 @@ describe("CurrencyLifetime", () => {
         <CurrencyLifetime data={data("0.0545")} />
       </HideAmountsProvider>,
     );
-    expect(screen.getByText("-1.39%")).toBeInTheDocument(); // -2500 / 180000
+    expect(screen.getByText("-1.4%")).toBeInTheDocument(); // -2500 / 180000
     expect(screen.queryByText("-€2,500")).not.toBeInTheDocument();
   });
 });

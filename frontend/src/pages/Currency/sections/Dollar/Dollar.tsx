@@ -2,6 +2,7 @@ import { DollarSign, Info } from "lucide-react";
 import { CurrencySection } from "../../../../components/CurrencySection";
 import { RATE_RANGE_LABELS } from "../../../../lib/queries/currencyRate";
 import { useDollar } from "../../../../lib/queries/currencyDollar";
+import { windowText } from "../../numbers";
 import type { CurrencySectionComponentProps } from "../../sections";
 import { PositionCard } from "./PositionCard";
 import { RollingPanel } from "./RollingPanel";
@@ -22,9 +23,7 @@ export function Dollar({ id, label, currency, range }: CurrencySectionComponentP
           ? "Your euros as buying power: your average conversion rate against now, what your next euro buys, and whether the rate's move is ordinary."
           : "Your dollars as a holding: what you own, the rate you bought at, and whether today's move is ordinary."
       }
-      meta={
-        RATE_RANGE_LABELS[range] ? `${data?.quote.pair ?? ""} · ${range === "max" ? "since 1999" : RATE_RANGE_LABELS[range]}` : undefined
-      }
+      meta={data ? [data.quote.pair, windowText(data.window, range) ?? RATE_RANGE_LABELS[range]].filter(Boolean).join(" · ") : undefined}
       state={state}
       onRetry={() => void q.refetch()}
       busy={q.isFetching && !q.isPending}
