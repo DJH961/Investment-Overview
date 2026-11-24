@@ -98,7 +98,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from investment_dashboard.domain import market_hours, periods
+from investment_dashboard.domain import clock, market_hours, periods
 from investment_dashboard.domain.instruments import is_money_market_effective
 from investment_dashboard.domain.money_market import MONEY_MARKET_NAV
 from investment_dashboard.domain.returns import Cashflow, GrowthMode, window_growth
@@ -200,7 +200,7 @@ def build(
         return None
     out: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
-        "captured_at": _iso_utc(now or datetime.now(UTC)),
+        "captured_at": _iso_utc(now or clock.now()),
         "grid": grid,
     }
     if backbone is not None:
@@ -450,7 +450,7 @@ def _day_series(
         session, currency="USD", tz=None, now=now, positions=positions
     )
     points = _downsample(_zip_points(eur, usd), MAX_DAY_POINTS)
-    ref = now or datetime.now(UTC)
+    ref = now or clock.now()
     return {
         "session_date": intraday_snapshots_service.last_session_date(ref).isoformat(),
         "market_open": market_hours.is_us_market_open(ref),
@@ -475,7 +475,7 @@ def _week_series(
     usd = build_week_value_series(session, currency="USD", tz=None, now=now, positions=positions)
     points = _downsample(_zip_points(eur, usd), MAX_DAY_POINTS)
     window = intraday_snapshots_service.recent_trading_sessions(now)
-    ref = now or datetime.now(UTC)
+    ref = now or clock.now()
     return {
         "start_date": window[0].isoformat(),
         "end_date": window[-1].isoformat(),
@@ -570,7 +570,7 @@ def reload_range(session: Session, range_key: str, *, now: datetime | None = Non
     returned); daily ranges re-warm the snapshot cache over the window
     (``None``: there is no point count to report).
     """
-    now = now or datetime.now(UTC)
+    now = now or clock.now()
     if range_key == "1d":
         return intraday_snapshots_service.reload_day_graph(session, now=now)
     if range_key == "1w":
@@ -991,7 +991,7 @@ def build_graph(
     ``scale`` the chart uses to start both lines at the same pixel. ``growth`` is
     the window growth of each line, each from its own series and cashflows.
     """
-    now = now or datetime.now(UTC)
+    now = now or clock.now()
     today = market_hours.exchange_today(now)
     memo = memo if memo is not None else {}
 

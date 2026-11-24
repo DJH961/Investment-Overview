@@ -5,8 +5,9 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 from hypothesis import settings as hypothesis_settings
@@ -214,6 +215,66 @@ def snapshot_fill_calls(monkeypatch: pytest.MonkeyPatch) -> list[tuple[Any, Any]
         lambda start, end: calls.append((start, end)) or True,
     )
     return calls
+
+
+class MarketClock:
+    """Pins the backend's "now" (``domain.clock.now``) to a named market moment.
+
+    Call it with a moment name or an aware datetime: ``market_clock("open")``.
+    Names (New York time, on the latest ordinary trading day up to today):
+    ``preopen`` 08:00, ``open`` 11:00, ``preclose`` 15:45, ``closing`` 16:05,
+    ``closed`` 22:00, and ``weekend`` (Saturday 12:00 of the latest weekend).
+    Returns the pinned instant (aware UTC). Call again to move the clock.
+    """
+
+    MOMENTS: ClassVar[dict[str, tuple[int, int]]] = {
+        "preopen": (8, 0),
+        "open": (11, 0),
+        "preclose": (15, 45),
+        "closing": (16, 5),
+        "closed": (22, 0),
+        "weekend": (12, 0),
+    }
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._monkeypatch = monkeypatch
+        self.now: datetime | None = None
+
+    def __call__(self, moment: str | datetime) -> datetime:
+        from investment_dashboard.domain import clock, market_hours
+
+        if isinstance(moment, datetime):
+            if moment.tzinfo is None:
+                raise ValueError("market_clock needs an aware datetime")
+            pinned = moment.astimezone(UTC)
+        else:
+            if moment not in self.MOMENTS:
+                raise ValueError(f"unknown market moment {moment!r}; use {list(self.MOMENTS)}")
+            day = datetime.now(UTC).astimezone(market_hours.MARKET_TZ).date()
+            if moment == "weekend":
+                while day.weekday() != 5:
+                    day -= timedelta(days=1)
+            else:
+                while not market_hours.is_trading_day(day) or market_hours.is_early_close_day(day):
+                    day -= timedelta(days=1)
+            hour, minute = self.MOMENTS[moment]
+            pinned = datetime(
+                day.year, day.month, day.day, hour, minute, tzinfo=market_hours.MARKET_TZ
+            ).astimezone(UTC)
+        self.now = pinned
+        self._monkeypatch.setattr(clock, "now", lambda: pinned)
+        return pinned
+
+
+@pytest.fixture
+def market_clock(monkeypatch: pytest.MonkeyPatch) -> MarketClock:
+    """Pin "now" for market-time-sensitive code: ``market_clock("open")``.
+
+    Moves ``domain.clock.now`` (used by the read models, ``market_hours`` defaults and
+    ``live_bus.market_state``). Code reading ``datetime.now`` elsewhere (scheduler,
+    services) is not affected.
+    """
+    return MarketClock(monkeypatch)
 
 
 @pytest.fixture(autouse=True)

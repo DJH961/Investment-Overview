@@ -19,13 +19,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
 from sqlalchemy.orm import Session
 
-from investment_dashboard.domain import fx_scenarios, fx_trend
+from investment_dashboard.domain import clock, fx_scenarios, fx_trend
 from investment_dashboard.domain.fx_scenarios import Book
 from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.domain.returns import growth_index
@@ -338,7 +338,7 @@ def build_scenarios_both(  # noqa: PLR0915
     range" mark and the cushion window follow it. The stress table and the slider
     stay valued on today's book.
     """
-    now = now or datetime.now(UTC)
+    now = now or clock.now()
     today = exchange_today(now)
     first_tx = transactions_repo.earliest_transaction_date(session)
     start = range_start(range_key, today, first_tx)

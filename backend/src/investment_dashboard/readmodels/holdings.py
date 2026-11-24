@@ -10,13 +10,13 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import replace
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
 from sqlalchemy.orm import Session
 
-from investment_dashboard.domain import market_hours
+from investment_dashboard.domain import clock, market_hours
 from investment_dashboard.domain.day_move import HoldingDaySplit
 from investment_dashboard.domain.instruments import is_nav_priced
 from investment_dashboard.domain.late_data import Holding, value_at_rate
@@ -568,7 +568,7 @@ def build(
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """The ``GET /api/holdings`` payload."""
-    now = now or datetime.now(UTC)
+    now = now or clock.now()
     ctx = build_context(session, as_of=as_of)
     pm = compute_portfolio_metrics(session, as_of=ctx.as_of, now=now)
     # Rolls over with the hero at the 09:30 ET open, not at ET midnight.
