@@ -18,7 +18,7 @@ plus its last `Next:` line.
 |---|---|---|---|
 | Plan approved | done 2026-11-25 | — | owner answers: recap + real return pulled in; no alert channel; sell keeps original cost; cash-out supported across the app |
 | Contract + golden G1/G2 | done 2026-11-25 | integration | owner still checks the G1 numbers (contract §3) |
-| Lane A — P19 frozen legs | started | see lane report | |
+| Lane A — P19 frozen legs | done, merged b7fb17d5 | lane/v7.4-a-p19 | migration 0029 = d9b3f1a7c2e5; only matched-deposit EUR in Transactions moved; check cache-tier Alembic on server boot; diagnostics _check_frozen_legs still reads legs (drop at release) |
 | Lane B1 — cash pool domain | done, merged 1f40e143 | lane/v7.4-b1-cash-pool | fees reduce received; ecb_rate(ccy,date); see contract §6 |
 | Lane E — recap + real return | restarted with impeccable agent | lane/v7.4-e-recap (worktree agent-a13dde251d4c6378a) | handover at 311f23fe: HICP adapter, cache tier, service, real-return maths done; next: eod step, Periods real return, recap API, health checks, RecapCard |
 | Journey UI mockups | approved 2026-11-25 (v2) | — | aligned trail rows, cash-out EUR vs USD, 4 stats full width; see plan "Approved mockup decisions" |
@@ -35,3 +35,4 @@ plus its last `Next:` line.
 - 2026-11-25: owner approved mockups v2 and G1. UI lanes use impeccable (design, audit, critique); the orchestrator runs impeccable-finish-reviewer.
 - 2026-11-25: lane E told to hand over; it restarts as a skills-capable agent (impeccable). Owner rule: align text and keep empty lines to a minimum, never pad the other boxes.
 - 2026-11-25: B1 merged. Contract part 2 (docs/v7_4_contract_api.md) written; lanes B2, C, D started.
+- 2026-11-25: usage limit stopped B2, C, D and E mid-work. Lane A merged. All four resumed with SendMessage (same agents, same context). E re-points 0030 to d9b3f1a7c2e5.
