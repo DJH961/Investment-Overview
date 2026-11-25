@@ -63,4 +63,24 @@ describe("Periods on a phone", () => {
     // The year itself had a withdrawal: its net flow differs, so it shows.
     expect(within(y2025).getByText("Net flow")).toBeInTheDocument();
   });
+
+  it("renders a Cashed out chip on phone rows only when non-zero", () => {
+    const months = [
+      row("2026-01", { is_current: true }),
+      row("2026-03", { cashed_out_eur: "2201.30", cashed_out: "2201.30" } as Partial<PeriodRowOut>),
+    ];
+    const years = [row("2026", { is_current: true, cashed_out_eur: "2201.30", cashed_out: "2201.30" } as Partial<PeriodRowOut>)];
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <PrefsProvider>
+          <PhoneYears groups={groupByYear(months, years)} currency="EUR" monthsOther={new Map()} yearOther={new Map()} />
+        </PrefsProvider>
+      </QueryClientProvider>,
+    );
+    const y2026 = document.querySelector('[data-year="2026"]') as HTMLElement;
+    const mar = y2026.querySelector('[data-period="2026-03"]') as HTMLElement;
+    const jan = y2026.querySelector('[data-period="2026-01"]') as HTMLElement;
+    expect(within(mar).getByText("Cashed out")).toBeInTheDocument();
+    expect(within(jan).queryByText("Cashed out")).toBeNull();
+  });
 });

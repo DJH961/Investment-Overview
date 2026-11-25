@@ -171,8 +171,11 @@ export function Activity() {
         .sort((a, b) => b - a)
         .map((y) => ({ value: String(y), label: String(y) })),
     ];
-    const s = data.summary;
-    const so = data.summary_other;
+    const s = data.summary as typeof data.summary & { cashed_out?: string | null; cashed_out_eur?: string | null };
+    const so = data.summary_other as typeof data.summary_other & { cashed_out?: string | null; cashed_out_eur?: string | null };
+    const cashedOutEur = toNum((data as typeof data & { cashed_out_eur?: string | null }).cashed_out_eur ?? s.cashed_out_eur);
+    const cashedOut = toNum(s.cashed_out);
+    const showCashedOut = (cashedOutEur !== null && cashedOutEur > 0) || (cashedOut !== null && cashedOut > 0);
     const otherHint = (v: string | null | undefined) =>
       toNum(v) === null ? undefined : <Money amount={toNum(v)} currency={other} />;
     return (
@@ -181,6 +184,13 @@ export function Activity() {
           <KpiTile label="Total" value={money(s.total_contrib)} secondary={otherHint(so.total_contrib)} />
           <KpiTile label="This year" value={money(s.ytd_contrib)} secondary={otherHint(so.ytd_contrib)} />
           <KpiTile label="This month" value={money(s.mtd_contrib)} secondary={otherHint(so.mtd_contrib)} />
+          {showCashedOut && (
+            <KpiTile
+              label="Cashed out"
+              value={cashedOut !== null ? money(s.cashed_out) : <Money amount={cashedOutEur} currency="EUR" />}
+              secondary={cashedOut !== null ? otherHint(so.cashed_out) : undefined}
+            />
+          )}
         </div>
         <div className="activity-page__filters">
           <Select

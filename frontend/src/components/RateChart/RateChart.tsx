@@ -200,8 +200,10 @@ export function conversionMarks(data: RateHistoryDto, lens: RateLens): ChartMark
     const kind = m.kind ?? null;
     const v = lens === "rate" ? rate : 1 / rate;
     const received = toNum(m.amount_to ?? null);
+    const back = m.from_ccy === "USD" && m.to_ccy === "EUR";
     const label = [
       formatDate(m.date.slice(0, 10)),
+      back ? "Back to euros" : null,
       received !== null
         ? `${formatMoney(amount, m.from_ccy, { digits: 0 })} → ${formatMoney(received, m.to_ccy, { digits: 0 })}`
         : formatMoney(amount, m.from_ccy, { digits: 0 }),

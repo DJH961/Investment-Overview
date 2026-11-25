@@ -264,6 +264,7 @@
   &__track { position: relative; height: var(--space-5); border-radius: var(--radius-sm); background: var(--color-surface-2); }
   &__bar { position: absolute; top: 0; bottom: 0; min-width: 2px; border-radius: var(--radius-sm); background: var(--color-border-strong); }
   &__bar--deposits { background: var(--color-accent); }
+  &__bar--cashed_out { border: var(--border-width) solid var(--color-accent); background: var(--color-accent-soft); }
   &__bar--market { background: var(--color-pos); }
   &__bar--currency {
     border: var(--border-width) dashed var(--color-fg);

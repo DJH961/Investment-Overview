@@ -158,14 +158,6 @@
     font-size: var(--font-size-xs);
     font-variant-numeric: tabular-nums;
   }
-}
-
-// The new rate eases in: a short fade up, once.
-@keyframes currency-lifetime-ease-in {
-  from {
-    opacity: 0.2;
-    transform: translateY(3px);
-  }
 
   // 7.4: realized in euros (only once there has been a cash-out), a ruled row under the grid.
   &__realised {
@@ -213,5 +205,13 @@
     &:focus-visible {
       @include m.focus-ring;
     }
+  }
+}
+
+// The new rate eases in: a short fade up, once.
+@keyframes currency-lifetime-ease-in {
+  from {
+    opacity: 0.2;
+    transform: translateY(3px);
   }
 }

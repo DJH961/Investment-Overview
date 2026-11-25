@@ -130,4 +130,29 @@ describe("Activity", () => {
     expect(screen.getByRole("button", { name: /All payments/ })).toHaveAttribute("aria-expanded", "false");
     expect(localStorage.getItem("iv.activity.tab")).toBe('"dividends"');
   });
+
+  it("shows a Cashed out KPI when cashed_out_eur is positive and hides it otherwise", async () => {
+    stub();
+    const { unmount } = renderPage();
+    await screen.findByText("Total");
+    expect(screen.queryByText("Cashed out")).not.toBeInTheDocument();
+    unmount();
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        const body = url.includes("/api/deposits")
+          ? {
+              EUR: { ...deposits, cashed_out_eur: "2201.30", summary: { ...deposits.summary, cashed_out: "2201.30" }, summary_other: { ...deposits.summary_other, cashed_out: "2400.00" } },
+              USD: { ...deposits, cashed_out_eur: "2201.30", summary: { ...deposits.summary, cashed_out: "2400.00" }, summary_other: { ...deposits.summary_other, cashed_out: "2201.30" } },
+            }
+          : [{ id: 1, account_label: "Main", broker: "vanguard", native_currency: "USD", account_type: "brokerage", active: true }];
+        return new Response(JSON.stringify(body), { status: 200 });
+      }),
+    );
+    renderPage();
+    expect(await screen.findByText("Cashed out")).toBeInTheDocument();
+    expect(screen.getByText(/2,201\.30/)).toBeInTheDocument();
+  });
 });

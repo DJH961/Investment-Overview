@@ -1,3 +1,5 @@
+/* The compact trail is an icon-and-figure graphic with a text alternative. */
+/* oxlint-disable jsx-a11y/prefer-tag-over-role */
 import clsx from "clsx";
 import {
   ArrowDown,

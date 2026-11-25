@@ -5,7 +5,7 @@ import full from "../../../../fixtures/data/full.json";
 import { HideAmountsProvider } from "../../../../lib/hideAmounts";
 import { type CurrencyEffectDto } from "../../../../lib/queries/currencyEffect";
 import { Impact } from "./Impact";
-import { ImpactHero } from "./ImpactPanels";
+import { BridgeCard, ImpactHero } from "./ImpactPanels";
 
 vi.mock("../../../../lib/timezone", () => ({ useTimeZone: () => "UTC" }));
 vi.mock("../../../../components/Chart", () => ({
@@ -101,4 +101,21 @@ describe("Impact, both views have the same cards", () => {
       expect(seen.USD.filter(Boolean).length).toBeGreaterThanOrEqual(5);
     });
   }
+});
+
+describe("Impact bridge cashed out", () => {
+  it("renders a Cashed out step when cashed_out is present", () => {
+    const eur = all.EUR;
+    const withOut = {
+      ...eur,
+      bridge: {
+        ...eur.bridge!,
+        cashed_out: "2201.30",
+        end: String(Number(eur.bridge!.end) - 2201.3),
+      },
+    } as CurrencyEffectDto;
+    const { container } = mount(<BridgeCard data={withOut} />);
+    expect(screen.getByText("Cashed out")).toBeInTheDocument();
+    expect(container.querySelector('[data-part="cashed_out"]')).not.toBeNull();
+  });
 });

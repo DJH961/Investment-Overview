@@ -691,15 +691,14 @@ function withDiagnostics(body: unknown, data: Obj): unknown {
     count,
     detail,
     examples: [],
-    actions: [],
-    fix: count === 0 ? null : { label, to },
+    actions: count === 0 ? [] : [{ kind: "link", id, label, params: {}, danger: "none", href: to }],
   });
   const extra = [
     check("idle_dollars", "Idle dollars", "info", j.idle.length, j.idle.length ? `${j.idle.length} conversion${j.idle.length === 1 ? "" : "s"} left dollars in the USD account for more than 30 days.` : "No dollars have waited more than 30 days.", "Open the Currency page", "/currency#dollars"),
-    check("uncovered_buys", "Buys not covered by deposits", "warn", j.flagged.uncovered_buys, j.flagged.uncovered_buys ? `${j.flagged.uncovered_buys} buys spent more dollars than you had deposited; their euro cost uses the ECB rate.` : "Every buy is paid for by deposited dollars.", "Review conversions", "/conversions?needs=1"),
-    check("negative_broker_cash", "Negative broker cash", "warn", stress ? 1 : 0, stress ? "Retirement shows −$12.40 of cash; it counts as $0 in the total." : "No account has negative cash.", "Open transactions", "/transactions"),
+    check("uncovered_buys", "Buys not covered by deposits", "warning", j.flagged.uncovered_buys, j.flagged.uncovered_buys ? `${j.flagged.uncovered_buys} buys spent more dollars than you had deposited; their euro cost uses the ECB rate.` : "Every buy is paid for by deposited dollars.", "Review conversions", "/conversions?needs=1"),
+    check("negative_broker_cash", "Negative broker cash", "warning", stress ? 1 : 0, stress ? "Retirement shows −$12.40 of cash; it counts as $0 in the total." : "No account has negative cash.", "Open transactions", "/transactions"),
     check("withdrawals_not_converted", "Withdrawals not yet converted back", "info", stress ? 1 : 0, stress ? "1 withdrawal is still in dollars in the USD account." : "Every withdrawal has gone back to euros.", "Cash out to euros", "/cash-out"),
-    check("conversion_back_uncovered", "Conversions back with no dollars behind them", "warn", stress ? 1 : 0, stress ? "1 conversion back sent more dollars than the USD account held; the rest uses the ECB rate." : "Every conversion back is covered by dollars.", "Open conversions", "/conversions?direction=to_eur"),
+    check("conversion_back_uncovered", "Conversions back with no dollars behind them", "warning", stress ? 1 : 0, stress ? "1 conversion back sent more dollars than the USD account held; the rest uses the ECB rate." : "Every conversion back is covered by dollars.", "Open conversions", "/conversions?direction=to_eur"),
   ];
   return { ...b, checks: [...b.checks, ...extra] };
 }
