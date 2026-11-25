@@ -91,7 +91,7 @@ export function MoneyTrail({ steps, label, variant = "full", className }: MoneyT
             <li key={`${s.key}-${i}`} className={clsx("money-trail__step", `money-trail__step--${s.key}`, last && "money-trail__step--last")}>
               <span className="money-trail__mark" aria-hidden>
                 <span className="money-trail__icon">
-                  <Icon />
+                  <Icon className="money-trail__glyph" />
                 </span>
                 {!last && <span className="money-trail__line" />}
               </span>

@@ -62,16 +62,17 @@
     background: var(--color-surface-2);
     color: var(--color-fg);
 
-    svg {
-      width: var(--icon-sm);
-      height: var(--icon-sm);
-    }
   }
 
   // The destination (worth now, back in euros) gets a firmer ring, not a colour.
   &__step--last &__icon {
     border-color: var(--color-border-strong);
     background: var(--color-surface);
+  }
+
+  &__glyph {
+    width: var(--icon-sm);
+    height: var(--icon-sm);
   }
 
   &__line {
@@ -191,6 +192,12 @@
       padding-top: 0;
     }
 
+    // One line each: a detail that would wrap is cut at the source (§8: at most 24 characters).
+    .money-trail__label,
+    .money-trail__detail {
+      @include m.truncate;
+    }
+
     .money-trail__figure {
       justify-self: start;
       font-size: var(--font-size-lg);
@@ -265,5 +272,55 @@
   &__more {
     @include m.eyebrow;
     margin: 0;
+  }
+}
+
+// The trail in a sheet or an expanded row: rate chips, the trail, the euro split.
+.trail-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+
+  &__rates {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  &__split {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin: 0;
+    padding-top: var(--space-3);
+    border-top: var(--border-width) solid var(--color-border);
+  }
+
+  &__split-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-3);
+    font-size: var(--font-size-sm);
+
+    &--total {
+      padding-top: var(--space-2);
+      border-top: var(--border-width) solid var(--color-border);
+      font-weight: var(--font-weight-semibold);
+    }
+  }
+
+  &__split-label {
+    color: var(--color-muted);
+  }
+
+  &__split-row--total &__split-label {
+    color: var(--color-fg);
+  }
+
+  &__split-value {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
   }
 }

@@ -275,7 +275,7 @@ function upstream(dep: Deposit, slice: Slice, conv: Conversion | undefined, usdS
 
 function trailFor(kind: string, id: number, data: Obj): TrailOut | { __status: number } {
   const book = bookOf(data);
-  const rows = transactions(data);
+  const rows = [...cashOutRows(data), ...transactions(data)];
   const deposits = (((data["GET /api/fx-conversions/pool"] as { deposits?: Deposit[] } | undefined)?.deposits ?? []) as Deposit[])
     .filter((d) => d.slices.length > 0)
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -318,8 +318,7 @@ function trailFor(kind: string, id: number, data: Obj): TrailOut | { __status: n
       ecbCost += usd / ecb;
       const steps = upstream(d, slice, conv, usd);
       if (buy) {
-        const qty = Math.abs(Number(buy.quantity ?? 0)) * (usd / usdBuy);
-        steps.push(step("bought", buy.date, "Bought", usd, "USD", `${buy.symbol} · ${qty.toFixed(2)} sh`, buy.instrument_id ? `/holding/${buy.instrument_id}` : null));
+        steps.push(step("bought", buy.date, "Bought", usd, "USD", String(buy.symbol), buy.instrument_id ? `/holding/${buy.instrument_id}` : null));
         const worthEur = (valueUsd * (usd / usdBuy)) / now;
         const costEur = (Number(slice.eur) * usd) / Number(slice.usd);
         steps.push(step("worth_now", null, "Worth now", worthEur, "EUR", `at ${now.toFixed(4)} today`, null, worthEur - costEur));
@@ -335,7 +334,7 @@ function trailFor(kind: string, id: number, data: Obj): TrailOut | { __status: n
       id,
       paths,
       more_paths: two ? 2 : 0,
-      split: buy ? { market_eur: f2(market), currency_eur: f2(currency), conversion_cost_eur: f2(-cost), total_eur: f2(valueEur - eurCost) } : null,
+      split: buy ? { market_eur: f2(market), currency_eur: f2(currency), conversion_cost_eur: f2(cost), total_eur: f2(valueEur - eurCost) } : null,
       your_rate: f4(usdBuy / eurCost),
       ecb_rate: f4(usdBuy / ecbCost),
       flagged: book === "stress" && kind === "buy" && id % 9 === 0,
@@ -373,7 +372,7 @@ function trailFor(kind: string, id: number, data: Obj): TrailOut | { __status: n
     const out = outs.find((o) => o.conversion_id === back.id)!;
     const sellUsd = sell ? Math.abs(Number(sell.net_native)) : Number(out.usd_sent);
     const steps: TrailStep[] = [];
-    if (sell) steps.push(step("sold", sell.date, "Sold", sellUsd, "USD", `${sell.symbol} · ${Math.abs(Number(sell.quantity ?? 0)).toFixed(0)} sh`));
+    if (sell) steps.push(step("sold", sell.date, "Sold", sellUsd, "USD", String(sell.symbol)));
     steps.push(step("withdrawn", wd.date, "Withdrawn", Math.abs(Number(wd.net_native)), "USD", "to the USD account"));
     steps.push(step("back", back.date, "Back in euros", Number(out.eur_received), "EUR", `at ${(back.usd / back.eur).toFixed(4)}`, `/conversions#conversion-${back.id}`, Number(out.eur.realised)));
     return {

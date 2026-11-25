@@ -27,6 +27,10 @@
     overflow-y: auto;
   }
 
+  &__content--wide {
+    max-width: calc(var(--dialog-width) * 1.75);
+  }
+
   &__handle {
     display: block;
     width: var(--space-8);

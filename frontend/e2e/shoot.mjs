@@ -190,7 +190,7 @@ for (const route of routes) {
         }
         await page.waitForTimeout(600);
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-        const name = `${route.replace(/^\//, "").replace(/\//g, "_") || "home"}-${ccy}-${width}-${theme}.png`;
+        const name = `${route.replace(/^\//, "").replace(/[/?&=]/g, "_") || "home"}-${ccy}-${width}-${theme}.png`;
         if (el) {
           const items = page.locator(el);
           const n = await items.count();
@@ -214,7 +214,7 @@ for (const route of routes) {
         await ctx.close();
       }
       if (wantPair && shots.EUR && shots.USD) {
-        const pairName = `${route.replace(/^\//, "").replace(/\//g, "_") || "home"}-pair-${width}-${theme}.png`;
+        const pairName = `${route.replace(/^\//, "").replace(/[/?&=]/g, "_") || "home"}-pair-${width}-${theme}.png`;
         await writePair(browser, shots.EUR, shots.USD, `${outDir}/${pairName}`);
         console.log(pairName);
       }
