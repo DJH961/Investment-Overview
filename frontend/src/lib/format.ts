@@ -260,6 +260,14 @@ export function formatDate(
   return layoutDate(ymdOf(d, zone));
 }
 
+/** A calendar date without its year when it falls in this year ("12 Sep"), with it otherwise ("12 Sep 2025"). */
+export function formatDateThisYear(value: string, today: string = todayIn()): string {
+  const d = parseInstant(value);
+  if (Number.isNaN(d.getTime())) return "–";
+  const v = ymdOf(d, isCalendarDate(value) ? "UTC" : TIME_ZONE);
+  return layoutDate(v, v.y === today.slice(0, 4) ? "YYYY" : null);
+}
+
 export function formatTime(value: string | Date, timeZone?: string): string {
   const d = parseInstant(value);
   if (Number.isNaN(d.getTime())) return "–";

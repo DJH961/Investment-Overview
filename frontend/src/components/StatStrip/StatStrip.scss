@@ -174,4 +174,11 @@
       grid-template-columns: repeat(6, minmax(0, 1fr));
     }
   }
+
+  // Four (or eight) figures: four even columns from tablets up, so no width leaves 3 + 1.
+  &--four &__list {
+    @include m.tablet-up {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+  }
 }

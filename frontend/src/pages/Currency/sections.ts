@@ -3,6 +3,7 @@ import type { ReportingCurrency } from "../../lib/prefs";
 import type { CurrencyRange } from "./range";
 import { Conversions } from "./sections/Conversions";
 import { Dollar } from "./sections/Dollar";
+import { Dollars } from "./sections/Dollars";
 import { Impact, ImpactHoldings } from "./sections/Impact";
 import { WhatIf } from "./sections/WhatIf";
 
@@ -68,6 +69,8 @@ export const CURRENCY_SECTIONS: CurrencySectionDef[] = [
       },
     ],
   },
+  // Where your dollars are now and where the currency effect came from (7.4 journey).
+  { id: "dollars", label: "Your dollars", Component: Dollars },
   // Your dollars as a position: what you hold, the rate you paid, the trend.
   { id: "exposure", label: "Exposure", Component: Dollar },
   // Today's holdings valued at other rates: slider, stress table, cushion.
