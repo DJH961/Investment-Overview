@@ -33,6 +33,7 @@ from investment_dashboard.domain.settings_schema import (
 SECTIONS: dict[str, str] = {
     "display": "Display",
     "portfolio": "Portfolio & analytics",
+    "currency": "Currency",
     "projection": "Projection",
     "allocation": "Allocation defaults",
     "instruments": "Instruments & mappings",
@@ -595,10 +596,24 @@ DEFS: tuple[SettingDef, ...] = (
         unit="s",
     ),
     SettingDef(
+        "fx.holding_cost_basis",
+        SettingType.ENUM,
+        "pool",
+        "currency",
+        "EUR cost of a holding",
+        help=(
+            "Your rate (pool): a buy costs the euros that really bought its dollars, "
+            "oldest dollars first, from your conversions. ECB on the buy date: the "
+            "official rate of the day you bought (the figures before 7.4). Only the "
+            "EUR cost, gain and return per holding change; dollar figures never do."
+        ),
+        choices=("pool", "buy_date"),
+    ),
+    SettingDef(
         "fx.stale_after_seconds",
         SettingType.DURATION_S,
         900,
-        "data_refresh",
+        "currency",
         "Live EUR/USD rate: warn when stale after",
         help=(
             "While currencies trade (Sunday evening to Friday evening, New York time), "
@@ -689,10 +704,9 @@ DEFS: tuple[SettingDef, ...] = (
         "fx.tracked_quotes",
         SettingType.SYMBOL_LIST,
         ("USD",),
-        "data_refresh",
+        "currency",
         "Tracked FX currencies",
         help="Currencies whose EUR rate history is kept (ISO codes).",
-        level="advanced",
         validator=_currencies,
     ),
     SettingDef(
