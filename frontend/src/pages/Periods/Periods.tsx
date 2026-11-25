@@ -1,7 +1,7 @@
 /* The bar chart is a decorative graphic with a text alternative. */
 /* oxlint-disable jsx-a11y/prefer-tag-over-role */
 import { Inbox } from "lucide-react";
-import { useCallback } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { Card } from "../../components/Card";
 import { type Column, DataTable } from "../../components/DataTable";
@@ -10,6 +10,7 @@ import { ErrorState } from "../../components/ErrorState";
 import { GrowthBars } from "../../components/GrowthBars";
 import { Money } from "../../components/Money";
 import { PageHeader } from "../../components/PageHeader";
+import { RecapCard } from "../../components/RecapCard";
 import { Percent } from "../../components/Percent";
 import { SegmentedControl } from "../../components/SegmentedControl";
 import { Skeleton } from "../../components/Skeleton";
@@ -173,6 +174,18 @@ export function Periods() {
   const yOther = index(yearly2.data?.rows);
   const empty = view === "year" ? mRows.length === 0 && yRows.length === 0 : flat.length === 0;
 
+  // The recap (7.4): the last finished month by default, stepping through finished periods.
+  const [recapPeriod, setRecapPeriod] = useState<string | null>(null);
+  const mData = monthly.data;
+  const yData = yearly.data;
+  const recapPeriods = useMemo(
+    () => ({
+      month: (mData?.rows ?? []).filter((r) => !r.is_current).map((r) => r.label),
+      year: (yData?.rows ?? []).filter((r) => !r.is_current).map((r) => r.label),
+    }),
+    [mData, yData],
+  );
+
   // By-year view: the last two years of months as a bar strip on top.
   const recent = mRows.slice(-24);
 
@@ -201,6 +214,13 @@ export function Periods() {
         <EmptyState icon={<Inbox aria-hidden />} title="No periods yet" description="Import transactions to see returns." />
       ) : (
         <div className="periods-page__grid">
+          <RecapCard
+            currency={currency}
+            place="periods"
+            period={recapPeriod}
+            periods={recapPeriods}
+            onPeriod={setRecapPeriod}
+          />
           {view === "year" && recent.length > 1 && (
             <div className="periods-page__stage">
               <Card variant="plain" title="Growth per month" subtitle="Last 24 months" collapsibleId="periods.bars">

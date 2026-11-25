@@ -1,7 +1,8 @@
 """``GET /api/holdings/{instrument_id}/tranches``: the FIFO purchase-tranche view.
 
-Native currency only (USD for US funds; the EUR cost column waits for the pool
-rate in 7.4). The rows come from :mod:`investment_dashboard.domain.tranches`;
+Native figures per tranche, plus (7.4) the EUR cost of the shares still held: the
+cash-pool EUR of the holding shared out by native cost (see :func:`_eur_costs`). The
+rows come from :mod:`investment_dashboard.domain.tranches`;
 today's price and the position's share count come from ``positions_service``, so
 the gain is valued exactly as the holding row values its shares. Tranche figures
 never feed an aggregate.
@@ -9,6 +10,7 @@ never feed an aggregate.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from decimal import Decimal
 from typing import Any
 
@@ -17,6 +19,7 @@ from sqlalchemy.orm import Session
 from investment_dashboard.domain import tranches as tranches_domain
 from investment_dashboard.domain.instruments import is_money_market_effective
 from investment_dashboard.domain.market_hours import exchange_today
+from investment_dashboard.readmodels import journey_fields as jf
 from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.repositories import (
     accounts_repo,
@@ -24,7 +27,12 @@ from investment_dashboard.repositories import (
     instruments_repo,
     transactions_repo,
 )
-from investment_dashboard.services import positions_service, prices_service
+from investment_dashboard.services import (
+    cash_pool_service,
+    fx_service,
+    positions_service,
+    prices_service,
+)
 from investment_dashboard.services.instrument_enrichment_service import effective_instrument
 
 ZERO = Decimal(0)
@@ -71,14 +79,33 @@ def build(session: Session, instrument_id: int) -> dict[str, Any] | None:
     )
     names = {a.id: a.account_label for a in accounts_repo.list_accounts(session)}
     currency = next((p.account.native_currency for p in held), instr.native_currency).upper()
+    native_of = {a.id: a.native_currency.upper() for a in accounts_repo.list_accounts(session)}
+    snapshot = cash_pool_service.build_pool_snapshot(session, as_of=as_of)
+    eur = _eur_costs(session, view.rows, instrument_id, snapshot, native_of)
+    inputs = jf.inputs_for(session) if snapshot.basis == "pool" else None
+    rows = [_row(r, names, eur.get(r.tranche.id)) for r in view.rows]
+    if inputs is not None:
+        for r, row in zip(view.rows, rows, strict=True):
+            t = r.tranche
+            value = t.quantity_left * price if price is not None else None
+            fields = jf.tranche_fields(
+                inputs,
+                account_id=t.account_id,
+                instrument_id=instrument_id,
+                cost_native=t.cost_native,
+                value_native=value,
+            )
+            # a EUR account (or no pool holding) keeps its own cost
+            row.update({k: v for k, v in fields.items() if v is not None or k not in row})
     return {
         "instrument_id": instrument_id,
         "symbol": instr.symbol,
         "currency": currency,
         "method": "fifo_view",
+        "eur_basis": snapshot.basis,
         "as_of": as_of.isoformat(),
         "price_native": dec(price),
-        "rows": [_row(r, names) for r in view.rows],
+        "rows": rows,
         "groups": [
             {
                 "account_id": g.account_id,
@@ -106,9 +133,60 @@ def build(session: Session, instrument_id: int) -> dict[str, Any] | None:
     }
 
 
-def _row(r: tranches_domain.TrancheRow, names: dict[int, str]) -> dict[str, Any]:
+def _eur_costs(
+    session: Session,
+    rows: Sequence[tranches_domain.TrancheRow],
+    instrument_id: int,
+    snapshot: cash_pool_service.PoolSnapshot,
+    native_of: Mapping[int, str],
+) -> dict[int, tuple[Decimal, Decimal]]:
+    """Tranche id -> ``(cost_eur, orig_eur)`` of the shares still held.
+
+    ``pool``: the holding's pool EUR (book and original euros, per account) shared
+    out over its open tranches by ``cost_native`` (a FIFO view of an average-cost
+    figure, so the rows of one account add up to the holding's EUR cost).
+    ``buy_date``: each tranche's native cost at the settled ECB fixing of its own
+    acquisition date (the 7.3.1 basis). A EUR account's cost is its own. A tranche
+    with no EUR figure (a money-market fund, a missing rate) is left out.
+    """
+    out: dict[int, tuple[Decimal, Decimal]] = {}
+    by_account: dict[int, list[tranches_domain.TrancheRow]] = {}
+    for r in rows:
+        by_account.setdefault(r.tranche.account_id, []).append(r)
+    for account_id, group in by_account.items():
+        ccy = native_of.get(account_id, "EUR")
+        if ccy == "EUR":
+            for r in group:
+                out[r.tranche.id] = (r.tranche.cost_native, r.tranche.cost_native)
+            continue
+        if snapshot.basis == "buy_date":
+            for r in group:
+                rate = fx_service.get_settled_rate(
+                    session, r.tranche.acquired_on, base="EUR", quote=ccy
+                )
+                if rate:
+                    eur = r.tranche.cost_native / rate
+                    out[r.tranche.id] = (eur, eur)
+            continue
+        holding = snapshot.state.holdings.get((account_id, instrument_id))
+        total = sum((r.tranche.cost_native for r in group), ZERO)
+        if holding is None or total <= 0:
+            continue
+        for r in group:
+            share = r.tranche.cost_native / total
+            out[r.tranche.id] = (holding.book_eur * share, holding.orig_eur * share)
+    return out
+
+
+def _row(
+    r: tranches_domain.TrancheRow,
+    names: dict[int, str],
+    eur: tuple[Decimal, Decimal] | None = None,
+) -> dict[str, Any]:
     t = r.tranche
     return {
+        "cost_eur": None if eur is None else dec(eur[0]),
+        "orig_eur": None if eur is None else dec(eur[1]),
         "id": t.id,
         "account_id": t.account_id,
         "account_name": names.get(t.account_id, ""),

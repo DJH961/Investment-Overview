@@ -15,6 +15,7 @@ from investment_dashboard.domain.currency import (
     lookup_rate_with_forward_fill,
 )
 from investment_dashboard.domain.instruments import is_money_market_effective
+from investment_dashboard.domain.kinds import TransactionKind
 from investment_dashboard.domain.market_hours import (
     exchange_today,
     feed_is_fresh,
@@ -32,6 +33,7 @@ from investment_dashboard.domain.session_fx import graph_anchor_fx
 from investment_dashboard.readmodels.money_format import currency_symbol, fmt_shares
 from investment_dashboard.repositories import transactions_repo
 from investment_dashboard.services import (
+    cash_pool_service,
     cashflows,
     chart_prefs_service,
     fx_service,
@@ -867,11 +869,21 @@ def compute_instrument_metrics(  # noqa: PLR0915
         if is_money_market_effective(p.instrument, p.effective, _mm_extra())
     }
 
+    # 7.4: a buy's EUR cost is the euros that really bought its dollars (the cash
+    # pool), unless ``fx.holding_cost_basis = buy_date`` (empty map: the 7.3.1 path).
+    # USD legs never read the pool.
+    pool_buys = cash_pool_service.buy_eur_costs(
+        cash_pool_service.build_pool_snapshot(session, as_of=as_of)
+    )
+
     def _legs(t: Transaction) -> tuple[Decimal, Decimal]:
         # B-008: derived from net_native + the row's own-date rate; no frozen
         # legs, no spot fallback. A leg that cannot be derived is 0 for the
         # walk (the boot refresh backfills FX to the earliest trade date).
-        eur = cashflows.txn_eur_amount(t, eur_to_usd=eur_to_usd)
+        if t.kind == TransactionKind.BUY.value and t.id in pool_buys:
+            eur: Decimal | None = -pool_buys[t.id]
+        else:
+            eur = cashflows.txn_eur_amount(t, eur_to_usd=eur_to_usd)
         usd = cashflows.txn_usd_amount(t, eur_to_usd=eur_to_usd)
         return (eur or ZERO), (usd or ZERO)
 

@@ -41,6 +41,7 @@ from investment_dashboard.repositories import (
     transactions_repo,
 )
 from investment_dashboard.services import (
+    cash_pool_service,
     cashflows,
     fx_service,
     intraday_snapshots_service,
@@ -184,10 +185,19 @@ def build_instrument_cashflows(
     *,
     as_of: date | None = None,
 ) -> tuple[dict[int, list[Cashflow]], dict[int, list[Cashflow]]]:
-    """Per-instrument EUR and USD cashflow streams for holding-level XIRR."""
+    """Per-instrument EUR and USD cashflow streams for holding-level XIRR.
+
+    7.4: a buy's EUR flow is its cash-pool cost (the euros that really bought its
+    dollars) unless ``fx.holding_cost_basis = buy_date``. A sale's and a
+    dividend's EUR flow stay at their own date's rate (currency rule). USD flows
+    never read the pool.
+    """
     as_of = as_of or exchange_today()
     txns = list(transactions_repo.list_transactions(session, end=as_of))
     eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
+    pool_buys = cash_pool_service.buy_eur_costs(
+        cash_pool_service.build_pool_snapshot(session, as_of=as_of)
+    )
     eur_flows: dict[int, list[Cashflow]] = {}
     usd_flows: dict[int, list[Cashflow]] = {}
     for t in txns:
@@ -203,7 +213,10 @@ def build_instrument_cashflows(
             continue
         # Derived from net_native + the row's own-date rate (B-008); no frozen
         # legs, no spot fallback.
-        eur = cashflows.txn_eur_amount(t, eur_to_usd=eur_to_usd)
+        if kind == TransactionKind.BUY.value and t.id in pool_buys:
+            eur: Decimal | None = -pool_buys[t.id]
+        else:
+            eur = cashflows.txn_eur_amount(t, eur_to_usd=eur_to_usd)
         usd = cashflows.txn_usd_amount(t, eur_to_usd=eur_to_usd)
         # A leg that cannot be derived is omitted, never faked as 0.
         if eur is not None:

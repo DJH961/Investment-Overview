@@ -81,6 +81,12 @@ EOD_SESSION_KEY = "scheduler.last_eod_session"
 #: Key of the private payload a job returns to say which steps failed (B-005);
 #: ``_run_job`` pops it before the event is published.
 EOD_FAILED_STEPS = "_failed_steps"
+#: ``app_config`` key: the last end-of-day run, ``{"at": iso, "steps": [names]}``
+#: (7.4): the steps that failed (empty when all were fine), so Data Health can say
+#: which ones after a restart too.
+EOD_RESULT_KEY = "scheduler.last_eod_result"
+#: Stand-in step name when the whole end-of-day job raised.
+EOD_JOB_RAISED = "end-of-day job"
 #: Longest pause accepted (a pause always expires).
 MAX_PAUSE = timedelta(days=7)
 #: Minimum gap between backup attempts (also the retry delay after a failure).
@@ -641,6 +647,36 @@ def default_eod_job() -> dict[str, Any] | None:
         refresh_status.finish(EOD_SOURCE, updated=True)
 
 
+def save_eod_result(at: datetime, failed_steps: list[str]) -> None:
+    """Persist the last end-of-day run and its failed steps (blocking; never raises)."""
+    try:
+        from investment_dashboard.db import config_session_scope  # noqa: PLC0415
+        from investment_dashboard.services import app_config_service  # noqa: PLC0415
+
+        payload = json.dumps({"at": at.astimezone(UTC).isoformat(), "steps": failed_steps})
+        with config_session_scope() as cfg:
+            cfg.info["skip_backup_dirty"] = True  # bookkeeping, not durable data
+            app_config_service.set_value(cfg, EOD_RESULT_KEY, payload)
+    except Exception:
+        log.warning("could not persist the end-of-day result", exc_info=True)
+
+
+def load_eod_result(session: Any) -> tuple[datetime | None, list[str]]:
+    """``(when, failed step names)`` of the last end-of-day run on a config session."""
+    from investment_dashboard.services import app_config_service  # noqa: PLC0415
+
+    raw = app_config_service.get(session, EOD_RESULT_KEY)
+    if not raw:
+        return None, []
+    try:
+        data = json.loads(raw)
+        at = datetime.fromisoformat(data["at"])
+        steps = [str(s) for s in data.get("steps") or []]
+    except (ValueError, KeyError, TypeError):
+        return None, []
+    return at, steps
+
+
 def default_eod_grace() -> timedelta:
     from investment_dashboard.config import get_settings  # noqa: PLC0415
 
@@ -661,6 +697,12 @@ def default_close_repull_job() -> bool:
     return boot._refresh_prices() is not False
 
 
+def _refresh_hicp() -> bool:
+    from investment_dashboard.services import hicp_service  # noqa: PLC0415
+
+    return hicp_service.refresh_if_due()
+
+
 def _eod_steps() -> dict[str, Any] | None:
     from investment_dashboard import boot  # noqa: PLC0415
 
@@ -679,6 +721,8 @@ def _eod_steps() -> dict[str, Any] | None:
         boot._generate_recurring_estimates,
         boot._warm_snapshots,
         boot._run_cache_janitor,
+        # Euro-area HICP for the real return (7.4): at most one ECB call a UTC day.
+        _refresh_hicp,
     ):
         # Each step catches and logs its own failure and returns ok/failed (B-005);
         # a step that returns nothing counts as ok.
@@ -885,6 +929,8 @@ class State:
     requested: set[str] = field(default_factory=set)
     last_runs: dict[str, datetime] = field(default_factory=dict)
     last_failed: dict[str, bool] = field(default_factory=dict)
+    #: Names of the steps that failed in each job's last run (7.4: eod honesty).
+    failed_steps: dict[str, list[str]] = field(default_factory=dict)
     #: What the last published tick / fx event carried (change detection).
     last_payload: dict[str, Any] = field(default_factory=dict)
     #: The last published ``market_session`` state (opening/open/closing/closed).
@@ -943,6 +989,7 @@ class Scheduler:
                     "requested": name in st.requested,
                     "last_run_at": iso(st.last_runs.get(name)),
                     "last_failed": st.last_failed.get(name, False),
+                    "failed_steps": list(st.failed_steps.get(name, [])),
                     "paused_until": iso(pauses.get(name)),
                 }
                 for name in JOB_NAMES
@@ -996,11 +1043,36 @@ class Scheduler:
         except Exception:
             log.warning("could not persist last_eod_session", exc_info=True)
 
+    def _persist_eod(self, now: datetime, failed_steps: list[str]) -> None:
+        """Keep which steps failed (7.4) and, after a fully good run, the session."""
+        save_eod_result(now, failed_steps)
+        if not failed_steps:
+            # A fully successful EOD survives a restart (B-004); a failed one
+            # is retried by the next boot.
+            self._save_eod_session(market_hours.latest_settled_session_date(now))
+
     def _due_market(self, now: datetime, interval_seconds: int) -> list[str]:
         stocks = self._due_stocks(now, interval_seconds)
         if stocks == ["eod"]:
             return stocks  # eod refreshes the FX rate as well
         return [*stocks, *self._due_fx(now)]
+
+    def _drop_duplicate_fx(self, now: datetime, due: list[str]) -> list[str]:
+        """No FX job in a pass that also runs a tick (7.4).
+
+        While the forex market trades the tick fetches the live EUR/USD spot itself
+        (``auto_refresh.tick_refresh``), so a separate FX job in the same pass would
+        fetch it twice. After a failed tick, or when the tick is paused, the FX job
+        still runs.
+        """
+        if (
+            "tick" in due
+            and "fx" in due
+            and not self.state.last_failed.get("tick")
+            and market_hours.is_forex_market_open(now)
+        ):
+            return [n for n in due if n != "fx"]
+        return due
 
     def _due_stocks(self, now: datetime, interval_seconds: int) -> list[str]:
         """The stock clock: live interval while the US market is open, else eod + closed."""
@@ -1182,6 +1254,7 @@ class Scheduler:
         try:
             failed = False
             failed_steps = False
+            steps_failed: list[str] = []
             extra: dict[str, Any] | None = None
             started = time.perf_counter()
             subject = activity("backups" if name == "backup" else "market_data")
@@ -1194,7 +1267,7 @@ class Scheduler:
                 subject.warning("job %s FAILED after %.1fs", name, time.perf_counter() - started)
                 failed = True
             else:
-                steps_failed: list[str] = (extra or {}).pop(EOD_FAILED_STEPS, None) or []
+                steps_failed = (extra or {}).pop(EOD_FAILED_STEPS, None) or []
                 if steps_failed:
                     subject.warning(
                         "job %s finished with failed step(s): %s", name, ", ".join(steps_failed)
@@ -1206,13 +1279,10 @@ class Scheduler:
             # cadence instead of spinning every poll.
             st.last_runs[name] = now
             st.last_failed[name] = failed or failed_steps
+            st.failed_steps[name] = [EOD_JOB_RAISED] if failed else steps_failed
             self._stamp(name, now, failed=failed)
-            if name == "eod" and not (failed or failed_steps):
-                # A fully successful EOD survives a restart (B-004); a failed one
-                # is retried by the next boot.
-                await asyncio.to_thread(
-                    self._save_eod_session, market_hours.latest_settled_session_date(now)
-                )
+            if name == "eod":
+                await asyncio.to_thread(self._persist_eod, now, st.failed_steps[name])
             if failed or name == "backup":
                 return
             etype = {"tick": "tick", "fx": "fx", "eod": "refresh"}[name]
@@ -1256,6 +1326,7 @@ class Scheduler:
         if heavy is not None:
             # A heavy maintenance job owns the data; backups still run.
             due = [n for n in due if n == "backup"]
+        due = self._drop_duplicate_fx(now, due)
         requested = [n for n in JOB_NAMES if n in self.state.requested]
         self.state.requested.difference_update(requested)
         ran = [*due, *(n for n in requested if n not in due)]

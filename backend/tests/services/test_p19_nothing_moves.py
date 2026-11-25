@@ -70,6 +70,16 @@ MOVED: dict[str, tuple[str, str]] = {
     "transactions.months[2024-02].net_eur": ("160.0000", "210.0000"),
 }
 
+#: 7.4 lane B2 (cash pool, ``fx.holding_cost_basis = pool``): the 5 Feb buy's $800 came
+#: from the 1 Feb deposit ($1,000 for €850), so it cost €680, not $800 / 1.25 = €640.
+#: Its month and the average trade size follow. ``path -> (value after P19, 7.4 value)``.
+MOVED_POOL: dict[str, tuple[str, str]] = {
+    "transactions.rows[2024-02-05 buy -800].net_eur": ("-640.0000", "-680.0000"),
+    "transactions.rows[2024-02-05 buy -800].cash_eur": ("-640.0000", "-680.0000"),
+    "transactions.months[2024-02].net_eur": ("210.0000", "170.0000"),
+    "transactions.summary.avg_trade_size_eur": ("403.3333", "423.3333"),
+}
+
 
 def seed(session: Session) -> None:
     """The synthetic ledger above, with frozen legs as the pre-7.4 writers stored them."""
@@ -200,6 +210,9 @@ def _expected() -> dict[str, Any]:
     golden: dict[str, Any] = json.loads(GOLDEN.read_text(encoding="utf-8"))
     for path, (old, new) in MOVED.items():
         assert golden[path] == old, path  # the pre-7.4 value really was the ECB one
+        golden[path] = new
+    for path, (old, new) in MOVED_POOL.items():
+        assert golden[path] == old, path
         golden[path] = new
     return golden
 

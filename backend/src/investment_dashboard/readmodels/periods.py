@@ -6,13 +6,21 @@ so the figures match the NiceGUI monthly/yearly tables exactly.
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Mapping
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.domain.real_return import label_months, period_real_return
+from investment_dashboard.readmodels import journey_fields as jf
 from investment_dashboard.readmodels._context import ReadModelContext, build_context
 from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.readmodels.queries.period_query import PeriodRow, aggregate
+from investment_dashboard.services import hicp_service
+
+log = logging.getLogger(__name__)
 
 
 def _row_dict(r: PeriodRow) -> dict[str, Any]:
@@ -64,7 +72,49 @@ def build_yearly(session: Session, *, context: ReadModelContext | None = None) -
     return _build(session, monthly=False, context=context)
 
 
-def _flat_row(r: PeriodRow, *, ccy: str, current_label: str) -> dict[str, Any]:
+def _hicp_index(session: Session) -> dict[str, Decimal]:
+    """The stored HICP index; empty (no real return) when it cannot be read."""
+    try:
+        return hicp_service.get_index(session)
+    except Exception:
+        log.warning("HICP index unreadable; Periods show no real return", exc_info=True)
+        return {}
+
+
+def _cashed_out(session: Session, *, monthly: bool) -> Mapping[str, Decimal]:
+    """Euros back from cash-outs per period label (7.4 B2/C); empty before any cash-out."""
+    try:
+        inputs = jf.inputs_for(session)
+        if inputs is None:
+            return {}
+        return jf.cashed_out_by_period(inputs, by="month" if monthly else "year")
+    except Exception:
+        log.warning("cash-outs unreadable; Periods show 0 cashed out", exc_info=True)
+        return {}
+
+
+def real_fields(growth: Decimal | None, label: str, index: Mapping[str, Decimal]) -> dict[str, Any]:
+    """``real_return`` / ``real_to`` of one EUR period (7.4 P10).
+
+    The nominal EUR growth over the period divided by the euro-area HICP change
+    over the same months (``domain.real_return``). ``real_to`` is the last index
+    month used (``YYYY-MM``): the index is published late. Both are ``None`` for a
+    running month or without an index.
+    """
+    first, last = label_months(label)
+    real = period_real_return(growth, index, first_month=first, last_month=last)
+    if real is None:
+        return {"real_return": None, "real_to": None}
+    return {"real_return": dec(real.value), "real_to": real.to_month}
+
+
+def _flat_row(
+    r: PeriodRow,
+    *,
+    ccy: str,
+    current_label: str,
+    index: Mapping[str, Decimal] | None = None,
+) -> dict[str, Any]:
     """One period flattened into the requested reporting currency.
 
     EUR reads the base fields; USD reads the per-trade-date ``*_display`` /
@@ -87,6 +137,9 @@ def _flat_row(r: PeriodRow, *, ccy: str, current_label: str) -> dict[str, Any]:
             "growth_pct": dec(r.growth_pct_display),
             "total_growth_compounded": dec(r.total_growth_compounded_usd),
             "period_growth_xirr": dec(r.yearly_growth_usd),
+            # Real return is a euro figure (euro-area prices): none in dollars.
+            "real_return": None,
+            "real_to": None,
         }
     return {
         "label": r.label,
@@ -100,6 +153,7 @@ def _flat_row(r: PeriodRow, *, ccy: str, current_label: str) -> dict[str, Any]:
         "growth_pct": dec(r.growth_pct),
         "total_growth_compounded": dec(r.total_growth_compounded_eur),
         "period_growth_xirr": dec(r.yearly_growth_eur),
+        **real_fields(r.growth_pct, r.label, index or {}),
     }
 
 
@@ -122,9 +176,18 @@ def build_for_ccy(
         fill_gaps=fill_gaps,
     )
     current = f"{ctx.as_of:%Y-%m}" if monthly else f"{ctx.as_of:%Y}"
+    index = _hicp_index(session) if ccy == "EUR" else {}
+    cashed = _cashed_out(session, monthly=monthly)
     return {
         "ccy": ccy,
         "as_of": ctx.as_of.isoformat(),
         "granularity": "month" if monthly else "year",
-        "rows": [_flat_row(r, ccy=ccy, current_label=current) for r in rows],
+        "rows": [
+            {
+                **_flat_row(r, ccy=ccy, current_label=current, index=index),
+                # Euros back from cash-outs dated in the period (a euro figure in both views).
+                "cashed_out_eur": dec(cashed.get(r.label, Decimal(0))),
+            }
+            for r in rows
+        ],
     }

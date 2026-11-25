@@ -25,6 +25,34 @@ class TrancheRowOut(ApiModel):
     status: Literal["long", "soon", "short"] = Field(description="soon = long-term in <= 60 days")
     gain_native: DecStr | None = Field(description="Against today's price; null without a price")
     gain_pct: DecStr | None = Field(description="fraction, 0.01 = 1%")
+    cost_eur: DecStr | None = Field(
+        default=None,
+        description=(
+            "EUR cost (book) of the shares still held: the holding's cash-pool EUR "
+            "shared out over its open tranches by native cost (FIFO view of an "
+            "average-cost figure); under eur_basis buy_date, the native cost at the "
+            "ECB fixing of the acquisition date. Null when not available."
+        ),
+    )
+    orig_eur: DecStr | None = Field(
+        default=None,
+        description="Your original euros behind those shares (book minus market EUR)",
+    )
+    your_rate: DecStr | None = Field(
+        default=None, description="USD per EUR your dollars cost for this holding (pool blend)"
+    )
+    gain_eur: DecStr | None = Field(
+        default=None, description="Value now in EUR minus cost_eur; null without a price"
+    )
+    market_eur: DecStr | None = Field(
+        default=None, description="Part of gain_eur from the price, at today's rate"
+    )
+    currency_eur: DecStr | None = Field(
+        default=None, description="Part of gain_eur from the rate move (gain - market)"
+    )
+    back_in_euros: bool | None = Field(
+        default=None, description="Null while still in dollars (an open tranche is always null)"
+    )
 
 
 class TrancheGroupOut(ApiModel):
@@ -56,6 +84,9 @@ class TranchesResponse(ApiModel):
     currency: str
     method: Literal["fifo_view"] = Field(
         description="FIFO view per purchase; the holding's totals use average cost"
+    )
+    eur_basis: Literal["pool", "buy_date"] = Field(
+        default="pool", description="Setting fx.holding_cost_basis behind cost_eur / orig_eur"
     )
     as_of: str
     price_native: DecStr | None
