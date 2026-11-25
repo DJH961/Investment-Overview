@@ -325,3 +325,20 @@ def test_snapshot_is_cached_per_ledger_change(session: Session) -> None:
     session.flush()
     after = cash_pool_service.build_pool_snapshot(session, as_of=AS_OF)
     assert after is not first and after.state.fees_eur > 0
+
+
+def test_tranche_eur_cost_from_the_pool(session: Session) -> None:
+    from investment_dashboard.readmodels import tranches  # noqa: PLC0415
+
+    ids = seed_g1(session)
+    view = tranches.build(session, ids["x"])
+    assert view is not None and view["eur_basis"] == "pool"
+    (row,) = view["rows"]  # 6 of the 10 X shares left (FIFO), $300
+    assert D(row["cost_native"]) == D("300")
+    assert D(row["cost_eur"]) == D("240") and D(row["orig_eur"]) == D("240")
+    z = tranches.build(session, ids["z"])
+    assert z is not None and D(z["rows"][0]["cost_eur"]) == D("750")
+    _set_basis(session, "buy_date")
+    old = tranches.build(session, ids["x"])
+    assert old is not None and old["eur_basis"] == "buy_date"
+    assert D(old["rows"][0]["cost_eur"]).quantize(CENT) == D("250.00")  # $300 / 1.20
