@@ -365,6 +365,8 @@ def test_withdrawal_reduces_period_contributions(session: Session) -> None:
             ),
         ]
     )
+    # The EUR legs are derived from net_native at this rate (P19), never the frozen ones.
+    fx_repo.upsert_rates(session, {date(2024, 1, 1): Decimal("1.1")})
     session.flush()
     rows = aggregate(session, monthly=True, with_closing_value=False)
     jan = next(r for r in rows if r.label == "2024-01")

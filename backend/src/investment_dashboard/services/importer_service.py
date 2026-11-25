@@ -449,10 +449,9 @@ def import_csv(  # noqa: PLR0912, PLR0915
             )
             instrument_id = instr.id
 
-        # Freeze both currency legs (EUR + USD) at the trade-date rate. For
-        # USD-native accounts ``net_usd`` is the booked amount verbatim and
-        # EUR is derived; for EUR-native it's the mirror; other currencies
-        # derive both. A NULL leg flags an FX-history gap to revisit.
+        # Only the native amount is stored; EUR/USD are derived at report
+        # time from that date's rate (P19: the frozen legs stay NULL). The
+        # check still flags an FX-history gap so the import can report it.
         legs = transaction_fx_service.compute_legs(
             session,
             native_currency=account.native_currency,
@@ -474,9 +473,6 @@ def import_csv(  # noqa: PLR0912, PLR0915
             gross_native=prow.gross_native,
             fees_native=prow.fees_native,
             net_native=prow.net_native,
-            fx_rate_to_eur=legs.fx_rate_to_eur,
-            net_eur=legs.net_eur,
-            net_usd=legs.net_usd,
             description=prow.description,
             external_id=prow.external_id,
             source=prow.source,
