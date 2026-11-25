@@ -112,7 +112,11 @@ def _iso(value: datetime | None) -> str | None:
 
 def _ecb_fallback_check(session: Session) -> dict[str, Any]:
     """USD deposits that fell back to the ECB rate (conversion pool did not cover them)."""
-    item = diagnostics_service.check_unconverted_deposits(session)
+    return _info_check(diagnostics_service.check_unconverted_deposits(session))
+
+
+def _info_check(item: diagnostics_service.HealthItem) -> dict[str, Any]:
+    """An info-only check, shown beside the sweep (never raises the badge)."""
     return {
         "id": item.key,
         "title": item.title,
@@ -129,6 +133,14 @@ def build(session: Session, *, log_limit: int = 50) -> dict[str, Any]:
     fallback_check = _ecb_fallback_check(session)
     fallback_check["actions"] = actions_for(
         session, fallback_check["id"], fallback_check["severity"], fallback_check["examples"]
+    )
+    # 7.4: withdrawn dollars not yet converted back (info, like the ECB fallback).
+    withdrawals_check = _info_check(diagnostics_service.check_withdrawals_not_converted(session))
+    withdrawals_check["actions"] = actions_for(
+        session,
+        withdrawals_check["id"],
+        withdrawals_check["severity"],
+        withdrawals_check["examples"],
     )
     latest = provider_status.all_latest()
     fetched = fetch_report.all_latest()
@@ -163,7 +175,7 @@ def build(session: Session, *, log_limit: int = 50) -> dict[str, Any]:
             }
             for i in report.items
         ]
-        + [fallback_check],
+        + [fallback_check, withdrawals_check],
         "providers": providers,
         "provider_log": [
             {"provider": e.provider, "status": e.status, "message": e.message, "at": _iso(e.at)}

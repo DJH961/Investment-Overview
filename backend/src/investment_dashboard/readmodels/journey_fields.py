@@ -239,6 +239,22 @@ def transaction_fields(inputs: JourneyInputs, txn: TxnInfo) -> dict[str, Any]:
     return {"eur_basis": basis, "trail_kind": trail}
 
 
+def record_fields(
+    inputs: JourneyInputs | None,
+    *,
+    txn_id: int | None,
+    on: date,
+    kind: str,
+    account_id: int | None,
+    ccy: str,
+) -> dict[str, Any]:
+    """:func:`transaction_fields` for a ledger record; both ``None`` without a pool."""
+    if inputs is None or txn_id is None:
+        return {"eur_basis": None, "trail_kind": None}
+    info = TxnInfo(txn_id, on, kind, account_id or 0, ccy or "USD", ZERO)
+    return transaction_fields(inputs, info)
+
+
 # ------------------------------------------------------------ Deposits / Periods
 
 

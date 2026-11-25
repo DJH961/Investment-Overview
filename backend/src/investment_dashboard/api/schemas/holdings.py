@@ -160,6 +160,12 @@ class HoldingRow(ApiModel):
         default=None,
         description="ETF-twin estimate / accuracy for a mutual fund with a twin; one row per fund",
     )
+    #: 7.4 KeyFacts: dollars per original euro behind the holding (null without a pool).
+    your_rate: DecStr | None = None
+    #: 7.4 KeyFacts: the ECB fixing on the holding's buy days (weighted by dollars).
+    ecb_buy_avg: DecStr | None = None
+    #: 7.4 KeyFacts: EUR growth minus USD growth, each computed on its own (fraction points).
+    fx_effect_pp: DecStr | None = None
 
 
 class HoldingsSummary(ApiModel):
@@ -242,6 +248,8 @@ class HoldingsResponse(ApiModel):
     ccy: Ccy
     as_of: str
     fx_eur_usd: DecStr | None = None
+    #: 7.4: your conversions' blend (USD per EUR), the FX tile hint.
+    fx_your_rate: DecStr | None = None
     total_value: DecStr | None = None
     total_cost_basis: DecStr | None = Field(default=None, description="Sum of cost bases")
     total_capital_gain: DecStr | None = Field(
@@ -469,6 +477,8 @@ class HoldingPeekResponse(ApiModel):
     """What an expanded Holdings row shows that the row itself cannot."""
 
     instrument_id: int
+    #: 7.4: dollars per original euro behind the holding (null without a pool).
+    your_rate: DecStr | None = None
     currency: str = Field(description="Native currency of the amounts")
     week: PeekWeek | None = Field(default=None, description="Null for a NAV fund (no intraday)")
     tranches: PeekTranches
