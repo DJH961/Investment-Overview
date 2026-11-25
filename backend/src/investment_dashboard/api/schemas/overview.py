@@ -101,7 +101,19 @@ class CurrencyLifetime(ApiModel):
     )
     fx_pnl_eur: DecStr | None = None
     repatriation_value_eur: DecStr | None = None
+    #: 7.4: your rate once the cash pool is on (``fx_pnl_eur`` is then the journey
+    #: bridge total, the same figure as ``/currency/journey``'s ``bridge.total_eur``).
     breakeven_rate: DecStr | None = None
+    #: 7.4: your conversions' blend (USD per EUR, 4 decimals).
+    your_rate: DecStr | None = None
+    #: 7.4: the ECB fixing over the same conversions.
+    ecb_avg: DecStr | None = None
+    #: 7.4: conversion cost so far, both directions (``<= 0`` is a cost).
+    conversion_cost_eur: DecStr | None = None
+    #: 7.4: realised in euros over every cash-out; null until the first one.
+    realised_eur: DecStr | None = None
+    #: 7.4: why this card and the Currency page's Impact differ (one sentence).
+    vs_impact_note: str | None = None
 
 
 class ReturnSplit(ApiModel):
