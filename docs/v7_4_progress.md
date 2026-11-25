@@ -20,10 +20,10 @@ plus its last `Next:` line.
 | Contract + golden G1/G2 | done 2026-11-25 | integration | owner still checks the G1 numbers (contract §3) |
 | Lane A — P19 frozen legs | done, merged b7fb17d5 | lane/v7.4-a-p19 | migration 0029 = d9b3f1a7c2e5; only matched-deposit EUR in Transactions moved; check cache-tier Alembic on server boot; diagnostics _check_frozen_legs still reads legs (drop at release) |
 | Lane B1 — cash pool domain | done, merged 1f40e143 | lane/v7.4-b1-cash-pool | fees reduce received; ecb_rate(ccy,date); see contract §6 |
-| Lane E — recap + real return | restarted with impeccable agent | lane/v7.4-e-recap (worktree agent-a13dde251d4c6378a) | handover at 311f23fe: HICP adapter, cache tier, service, real-return maths done; next: eod step, Periods real return, recap API, health checks, RecapCard |
+| Lane E — recap + real return | done, merged 95c66c1b | lane/v7.4-e-recap | ECB licence: free with citation "Source: ECB, Eurostat" + say real return is our calculation; checks backup_age + eod_steps registered by C; shots in agent-a13dde251d4c6378a/.claude/ui-shots/v7.4-recap |
 | Journey UI mockups | approved 2026-11-25 (v2) | — | aligned trail rows, cash-out EUR vs USD, 4 stats full width; see plan "Approved mockup decisions" |
 | Owner golden check (B1) | G1 OK by owner 2026-11-25 | — | B2 may start once lane A is merged |
-| Lane B2 — wiring | started (ledger_query hook after A merges) | lane/v7.4-b2-wiring | |
+| Lane B2 — wiring | merged; follow-up: direction filters in fx_cost, recurring, currency_deposits, conversions API | lane/v7.4-b2-wiring | P18 rule built, totals NOT switched (owner decision; patch 09d26368 in lane-b2 scratch) |
 | Lane C — journey read models | merged 8239d132; adding the unowned payload hooks | lane/v7.4-c-journey | decisions 1–8 accepted; hooks: B2 tranches, E periods, C the rest; JOURNEY_CHECKS registered by C |
 | Lane D — journey UI | started (impeccable) | lane/v7.4-d-journey-ui | fixtures + temp journey-types.ts |
 | Shots → owner review | to do | | |
@@ -37,3 +37,4 @@ plus its last `Next:` line.
 - 2026-11-25: B1 merged. Contract part 2 (docs/v7_4_contract_api.md) written; lanes B2, C, D started.
 - 2026-11-25: usage limit stopped B2, C, D and E mid-work. Lane A merged. All four resumed with SendMessage (same agents, same context). E re-points 0030 to d9b3f1a7c2e5.
 - 2026-11-25: PR #434 (overflow at 768-1440 px, fixtures deploy gate) merged into 7.4 and closed. Fixed the date-dependent openClose.moments test; main keeps failing that test until 7.4 merges. Lane C merged.
+- 2026-11-26: B2 and E merged (95c66c1b). Open: owner decision on P18 totals; B2 direction filters; C hooks; D UI. Flaky hypothesis test_tiingo_fallback_backoff seen by B2 (pre-existing).
