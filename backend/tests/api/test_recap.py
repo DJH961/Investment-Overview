@@ -173,6 +173,32 @@ def test_ack_rejects_a_bad_period(api_client: TestClient) -> None:
     assert api_client.post("/api/recap/ack", json={"period": "2026-00"}).status_code == 422
 
 
+def test_cashed_out_comes_from_the_journey(
+    api_client: TestClient, seeded: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Euros back from cash-outs: on each Periods row and, equal, in the recap (EUR only)."""
+    from investment_dashboard.readmodels import journey_fields as jf
+    from investment_dashboard.services import read_cache
+
+    monkeypatch.setattr(jf, "inputs_for", lambda _s: object())
+    monkeypatch.setattr(
+        jf,
+        "cashed_out_by_period",
+        lambda _i, *, by: (
+            {"2025-01": Decimal("900.5")} if by == "month" else {"2025": Decimal("900.5")}
+        ),
+    )
+    read_cache.invalidate()
+    both = _periods(api_client, "monthly")
+    row = next(r for r in both["EUR"]["rows"] if r["label"] == "2025-01")
+    assert Decimal(row["cashed_out_eur"]) == Decimal("900.5")
+    quiet = next(r for r in both["EUR"]["rows"] if r["label"] == "2025-03")
+    assert Decimal(quiet["cashed_out_eur"]) == 0
+    body = _recap(api_client, "2025-01")
+    assert Decimal(body["EUR"]["cashed_out"]) == Decimal("900.5")
+    assert body["USD"]["cashed_out"] == "0"
+
+
 def test_default_period() -> None:
     assert recap_rm.default_period(date(2026, 11, 25)) == "2026-10"
     assert recap_rm.default_period(date(2026, 1, 3)) == "2025"

@@ -14,6 +14,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from investment_dashboard.domain.real_return import label_months, period_real_return
+from investment_dashboard.readmodels import journey_fields as jf
 from investment_dashboard.readmodels._context import ReadModelContext, build_context
 from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.readmodels.queries.period_query import PeriodRow, aggregate
@@ -77,6 +78,18 @@ def _hicp_index(session: Session) -> dict[str, Decimal]:
         return hicp_service.get_index(session)
     except Exception:
         log.warning("HICP index unreadable; Periods show no real return", exc_info=True)
+        return {}
+
+
+def _cashed_out(session: Session, *, monthly: bool) -> Mapping[str, Decimal]:
+    """Euros back from cash-outs per period label (7.4 B2/C); empty before any cash-out."""
+    try:
+        inputs = jf.inputs_for(session)
+        if inputs is None:
+            return {}
+        return jf.cashed_out_by_period(inputs, by="month" if monthly else "year")
+    except Exception:
+        log.warning("cash-outs unreadable; Periods show 0 cashed out", exc_info=True)
         return {}
 
 
@@ -164,9 +177,17 @@ def build_for_ccy(
     )
     current = f"{ctx.as_of:%Y-%m}" if monthly else f"{ctx.as_of:%Y}"
     index = _hicp_index(session) if ccy == "EUR" else {}
+    cashed = _cashed_out(session, monthly=monthly)
     return {
         "ccy": ccy,
         "as_of": ctx.as_of.isoformat(),
         "granularity": "month" if monthly else "year",
-        "rows": [_flat_row(r, ccy=ccy, current_label=current, index=index) for r in rows],
+        "rows": [
+            {
+                **_flat_row(r, ccy=ccy, current_label=current, index=index),
+                # Euros back from cash-outs dated in the period (a euro figure in both views).
+                "cashed_out_eur": dec(cashed.get(r.label, Decimal(0))),
+            }
+            for r in rows
+        ],
     }

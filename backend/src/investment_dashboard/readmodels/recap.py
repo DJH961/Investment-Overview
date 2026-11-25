@@ -13,7 +13,8 @@ already show, so the recap can never disagree with them:
   portfolio), so the card shows them as "of which".
 * **conversion cost** is ``fx_spread`` (fees + spread against the ECB fixing) of
   the conversions dated in the period, in each side's own currency.
-* **cashed out** is ``0`` until lane B2 brings conversions back to euros.
+* **cashed out** is the Periods row's ``cashed_out_eur`` (euros back from cash-outs
+  dated in the period, ``journey_fields``); ``0`` in the dollar view.
 
 Every money figure is computed in each reporting currency on its own; nothing is
 converted from the other side. The real return is a euro figure (euro-area prices)
@@ -98,8 +99,8 @@ def _side(
     eur = ccy == "EUR"
     return {
         "contributed": row["contributions"] if row else None,
-        # Lane B2 (conversions back to euros) fills this; present from day one.
-        "cashed_out": "0",
+        # Euros back from cash-outs (the Periods row's); a euro story, so 0 in dollars.
+        "cashed_out": (row.get("cashed_out_eur") or "0") if (row and eur) else "0",
         "market": dec(bridge.market) if bridge else None,
         "currency": dec(bridge.currency) if bridge else None,
         "dividends": row["dividends"] if row else None,

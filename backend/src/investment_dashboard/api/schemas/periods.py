@@ -31,6 +31,10 @@ class PeriodRowOut(ApiModel):
             "or without an index."
         ),
     )
+    cashed_out_eur: DecStr | None = Field(
+        default=None,
+        description="Euros back from cash-outs dated in the period (received minus fees)",
+    )
     real_to: str | None = Field(
         default=None, description="Last HICP month (YYYY-MM) the real return covers."
     )
