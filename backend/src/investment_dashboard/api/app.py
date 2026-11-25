@@ -83,6 +83,8 @@ GUARDED_ROUTER_MODULES: tuple[str, ...] = (
     "lookup",
     # v7.3
     "recurring",
+    # v7.4
+    "currency_journey",
 )
 
 _SECURITY_HEADERS = {
