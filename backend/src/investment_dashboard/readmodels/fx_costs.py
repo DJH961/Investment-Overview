@@ -52,6 +52,7 @@ def _row(r: ConversionCost, ccy: str) -> dict[str, Any]:
         "month_avg": dec(r.month_avg),
         "month_so_far": r.month_so_far,
         "timing_pct": dec(r.timing_pct),
+        "direction": r.direction,
     }
 
 
@@ -110,16 +111,27 @@ def _side(
 
 
 def build_costs_both(session: Session, range_key: str, today: date) -> dict[str, dict[str, Any]]:
-    """``{"EUR": ..., "USD": ...}`` for conversions dated in the range."""
+    """``{"EUR": ..., "USD": ...}`` for conversions dated in the range.
+
+    The top level is EUR -> USD (the 7.3 figures). ``back_to_eur`` is the same payload
+    for the conversions back (7.4: cost, timing and providers in that direction, each
+    row with ``direction``), or ``None`` when there has been none.
+    """
     convs = fx_cost_service.conversions_with_fixings(session)
+    backs = fx_cost_service.conversions_with_fixings(session, direction="to_eur")
     first = transactions_repo.earliest_transaction_date(session) or min(
-        (c.date for c in convs), default=None
+        (c.date for c in (*convs, *backs)), default=None
     )
     # Conversions dated inside the range (``after`` is the close before it).
     window = currency_range.resolve(range_key, today, first)
     start = window.start
     report = fx_spread.build_report(convs, start=start, end=today)
+    back = fx_spread.build_report(backs, start=start, end=today) if backs else None
     return {
-        ccy: _side(report, ccy, range_key, start) | {"window": window.to_dict()}
+        ccy: _side(report, ccy, range_key, start)
+        | {
+            "window": window.to_dict(),
+            "back_to_eur": None if back is None else _side(back, ccy, range_key, start),
+        }
         for ccy in ("EUR", "USD")
     }
