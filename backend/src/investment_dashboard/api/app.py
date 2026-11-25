@@ -72,6 +72,8 @@ GUARDED_ROUTER_MODULES: tuple[str, ...] = (
     "currency_rate",
     "currency_dollar",
     "currency_effect",
+    # v7.4
+    "recap",
     # B6 live
     "stream",
     "live",
@@ -150,7 +152,8 @@ def _mount_frontend(app: FastAPI, dist: Path, *, docs: bool = True) -> None:
 #: ``/api/graphs/range`` is deliberately NOT here: the remembered range is part of the
 #: cached overview payload (``default_range``), so changing it must drop the cache.
 _CACHE_NEUTRAL_WRITES = (
-    frozenset({"/api/settings/values", "/api/brief/ack", "/api/brief/visit"}) | READ_ONLY_POSTS
+    frozenset({"/api/settings/values", "/api/brief/ack", "/api/brief/visit", "/api/recap/ack"})
+    | READ_ONLY_POSTS
 )
 #: Sign-in, sign-out and passkey ceremonies touch no report data.
 _CACHE_NEUTRAL_PREFIXES = ("/api/auth/",)
