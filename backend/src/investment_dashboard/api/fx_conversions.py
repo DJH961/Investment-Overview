@@ -53,6 +53,7 @@ def _out(
     fees = row.fees_eur if row.fees_eur is not None else Decimal(0)
     fixing = service.ecb_fixing_for(session, row.date)
     ecb = None if fixing is None else fixing[0]
+    direction = service.direction(row)
     cost = fx_spread.conversion_cost(
         fx_spread.Conversion(
             id=row.id,
@@ -63,10 +64,17 @@ def _out(
             provider=row.provider,
             ecb_rate=ecb,
             ecb_rate_date=None if fixing is None else fixing[1],
+            direction=direction,
         )
     )
+    if direction == "to_usd":
+        remaining = use.remaining_usd if use is not None else row.usd_received - row.kept_usd
+    else:
+        remaining = Decimal(0)  # a conversion back never fills the deposit pool
     used = sorted(
-        use.slices, key=lambda sl: (dates.get(sl.deposit_id), sl.deposit_id), reverse=True
+        use.slices if use is not None else (),
+        key=lambda sl: (dates.get(sl.deposit_id), sl.deposit_id),
+        reverse=True,
     )
     return FxConversionOut(
         id=row.id,
@@ -81,10 +89,11 @@ def _out(
         provider=cast("Literal['wise', 'revolut', 'other'] | None", row.provider),
         kept_usd=_s(row.kept_usd),
         rate=_s(row.usd_received / row.eur_sent),
-        all_in_rate=_s(row.usd_received / (row.eur_sent + fees)),
+        all_in_rate=_s(cost.all_in_rate),
+        direction=direction,
         ecb_rate=None if ecb is None else _s(ecb),
         ecb_rate_date=None if fixing is None else fixing[1].isoformat(),
-        off_pct=None if not ecb else _s(row.usd_received / (row.eur_sent + fees) / ecb - 1),
+        off_pct=None if cost.off_pct is None else _s(cost.off_pct),
         spread_eur=dec(cost.spread_eur),
         cost_eur=dec(cost.cost_eur),
         fees_usd=dec(cost.fees_usd),
@@ -100,7 +109,7 @@ def _out(
             for sl in used
             if sl.deposit_id in dates
         ],
-        remaining_usd=_s(use.remaining_usd if use is not None else row.usd_received - row.kept_usd),
+        remaining_usd=_s(remaining),
         is_estimate=bool(row.is_estimate),
     )
 
@@ -160,10 +169,15 @@ def _bad(exc: ValueError) -> HTTPException:
 
 
 @router.get("/fx-conversions", response_model=list[FxConversionOut])
-def list_conversions(session: SessionDep) -> list[FxConversionOut]:
+def list_conversions(
+    session: SessionDep,
+    direction: Annotated[Literal["to_usd", "to_eur"] | None, Query()] = None,
+) -> list[FxConversionOut]:
+    """Every conversion, newest first; ``direction`` keeps one way only (default both)."""
     report = service.pool_report(session)
     dates = {m.deposit_id: m.date for m in report.result.deposits}
-    rows = sorted(report.conversions, key=lambda r: (r.date, r.id), reverse=True)
+    listed = service.list_conversions(session, direction=direction)
+    rows = sorted(listed, key=lambda r: (r.date, r.id), reverse=True)
     return [_out(session, r, report.result, dates) for r in rows]
 
 

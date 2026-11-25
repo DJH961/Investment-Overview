@@ -56,6 +56,14 @@ class FxConversionOut(ApiModel):
     effective_rate: DecStr = Field(description="USD received per EUR sent (derived).")
     from_ccy: str
     to_ccy: str
+    direction: Literal["to_usd", "to_eur"] = Field(
+        default="to_usd",
+        description=(
+            "Derived from from_ccy/to_ccy. to_eur = a conversion back: eur_sent holds the "
+            "euros received and usd_received the dollars sent; the cost figures are in "
+            "that direction (positive cost = it cost you)."
+        ),
+    )
     provider: Provider | None
     kept_usd: DecStr = Field(description="Dollars kept outside investing (not in the pool).")
     rate: DecStr = Field(description="usd_received / eur_sent (same as effective_rate).")

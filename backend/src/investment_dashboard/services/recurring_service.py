@@ -827,7 +827,7 @@ def suggest_routine(  # noqa: PLR0912 - three independent collectors, narrated i
         )
     # A recurring conversion repeats its amount: group by provider and amount (25 EUR wide).
     by_provider: dict[tuple[str, int], list[recurrence_suggest.Observation]] = {}
-    for c in fx_conversion_service.list_conversions(session):
+    for c in fx_conversion_service.list_conversions(session, direction="to_usd"):
         if not c.is_estimate and since <= c.date <= day:
             bucket = int((c.eur_sent / 25).to_integral_value(rounding="ROUND_HALF_UP"))
             by_provider.setdefault((c.provider or DEFAULT_PROVIDER, bucket), []).append(
@@ -963,7 +963,9 @@ def _eur_fields(found: tuple[Decimal, str, date] | None) -> dict[str, object]:
 def estimate_views(session: Session) -> list[EstimateView]:
     """Every est. row to settle, newest first (buys and conversions together)."""
     txns, convs = list_estimates(session)
-    all_conversions = fx_conversion_service.list_conversions(session) if txns else ()
+    all_conversions = (
+        fx_conversion_service.list_conversions(session, direction="to_usd") if txns else ()
+    )
     out: list[EstimateView] = []
     for t in txns:
         account = accounts_repo.get_account(session, t.account_id)
