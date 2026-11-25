@@ -19,16 +19,19 @@ plus its last `Next:` line.
 | Plan approved | done 2026-11-25 | — | owner answers: recap + real return pulled in; no alert channel; sell keeps original cost; cash-out supported across the app |
 | Contract + golden G1/G2 | done 2026-11-25 | integration | owner still checks the G1 numbers (contract §3) |
 | Lane A — P19 frozen legs | started | see lane report | |
-| Lane B1 — cash pool domain | started | see lane report | |
-| Lane E — recap + real return | started | see lane report | |
-| Journey UI mockups | to do | — | the owner approves them before lane D |
-| Owner golden check (B1) | to do | — | gate for B2 |
-| Lane B2 — wiring | waiting on A + owner gate | | |
-| Lane C — journey read models | waiting on B1 | | |
-| Lane D — journey UI | waiting on mockups | | |
+| Lane B1 — cash pool domain | done, merged 1f40e143 | lane/v7.4-b1-cash-pool | fees reduce received; ecb_rate(ccy,date); see contract §6 |
+| Lane E — recap + real return | restarted with impeccable agent | lane/v7.4-e-recap (worktree agent-a13dde251d4c6378a) | handover at 311f23fe: HICP adapter, cache tier, service, real-return maths done; next: eod step, Periods real return, recap API, health checks, RecapCard |
+| Journey UI mockups | approved 2026-11-25 (v2) | — | aligned trail rows, cash-out EUR vs USD, 4 stats full width; see plan "Approved mockup decisions" |
+| Owner golden check (B1) | G1 OK by owner 2026-11-25 | — | B2 may start once lane A is merged |
+| Lane B2 — wiring | started (ledger_query hook after A merges) | lane/v7.4-b2-wiring | |
+| Lane C — journey read models | started | lane/v7.4-c-journey | codes against contract_api §7 seam |
+| Lane D — journey UI | started (impeccable) | lane/v7.4-d-journey-ui | fixtures + temp journey-types.ts |
 | Shots → owner review | to do | | |
 | Full tests, CI, release 7.4.0 | to do | | ask about DEPLOY_MODE first |
 
 ## Log
 
 - 2026-11-25: plan and contract written; lanes A, B1 and E started.
+- 2026-11-25: owner approved mockups v2 and G1. UI lanes use impeccable (design, audit, critique); the orchestrator runs impeccable-finish-reviewer.
+- 2026-11-25: lane E told to hand over; it restarts as a skills-capable agent (impeccable). Owner rule: align text and keep empty lines to a minimum, never pad the other boxes.
+- 2026-11-25: B1 merged. Contract part 2 (docs/v7_4_contract_api.md) written; lanes B2, C, D started.

@@ -441,12 +441,15 @@ class TestMetrics:
         session.add_all(txns)
         session.flush()
 
-        cashflows = metrics_service.build_portfolio_cashflows(txns)
+        # P19: EUR is net_native at its own date's rate (1.25), never the frozen leg.
+        cashflows = metrics_service.build_portfolio_cashflows(
+            txns, eur_to_usd={date(2024, 1, 1): Decimal("1.25")}
+        )
 
         assert [(cf.date, cf.amount) for cf in cashflows] == [
-            (date(2024, 1, 1), Decimal("-900")),
-            (date(2024, 2, 1), Decimal("45")),
-            (date(2024, 3, 1), Decimal("4.50")),
+            (date(2024, 1, 1), Decimal("-800")),
+            (date(2024, 2, 1), Decimal("40")),
+            (date(2024, 3, 1), Decimal("4")),
         ]
 
     def test_transfer_kinds_count_as_external_flows(self, session: Session) -> None:
@@ -474,13 +477,15 @@ class TestMetrics:
         session.add_all(txns)
         session.flush()
 
-        cashflows = metrics_service.build_portfolio_cashflows(txns)
+        cashflows = metrics_service.build_portfolio_cashflows(
+            txns, eur_to_usd={date(2024, 1, 1): Decimal("1.25")}
+        )
 
-        # transfer_in (amount 900) ⇒ negative flow; transfer_out (amount -180)
+        # transfer_in (EUR 800 at 1.25) ⇒ negative flow; transfer_out (EUR -160)
         # ⇒ positive flow — exactly the deposit/withdrawal sign convention.
         assert [(cf.date, cf.amount) for cf in cashflows] == [
-            (date(2024, 1, 1), Decimal("-900")),
-            (date(2024, 6, 1), Decimal("180")),
+            (date(2024, 1, 1), Decimal("-800")),
+            (date(2024, 6, 1), Decimal("160")),
         ]
 
 

@@ -9,8 +9,8 @@ Currency rule (AGENTS.md): amounts are native; a reporting-currency figure is
 derived per transaction at **its own date's** rate. Never a return converted
 into another currency.
 
-Missing-FX policy (the only one): when a leg cannot be derived honestly (no
-frozen leg, native currency differs from the target and no rate is on file) the
+Missing-FX policy (the only one): when a leg cannot be derived honestly (the
+native currency differs from the target and no rate is on file) the
 amount function returns ``None``. Callers **omit** such rows from sums and
 cashflow streams; ``0`` is never a stand-in for "unknown", a EUR figure is never
 relabelled as USD and a rate is never defaulted to ``1``.
@@ -101,12 +101,11 @@ def derived_usd(t: Transaction, eur_to_usd: Rates | None) -> Decimal | None:
 def _base_eur(t: Transaction, eur_to_usd: Rates | None) -> Decimal | None:
     """EUR cash leg *before* any FX-pool override.
 
-    Derived from ``net_native`` at the transaction date's rate; the frozen
-    ``net_eur`` is only a fallback when it cannot be derived (no rate on file,
-    other native currency). It is otherwise a read-only cross-check.
+    Derived from ``net_native`` at the transaction date's rate. The frozen
+    ``net_eur`` leg is never read (P19): no rate on file (or another native
+    currency) means ``None``, per the missing-FX policy.
     """
-    derived = derived_eur(t, eur_to_usd)
-    return derived if derived is not None else t.net_eur
+    return derived_eur(t, eur_to_usd)
 
 
 def txn_eur_amount(
@@ -124,20 +123,11 @@ def txn_eur_amount(
 def txn_usd_amount(t: Transaction, *, eur_to_usd: Rates | None = None) -> Decimal | None:
     """USD cash leg of one transaction at its own date's rate, or ``None``.
 
-    A USD-native row reads ``net_native`` verbatim; a EUR-native row converts at
-    the trade-date forward-filled rate. The frozen ``net_usd`` is a fallback only
-    (cross-check otherwise); a last resort converts the un-overridden EUR leg.
+    A USD-native row reads ``net_native`` verbatim (USD is never derived from
+    EUR); a EUR-native row converts at the trade-date forward-filled rate. The
+    frozen ``net_usd`` leg is never read (P19).
     """
-    derived = derived_usd(t, eur_to_usd)
-    if derived is not None:
-        return derived
-    if t.net_usd is not None:
-        return t.net_usd
-    eur = _base_eur(t, eur_to_usd)
-    if eur is None:
-        return None
-    rate = _rate(eur_to_usd, t.date)
-    return eur * rate if rate is not None else None
+    return derived_usd(t, eur_to_usd)
 
 
 def txn_amount(

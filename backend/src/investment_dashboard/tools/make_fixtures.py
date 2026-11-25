@@ -553,20 +553,9 @@ def seed_full(session: Any) -> None:
         return fx[day]
 
     def legs(day: _dt.date, native: Decimal, currency: str) -> dict[str, Decimal]:
-        r = rate_on(day)
-        if currency == "USD":
-            return {
-                "net_native": native,
-                "net_usd": native,
-                "net_eur": (native / r).quantize(D("0.01")),
-                "fx_rate_to_eur": r,
-            }
-        return {
-            "net_native": native,
-            "net_eur": native,
-            "net_usd": (native * r).quantize(D("0.01")),
-            "fx_rate_to_eur": D("1"),
-        }
+        # P19: only the native amount is stored; EUR/USD are derived when read.
+        del day, currency
+        return {"net_native": native}
 
     rows: list[Transaction] = []
 
@@ -1273,7 +1262,6 @@ def seed_nice(session: Any) -> None:
 
     def add(day: _dt.date, kind: str, native: str, **extra: object) -> None:
         extra.setdefault("created_at", _dt.datetime.combine(day, _dt.time(12, 0)))
-        r = rate_on(day)
         amount = D(native)
         rows.append(
             Transaction(
@@ -1281,10 +1269,7 @@ def seed_nice(session: Any) -> None:
                 date=day,
                 kind=kind,
                 source="manual",
-                net_native=amount,
-                net_usd=amount,
-                net_eur=(amount / r).quantize(D("0.01")),
-                fx_rate_to_eur=r,
+                net_native=amount,  # P19: EUR/USD are derived when read
                 **extra,
             )
         )

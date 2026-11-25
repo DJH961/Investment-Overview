@@ -19,7 +19,7 @@ from investment_dashboard.repositories import (
     snapshots_repo,
     transactions_repo,
 )
-from investment_dashboard.services import fx_service, instrument_enrichment_service
+from investment_dashboard.services import cashflows, fx_service, instrument_enrichment_service
 from investment_dashboard.services.importer_service import Broker, import_csv
 
 FIXTURE_DIR = Path(__file__).parents[1] / "adapters" / "fixtures"
@@ -122,20 +122,25 @@ class TestImportFidelity:
         content = (FIXTURE_DIR / "fidelity_sample.csv").read_text()
         import_csv(session, broker=Broker.FIDELITY, account_id=usd_account, content=content)
         buy = session.scalars(select(Transaction).where(Transaction.kind == "buy")).one()
+        # P19: the frozen leg stays NULL; EUR is derived when read.
+        assert buy.net_eur is None
+        rates = fx_service.get_rates(session, base="EUR", quote="USD")
+        eur = cashflows.txn_eur_amount(buy, eur_to_usd=rates)
         # -2205 USD at 1.08 ⇒ -2041.67 EUR
-        assert buy.net_eur is not None
-        assert abs(buy.net_eur - Decimal("-2041.67")) < Decimal("0.05")
+        assert eur is not None
+        assert abs(eur - Decimal("-2041.67")) < Decimal("0.05")
 
-    def test_net_usd_frozen_as_native_for_usd_account(
+    def test_usd_leg_is_native_for_usd_account(
         self, session: Session, usd_account: int, fx_seeded: None
     ) -> None:
-        # USD is the booked currency, so net_usd must equal net_native
-        # *exactly* (no FX round-trip), per the v2.9 USD-native perspective.
+        # USD is the booked currency, so the USD leg must equal net_native
+        # *exactly* (no FX round-trip); the frozen leg is no longer written.
         content = (FIXTURE_DIR / "fidelity_sample.csv").read_text()
         import_csv(session, broker=Broker.FIDELITY, account_id=usd_account, content=content)
         for txn in session.scalars(select(Transaction)).all():
+            assert txn.net_usd is None
             if txn.net_native is not None:
-                assert txn.net_usd == txn.net_native
+                assert cashflows.txn_usd_amount(txn, eur_to_usd={}) == txn.net_native
 
     def test_fx_missing_dates_reported_without_history(
         self, session: Session, usd_account: int
@@ -154,12 +159,14 @@ class TestImportFidelity:
         assert result.fx_missing_dates  # non-empty
         # USD leg is still exact even when EUR can't be derived.
         buy = session.scalars(select(Transaction).where(Transaction.kind == "buy")).one()
-        assert buy.net_usd == buy.net_native
+        rates = fx_service.get_rates(session, base="EUR", quote="USD")
+        assert cashflows.txn_usd_amount(buy, eur_to_usd=rates) == buy.net_native
+        assert cashflows.txn_eur_amount(buy, eur_to_usd=rates) is None
         assert buy.net_eur is None
 
-    def test_eur_account_freezes_usd_leg(self, session: Session, fx_seeded: None) -> None:
-        # For an EUR-native account, net_eur == net_native and net_usd is
-        # derived at the trade-date rate.
+    def test_eur_account_derives_usd_leg(self, session: Session, fx_seeded: None) -> None:
+        # For an EUR-native account, EUR == net_native and USD is derived at
+        # the trade-date rate; nothing is frozen on the row (P19).
         eur_account = accounts_repo.create_account(
             session,
             broker="fidelity",
@@ -170,12 +177,11 @@ class TestImportFidelity:
         content = (FIXTURE_DIR / "fidelity_sample.csv").read_text()
         import_csv(session, broker=Broker.FIDELITY, account_id=eur_account, content=content)
         buy = session.scalars(select(Transaction).where(Transaction.kind == "buy")).one()
-        assert buy.net_eur == buy.net_native
-        assert buy.net_usd is not None
-        # net_usd = net_native × EUR→USD on the trade date (2024-01-05 ⇒ 1.08).
-        assert buy.net_usd == buy.net_native * Decimal("1.08")
-        # fx_rate_to_eur is the EUR→native rate, which for an EUR account is 1.
-        assert buy.fx_rate_to_eur == Decimal(1)
+        assert (buy.net_eur, buy.net_usd, buy.fx_rate_to_eur) == (None, None, None)
+        rates = fx_service.get_rates(session, base="EUR", quote="USD")
+        assert cashflows.txn_eur_amount(buy, eur_to_usd=rates) == buy.net_native
+        # USD = net_native × EUR→USD on the trade date (2024-01-05 ⇒ 1.08).
+        assert cashflows.txn_usd_amount(buy, eur_to_usd=rates) == buy.net_native * Decimal("1.08")
 
 
 class TestRowLevelReporting:
