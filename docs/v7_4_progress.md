@@ -21,8 +21,8 @@ plus its last `Next:` line.
 | Lane A — P19 frozen legs | started | see lane report | |
 | Lane B1 — cash pool domain | started | see lane report | |
 | Lane E — recap + real return | started | see lane report | |
-| Journey UI mockups | to do | — | the owner approves them before lane D |
-| Owner golden check (B1) | to do | — | gate for B2 |
+| Journey UI mockups | approved 2026-11-25 (v2) | — | aligned trail rows, cash-out EUR vs USD, 4 stats full width; see plan "Approved mockup decisions" |
+| Owner golden check (B1) | G1 OK by owner 2026-11-25 | — | B2 may start once lane A is merged |
 | Lane B2 — wiring | waiting on A + owner gate | | |
 | Lane C — journey read models | waiting on B1 | | |
 | Lane D — journey UI | waiting on mockups | | |
@@ -32,3 +32,4 @@ plus its last `Next:` line.
 ## Log
 
 - 2026-11-25: plan and contract written; lanes A, B1 and E started.
+- 2026-11-25: owner approved mockups v2 and G1. UI lanes use impeccable (design, audit, critique); the orchestrator runs impeccable-finish-reviewer.

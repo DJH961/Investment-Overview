@@ -95,6 +95,17 @@ Each step adds something the app can now measure:
 
 One new shared component, **`components/MoneyTrail/`**. It is a chain of steps, each with an icon, a label and a figure: € sent → $ received → deposited → bought → worth now (→ back to €).
 - Horizontal at 1280 px, vertical at 360/390 px.
+- **Aligned rows (owner, 2026-11-25).** Every step has the same four rows: icon, label,
+  **bold figure**, detail. Across the steps they line up, so the bold figures sit on one line
+  (CSS subgrid, or fixed row tracks).
+
+**Approved mockup decisions (owner, 2026-11-25):**
+- The cash-out result card puts **euros beside dollars**: put in, market, currency (euros
+  only), conversion cost (euros only), realized, and a year. Under it, one sentence on how far
+  the euro result trails or beats the dollar one.
+- "Your dollars" has **four stats: USD account · broker cash · invested · your rate**. On
+  desktop they run across the full width in one row of four; on phones they sit 2×2. There is
+  never an empty tile. "Back in euros" lives in the bridge, not as a fifth tile.
 - A compact one-line chip variant.
 - Every step has its own icon and label, never colour alone. Pairs go into `tokens.cvd.test.ts`.
 
@@ -150,7 +161,7 @@ The orchestrator alone writes the shared files: CHANGELOG, versions, lockfiles, 
 | **A. P19 frozen legs** | implementer (Opus) | `ledger_query`, `readmodels/transactions.py`, `cashflows` fallbacks, writers, migration 0029. Adds an `eur_amount` resolver hook in `ledger_query` for lane B. | contract |
 | **B. Cash pool maths** | implementer (Opus) | `domain/cash_pool.py` and its tests (B1). Then wiring (B2): `ledger_walk`, `overview_query._legs`, `metrics_service.build_instrument_cashflows`, the tranches read model, the settings section, USD→EUR, P18. | B1: contract. B2: owner's golden OK, and lane A merged |
 | **C. Journey read models + API** | implementer (Opus) | `readmodels/currency_journey.py`, the trail endpoint, the card rebuild, the Data Health checks | B1 types (stubbed from the contract until B2 lands) |
-| **D. Journey UI** | implementer (Opus, design) | `MoneyTrail`, the Currency "Your dollars" section, the Transactions/Conversions/Holding/Overview/Holdings edits, the tour, the glossary | approved mockups; fixtures from the contract |
+| **D. Journey UI** | general-purpose (Opus), which can load skills: it uses the **impeccable** skill for design direction, an audit and a critique of its shots before it reports. The orchestrator then runs `impeccable:impeccable-finish-reviewer` on the finished build. | `MoneyTrail`, the Currency "Your dollars" section, the Transactions/Conversions/Holding/Overview/Holdings edits, the tour, the glossary | approved mockups; fixtures from the contract |
 | **E. Recap + real return** | implementer (Opus: recap and HICP money maths; golden values checked by the owner) | the HICP adapter/service/cache tier, real return on Periods, `GET /api/recap` and the recap card (Periods + first visit), the backup-age check, the eod honesty fix, the duplicate FX job | contract only (independent of the pool). Recap conversion-cost line: `fx_spread` already exists |
 | **Fixtures / types** | implementer-light (Haiku) | fixture regeneration, `export_openapi`, `api-types` | orchestrator calls it at each merge |
 

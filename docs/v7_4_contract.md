@@ -145,6 +145,25 @@ class PoolState:
   - zero rate moves give a zero currency part.
 - **Rollback switch.** `buy_date` mode is not a pool concern; B2 keeps the old `_legs`.
 
+### What the EUR growth base is (owner question, 2026-11-25)
+
+- **Portfolio.** The base is only the euros you converted. Dividends and market gains stay
+  inside the dollars and never add to the base:
+  - before a cash-out, the EUR return compares today's value with the converted euros, at
+    their conversion dates;
+  - after a cash-out, it is only the conversion cash flows: euros out when you converted,
+    euros back when you cashed out.
+
+  `orig_eur` carries exactly this through every lot.
+- **One holding.** Its base is the euros that bought it. Usually those are converted euros.
+  When a buy is paid with dividend, interest or sale-gain dollars, that part enters at that
+  day's ECB rate (`market_eur`) and counts as money put into *that* holding, because it came
+  from elsewhere. The holding's own reinvested dividends stay its return, not new money (the
+  existing reinvest rule).
+- The read models expose both:
+  - `book_eur`: the cost basis the holding page shows;
+  - `orig_eur`: "your original euros", used in the cash-out and the journey.
+
 ### Golden ledger G1 (worked by hand; the owner checks it)
 
 Rates are chosen for round numbers. "ECB" is the fixing on that date.
