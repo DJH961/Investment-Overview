@@ -95,8 +95,14 @@ def _note_change(action: str, conversion_id: int, on: date) -> None:
     )
 
 
-def list_conversions(session: Session) -> Sequence[FxConversion]:
-    return repo.list_all(session)
+def list_conversions(
+    session: Session, *, direction: Direction | None = None
+) -> Sequence[FxConversion]:
+    """Every conversion row (date, id order), or only those in ``direction``."""
+    rows = repo.list_all(session)
+    if direction is None:
+        return rows
+    return [r for r in rows if direction_of(r.from_ccy, r.to_ccy) == direction]
 
 
 def get_conversion(session: Session, conversion_id: int) -> FxConversion | None:
@@ -291,7 +297,9 @@ def ecb_fixing_for(session: Session, on: date) -> tuple[Decimal, date] | None:
 
 
 def compute_pool(session: Session) -> PoolReport:
-    rows = tuple(repo.list_all(session))
+    # The deposit pool only knows EUR -> USD conversions (a conversion back is the cash
+    # pool's, ``conversions_back``).
+    rows = tuple(r for r in repo.list_all(session) if direction(r) == "to_usd")
     deposits = repo.list_usd_contribution_deposits(session)
     pins, _withdrawal_pins = _split_pins(session)
     marked = repo.list_usd_received_marks(session)

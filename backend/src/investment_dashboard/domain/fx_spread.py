@@ -29,6 +29,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
+from typing import Literal
 
 ZERO = Decimal(0)
 ONE = Decimal(1)
@@ -38,6 +39,7 @@ FIXING_LOOKBACK_DAYS = 7
 
 Day = date
 PROVIDERS = ("wise", "revolut", "other", "none")
+Direction = Literal["to_usd", "to_eur"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +57,10 @@ class Conversion:
     month_avg: Decimal | None = None
     #: The month is still running: the mean is of the fixings so far.
     month_so_far: bool = False
+    #: ``"to_eur"``: a conversion back. ``eur_sent`` then holds the euros *received*
+    #: and ``usd_received`` the dollars *sent* (the row's EUR and USD sides), see
+    #: :func:`conversion_cost`.
+    direction: Direction = "to_usd"
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,6 +167,8 @@ def fixing_for(
 
 def conversion_cost(c: Conversion) -> ConversionCost:
     """One conversion against its fixing; the figures are ``None`` without one."""
+    if c.direction == "to_eur":
+        return _back_cost(c)
     all_in = c.usd_received / (c.eur_sent + c.fees_eur)
     provider = (
         "none" if c.provider is None else (c.provider if c.provider in PROVIDERS else "other")
@@ -201,6 +209,66 @@ def conversion_cost(c: Conversion) -> ConversionCost:
             (c.usd_received / c.eur_sent) / c.month_avg - ONE
             if c.month_avg is not None and c.month_avg > 0
             else None
+        ),
+    )
+
+
+def _back_cost(c: Conversion) -> ConversionCost:
+    """A conversion back to EUR (``usd_received`` = dollars sent, ``eur_sent`` = euros got).
+
+    Same meaning as the EUR -> USD figures, in this direction (positive cost = it cost
+    you; a negative ``off_pct`` / ``timing_pct`` = worse than the reference):
+
+    * ``ecb_eur = usd / ecb``: what the dollars were worth at the fixing;
+    * ``spread_eur = ecb_eur - eur_received``, ``cost_eur = spread_eur + fees_eur``
+      (equals ``-domain.cash_out.CashOut.conversion_cost_eur``);
+    * ``all_in_rate = usd / (eur_received - fees)`` (dollars per euro that came back),
+      ``off_pct = ecb / all_in_rate - 1``, ``spread_off_pct = ecb / rate - 1``;
+    * dollars: ``spread_usd = usd - eur_received x ecb``, ``fees_usd = fees x ecb``;
+    * ``timing_pct = month_avg / rate - 1`` (positive = more euros per dollar than the
+      month's average).
+    """
+    usd, eur = c.usd_received, c.eur_sent
+    net = eur - c.fees_eur
+    all_in = usd / net if net > 0 else usd / eur
+    rate = usd / eur
+    provider = (
+        "none" if c.provider is None else (c.provider if c.provider in PROVIDERS else "other")
+    )
+    ecb = c.ecb_rate
+    ecb_eur = spread = cost = off = spread_off = None
+    spread_usd = fees_usd = cost_usd = None
+    if ecb is not None and ecb > 0:
+        ecb_eur = usd / ecb
+        spread = ecb_eur - eur
+        cost = spread + c.fees_eur
+        off = ecb / all_in - ONE
+        spread_off = ecb / rate - ONE
+        spread_usd = usd - eur * ecb
+        fees_usd = c.fees_eur * ecb
+        cost_usd = spread_usd + fees_usd
+    return ConversionCost(
+        id=c.id,
+        date=c.date,
+        provider=provider,
+        eur_sent=eur,
+        usd_received=usd,
+        fees_eur=c.fees_eur,
+        all_in_rate=all_in,
+        ecb_rate=ecb,
+        ecb_rate_date=c.ecb_rate_date,
+        ecb_eur=ecb_eur,
+        spread_eur=spread,
+        cost_eur=cost,
+        off_pct=off,
+        spread_off_pct=spread_off,
+        spread_usd=spread_usd,
+        fees_usd=fees_usd,
+        cost_usd=cost_usd,
+        month_avg=c.month_avg,
+        month_so_far=c.month_so_far,
+        timing_pct=(
+            c.month_avg / rate - ONE if c.month_avg is not None and c.month_avg > 0 else None
         ),
     )
 

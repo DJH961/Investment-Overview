@@ -75,7 +75,7 @@ def usd_deposits(session: Session) -> list[de.Deposit]:
     if not txns:
         return []
     matches = {}
-    if fx_conversion_service.list_conversions(session):
+    if fx_conversion_service.list_conversions(session, direction="to_usd"):
         matches = {
             m.deposit_id: m for m in fx_conversion_service.pool_report(session).result.deposits
         }
