@@ -6,7 +6,7 @@ cache data. Idempotent: created only when absent. The downgrade drops the table
 (nothing to export).
 
 Revision ID: d7a3f1c9e5b2
-Revises: c4e8a2f6b0d7 (placeholder: re-pointed to 0029 at merge)
+Revises: d9b3f1a7c2e5 (0029, frozen legs nullable)
 Create Date: 2026-11-25 12:00:00.000000
 """
 
@@ -18,7 +18,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "d7a3f1c9e5b2"
-down_revision: str | Sequence[str] | None = "c4e8a2f6b0d7"
+down_revision: str | Sequence[str] | None = "d9b3f1a7c2e5"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
