@@ -252,12 +252,13 @@ Identity, tested exactly: `realised_eur == market_eur + currency_eur + conversio
   (always) and on the Overview on the first visit of a new month (dismiss = ack). Shots at
   360/390/1280, nice fixtures, EUR and USD.
 
-## 6. Later lanes (filled in at session 2)
 
-C and D build on B1's types. Their endpoint shapes are written here after the owner
-approves the B1 golden values and the mockups:
-- `/api/currency/journey`;
-- `/api/transactions/{id}/trail`;
-- the tranche EUR fields;
-- the card rebuild;
-- the cash-out flow.
+## 6. B1 as built (merged 1f40e143)
+
+See lane B1's report in the git log. Differences from §3 and §4:
+
+- Fees on a conversion back: `realised = received − fees − orig`, and the XIRR uses `+(received − fees)`.
+- `ecb_rate(ccy, date)`.
+- `run(events, deposit_matches, ecb_rate, money_market_ids, *, conversions=(), back_pins=(), deposit_ccy="USD")`.
+- `PoolState.conversions_back` and `Draw.flagged`.
+- Virtual draws `uncovered:*` and `kept:*`.
