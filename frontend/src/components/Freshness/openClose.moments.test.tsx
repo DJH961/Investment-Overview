@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { MarketChip } from "../MarketClock/MarketChip";
 import { FxState } from "../FxState";
 import { IDLE_REFRESH } from "../../lib/refresh";
@@ -53,6 +53,10 @@ describe("the top bar chip, the phase and the day words at every open / close mo
   for (const m of MOMENTS) {
     it(m.name, () => {
       const now = new Date(m.now);
+      // dayWords reads the wall clock ("Today" vs "Last session"), so pin it to the moment.
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(now);
+      onTestFinished(() => vi.useRealTimers());
       const phase = marketPhase({ freshness: m.f, session: null, pricesLive: null, payloadLive: m.payloadLive, now });
       expect(phase).toBe(m.phase);
       const view = describeFreshness(m.f as never, {

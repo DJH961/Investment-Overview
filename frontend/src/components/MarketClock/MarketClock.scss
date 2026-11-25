@@ -107,9 +107,10 @@
     color: var(--color-bell);
   }
 
+  // The ring sits on the icon and grows by transform only, so it never widens the row.
   &__bell::after {
     position: absolute;
-    inset: -3px;
+    inset: 0;
     border: var(--border-width) solid var(--color-bell);
     border-radius: var(--radius-full);
     opacity: 0;
@@ -405,12 +406,12 @@
 @keyframes market-clock-ripple {
   0% {
     opacity: 0.7;
-    transform: scale(0.6);
+    transform: scale(0.85);
   }
 
   100% {
     opacity: 0;
-    transform: scale(2.2);
+    transform: scale(3);
   }
 }
 

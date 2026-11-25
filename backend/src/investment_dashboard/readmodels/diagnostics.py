@@ -54,6 +54,12 @@ _LINKS: dict[str, tuple[str, str]] = {
     "providers": ("Test the providers", "/diagnostics#system"),
     "prices_anomaly": ("Open the price editor", "/diagnostics#market-data"),
     "ecb_fallback_deposits": ("Open the Conversions page", "/conversions"),
+    # 7.4 journey checks (lane C)
+    "idle_dollars": ("Open the Conversions page", "/conversions"),
+    "uncovered_buys": ("Open the Transactions page", "/transactions"),
+    "negative_broker_cash": ("Open the Transactions page", "/transactions"),
+    "withdrawals_not_converted": ("Record a cash-out", "/conversions"),
+    "conversion_back_uncovered": ("Open the Transactions page", "/transactions"),
 }
 
 

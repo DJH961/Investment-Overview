@@ -1104,3 +1104,209 @@ def quick_status(session: Session) -> tuple[str, int]:
     ]
     report = HealthReport(items=tuple(items))
     return report.worst_severity, report.problem_count
+
+
+# ----------------------------------------------------------------- 7.4 journey (lane C)
+#
+# Each check has a pure ``journey_*`` form over the journey inputs (tests feed it a
+# synthetic pool) and a session form ``check_*``. Without the cash pool service every
+# session form reports ok. Fix links live in ``readmodels/diagnostics.py`` ``_LINKS``.
+
+
+def _journey_inputs(session: Session) -> object | None:
+    from investment_dashboard.readmodels import journey_fields  # noqa: PLC0415
+
+    return journey_fields.inputs_for(session)
+
+
+def journey_idle_dollars(inputs: object) -> HealthItem:
+    """Converted dollars no deposit took for over 30 days (warning)."""
+    from investment_dashboard.readmodels import currency_journey as cj  # noqa: PLC0415
+
+    assert isinstance(inputs, cj.JourneyInputs)
+    idle = cj.build_journey(inputs).idle
+    key, title = "idle_dollars", "Idle dollars"
+    if not idle:
+        return HealthItem(key, title, "ok", 0, "No converted dollars have waited over 30 days.")
+    days = cj.IDLE_DAYS
+    return HealthItem(
+        key,
+        title,
+        "warning",
+        len(idle),
+        f"{len(idle)} conversion(s) left dollars in your USD account for over {days} days. "
+        "Record the deposit that took them, or mark them as kept on the Conversions page.",
+        _examples([f"{r.date.isoformat()} ({r.undeposited_usd:,.2f} USD)" for r in idle]),
+    )
+
+
+def journey_uncovered_buys(inputs: object) -> HealthItem:
+    """Buys the cash pool could not pay from converted dollars (ECB fallback)."""
+    from investment_dashboard.domain import kinds  # noqa: PLC0415
+    from investment_dashboard.readmodels import currency_journey as cj  # noqa: PLC0415
+
+    assert isinstance(inputs, cj.JourneyInputs)
+    ids = [
+        t
+        for t in inputs.snapshot.state.uncovered
+        if (info := inputs.txns.get(t)) is not None and info.kind == kinds.BUY
+    ]
+    key, title = "uncovered_buys", "Buys valued at the ECB rate"
+    if not ids:
+        return HealthItem(key, title, "ok", 0, "Every buy is paid from dollars with a known cost.")
+    examples = []
+    for t in ids:
+        info = inputs.txns[t]
+        examples.append(f"{info.date.isoformat()} {info.symbol or ''} ({info.amount:,.2f} USD)")
+    return HealthItem(
+        key,
+        title,
+        "warning",
+        len(ids),
+        f"{len(ids)} buy(s) used more dollars than the broker cash held, so the rest is "
+        "valued at the ECB rate of the buy date. A deposit or conversion is probably "
+        "missing from the ledger.",
+        _examples(examples),
+    )
+
+
+def journey_negative_broker_cash(balances: dict[str, Decimal]) -> HealthItem:
+    """Brokerage accounts whose ledger cash is below zero (counted as 0 in the total)."""
+    key, title = "negative_broker_cash", "Negative broker cash"
+    flagged = [f"{name}: {bal:+,.2f}" for name, bal in balances.items() if bal <= -_CASH_DUST]
+    if not flagged:
+        return HealthItem(key, title, "ok", 0, "No brokerage account has negative cash.")
+    return HealthItem(
+        key,
+        title,
+        "warning",
+        len(flagged),
+        f"{len(flagged)} brokerage account(s) spent more cash than the ledger brought in. "
+        "The total counts that cash as zero; a deposit or a sale is probably missing.",
+        _examples(flagged),
+    )
+
+
+def journey_withdrawals_not_converted(inputs: object) -> HealthItem:
+    """Withdrawn dollars still in the USD account (info: a cash-out not recorded yet)."""
+    from investment_dashboard.readmodels import currency_journey as cj  # noqa: PLC0415
+
+    assert isinstance(inputs, cj.JourneyInputs)
+    ids = sorted(
+        {
+            lot.source_txn_id
+            for lot in inputs.snapshot.state.lots
+            if lot.account_key == cj.OUTSIDE_ACCOUNT
+            and lot.source_kind == "withdrawal"
+            and lot.amount > _CASH_DUST
+            and lot.source_txn_id is not None
+        }
+    )
+    key, title = "withdrawals_not_converted", "Withdrawals not converted back"
+    if not ids:
+        return HealthItem(key, title, "ok", 0, "Every withdrawal has gone back to euros.")
+    examples = []
+    for t in ids:
+        info = inputs.txns.get(t)
+        if info is not None:
+            examples.append(f"{info.date.isoformat()} ({info.amount:,.2f} USD)")
+    return HealthItem(
+        key,
+        title,
+        "info",
+        len(ids),
+        f"{len(ids)} withdrawal(s) are still dollars in your USD account. When you convert "
+        "them to euros, record it as a conversion back to see the realised result.",
+        _examples(examples),
+    )
+
+
+def journey_conversion_back_uncovered(inputs: object) -> HealthItem:
+    """Conversions back with more dollars than the USD account held (ECB fallback)."""
+    from investment_dashboard.readmodels import currency_journey as cj  # noqa: PLC0415
+
+    assert isinstance(inputs, cj.JourneyInputs)
+    bad = [
+        (cid, sum((d.amount for d in draws if d.lot_id.startswith("uncovered:")), Decimal(0)))
+        for cid, draws in inputs.snapshot.state.conversions_back.items()
+    ]
+    bad = [(cid, usd) for cid, usd in bad if usd > 0]
+    key, title = "conversion_back_uncovered", "Conversions back without dollars"
+    if not bad:
+        return HealthItem(key, title, "ok", 0, "Every conversion back is covered by dollars.")
+    dates = {c.conversion_id: c.date for c in inputs.snapshot.cash_outs}
+    return HealthItem(
+        key,
+        title,
+        "warning",
+        len(bad),
+        f"{len(bad)} conversion(s) back to euros sent more dollars than the USD account "
+        "held, so the rest is valued at the ECB rate. Record the withdrawal that brought "
+        "those dollars out of the broker.",
+        _examples(
+            [f"{dates.get(cid, '?')} ({usd:,.2f} USD not covered)" for cid, usd in sorted(bad)]
+        ),
+    )
+
+
+def _journey_check(session: Session, fn: object, key: str, title: str) -> HealthItem:
+    inputs = _journey_inputs(session)
+    if inputs is None:
+        return HealthItem(key, title, "ok", 0, "The cash pool is not available yet.")
+    assert callable(fn)
+    item = fn(inputs)
+    assert isinstance(item, HealthItem)
+    return item
+
+
+def check_idle_dollars(session: Session) -> HealthItem:
+    return _journey_check(session, journey_idle_dollars, "idle_dollars", "Idle dollars")
+
+
+def check_uncovered_buys(session: Session) -> HealthItem:
+    return _journey_check(
+        session, journey_uncovered_buys, "uncovered_buys", "Buys valued at the ECB rate"
+    )
+
+
+def check_negative_broker_cash(session: Session) -> HealthItem:
+    """Reads the ledger cash per brokerage account.
+
+    Lane B2's P18 ``ledger_cash_balances`` rule should replace the per-account
+    ``compute_cash_balance`` call here when it lands.
+    """
+    balances: dict[str, Decimal] = {}
+    for account in accounts_repo.list_accounts(session):
+        if account.account_type != "brokerage":
+            continue
+        name = f"{account.broker} {account.account_label} ({account.native_currency.upper()})"
+        balances[name] = positions_service.compute_cash_balance(session, account.id)
+    return journey_negative_broker_cash(balances)
+
+
+def check_withdrawals_not_converted(session: Session) -> HealthItem:
+    return _journey_check(
+        session,
+        journey_withdrawals_not_converted,
+        "withdrawals_not_converted",
+        "Withdrawals not converted back",
+    )
+
+
+def check_conversion_back_uncovered(session: Session) -> HealthItem:
+    return _journey_check(
+        session,
+        journey_conversion_back_uncovered,
+        "conversion_back_uncovered",
+        "Conversions back without dollars",
+    )
+
+
+#: Lane C's checks, for the orchestrator to register in :func:`check_health`.
+JOURNEY_CHECKS = (
+    check_idle_dollars,
+    check_uncovered_buys,
+    check_negative_broker_cash,
+    check_withdrawals_not_converted,
+    check_conversion_back_uncovered,
+)

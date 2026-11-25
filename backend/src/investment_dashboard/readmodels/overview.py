@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from investment_dashboard.domain import clock, market_hours
 from investment_dashboard.domain.currency_effect import compute_currency_effect
 from investment_dashboard.domain.returns import years_between
-from investment_dashboard.readmodels import fx_effect, holdings, live_graphs
+from investment_dashboard.readmodels import fx_effect, holdings, journey_fields, live_graphs
 from investment_dashboard.readmodels._context import ReadModelContext, build_context
 from investment_dashboard.readmodels._serialize import dec, iso
 from investment_dashboard.readmodels.queries.overview_query import (
@@ -409,6 +409,8 @@ def _currency_block(
             "fx_pnl_eur": dec(lifetime.fx_pnl_eur),
             "repatriation_value_eur": dec(lifetime.repatriation_value_eur),
             "breakeven_rate": dec(lifetime.breakeven_rate),
+            # 7.4: rebuilt on the journey buckets (no-op until the cash pool exists).
+            **journey_fields.lifetime_overrides(session),
         },
         # Investment return (asset performance in the USD wallet) vs the currency
         # effect. Both returns are computed independently per currency; nothing is
