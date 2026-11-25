@@ -31,7 +31,7 @@ from decimal import Decimal
 from typing import Literal
 
 from investment_dashboard.domain import kinds
-from investment_dashboard.domain.fx_pool import Batch, PoolResult
+from investment_dashboard.domain.fx_pool import Batch, Pin, PoolResult
 
 ZERO = Decimal(0)
 
@@ -333,6 +333,7 @@ class _Engine:
         self.sale_market: dict[int, Decimal] = {}
         self.fees = ZERO
         self.uncovered: list[int] = []
+        self.back: dict[int, tuple[Draw, ...]] = {}
         self.seq = 0
 
     # ------------------------------------------------------------------ helpers
@@ -439,13 +440,16 @@ class _Engine:
             raise ValueError(msg)
         return self.holdings.setdefault((ev.account_id, ev.instrument_id), _Holding())
 
-    def _ecb_lot(self, ev: TxnEvent, kind: SourceKind, flagged: bool) -> None:
-        """A lot worth ``ev.amount`` at the event date's ECB rate (original euros)."""
+    def received(self, ev: TxnEvent) -> None:
+        """Units received in the account currency (no conversion): ECB of their date.
+
+        An owner fact, not a fallback: flagged only when the rate is missing.
+        """
         eur, missing = self._at_ecb(ev.ccy, ev.date, ev.amount)
-        if missing or flagged:
+        if missing:
             self._flag(ev.id)
         self._add_lot(
-            f"{kind}:{ev.id}:0",
+            f"deposit:{ev.id}:0",
             str(ev.account_id),
             ev.ccy,
             ev.date,
@@ -453,9 +457,9 @@ class _Engine:
             eur,
             ZERO,
             {(None, ev.date): eur},
-            kind,
+            "deposit",
             ev.id,
-            missing or flagged,
+            missing,
         )
 
     # ------------------------------------------------------------------- rules
@@ -463,8 +467,7 @@ class _Engine:
     def deposit(self, ev: TxnEvent) -> None:
         """Matched slices become one lot; the rest is a flagged ECB fallback lot."""
         if ev.no_conversion:
-            # Received in the account currency: at ECB, an owner fact, not a fallback.
-            self._ecb_lot(ev, "deposit", flagged=False)
+            self.received(ev)
             return
         match = self.matches.get(ev.id) if ev.ccy == self.deposit_ccy else None
         matched = ZERO
@@ -613,3 +616,204 @@ class _Engine:
         if ev.instrument_id in self.mmf:
             return
         self._holding(ev).shares += ev.quantity
+
+    def withdrawal(self, ev: TxnEvent) -> None:
+        """FIFO out of the broker, then the same draws land outside, cost unchanged."""
+        for n, d in enumerate(self._spend(ev)):
+            self._add_lot(
+                f"withdrawal:{ev.id}:{n}",
+                OUTSIDE_ACCOUNT,
+                ev.ccy,
+                ev.date,
+                d.amount,
+                d.orig_eur,
+                d.market_eur,
+                {(o.conversion_id, o.conv_date): o.eur for o in d.origins},
+                "withdrawal",
+                ev.id,
+                d.flagged,
+            )
+
+    def transfer(self, out: TxnEvent, into: TxnEvent) -> None:
+        """A paired transfer: the lots move to the receiving account with their cost."""
+        pairs, need = self._fifo(str(out.account_id), out.ccy, out.amount, out.id)
+        target = str(into.account_id)
+        for d, lot in pairs:
+            self._add_lot(
+                f"{lot.lot_id}:t{out.id}",
+                target,
+                out.ccy,
+                lot.opened,
+                d.amount,
+                d.orig_eur,
+                d.market_eur,
+                {(o.conversion_id, o.conv_date): o.eur for o in d.origins},
+                lot.source_kind,
+                lot.source_txn_id,
+                d.flagged,
+            )
+        if need > 0:
+            d = self._uncovered_draw(out.id, out.ccy, out.date, need)
+            self._flag(out.id)
+            self._add_lot(
+                f"fallback:{out.id}:0",
+                target,
+                out.ccy,
+                out.date,
+                need,
+                d.orig_eur,
+                ZERO,
+                {(None, out.date): d.orig_eur},
+                "fallback",
+                out.id,
+                True,
+            )
+
+    def conversion_back(self, cb: ConversionBack, pins: Sequence[Pin], kept: _Kept) -> None:
+        """Outside lots (pinned withdrawals first, then FIFO), then kept units, then ECB."""
+        draws: list[Draw] = []
+        need = cb.sent
+        for pin in sorted(pins, key=lambda p: (p.deposit_id, p.usd)):
+            want = min(pin.usd, need)
+            if want <= 0:
+                continue
+            pairs, left = self._fifo(
+                OUTSIDE_ACCOUNT, cb.from_ccy, want, cb.id, only=_from_withdrawal(pin.deposit_id)
+            )
+            draws += [d for d, _ in pairs]
+            need -= want - left
+        if need > 0:
+            pairs, need = self._fifo(OUTSIDE_ACCOUNT, cb.from_ccy, need, cb.id)
+            draws += [d for d, _ in pairs]
+        if need > 0 and cb.from_ccy == self.deposit_ccy:
+            got, need = kept.take(cb.date, need, cb.id)
+            self.draws += got
+            draws += got
+        if need > 0:
+            draws.append(self._uncovered_draw(cb.id, cb.from_ccy, cb.date, need))
+        self.back[cb.id] = tuple(draws)
+
+
+def _from_withdrawal(withdrawal_id: int) -> Callable[[_Lot], bool]:
+    def only(lot: _Lot) -> bool:
+        return lot.source_kind == "withdrawal" and lot.source_txn_id == withdrawal_id
+
+    return only
+
+
+class _Kept:
+    """Units a conversion left in the outside account: never deposited, or kept."""
+
+    def __init__(self, conversions: Sequence[Batch], deposit_matches: PoolResult) -> None:
+        rest = {r.conversion_id: r for r in deposit_matches.remaining}
+        self.batches = sorted(conversions, key=lambda b: (b.date, b.id))
+        self.units: dict[int, Decimal] = {}
+        self.eur: dict[int, Decimal] = {}
+        for b in self.batches:
+            r = rest.get(b.id)
+            self.units[b.id] = (r.usd if r else ZERO) + b.kept_usd
+            self.eur[b.id] = (r.eur if r else ZERO) + (b.eur_cost - b.pool_eur)
+
+    def take(self, on: date, units: Decimal, event_id: int) -> tuple[list[Draw], Decimal]:
+        out: list[Draw] = []
+        for b in self.batches:
+            if units <= 0 or b.date > on:
+                break
+            avail = self.units[b.id]
+            if avail <= 0:
+                continue
+            take = min(units, avail)
+            eur = self.eur[b.id] if take == avail else self.eur[b.id] * take / avail
+            self.units[b.id] -= take
+            self.eur[b.id] -= eur
+            units -= take
+            out.append(
+                Draw(event_id, f"kept:{b.id}:0", take, eur, ZERO, (Origin(b.id, b.date, eur),))
+            )
+        return out, units
+
+
+def _paired(events: Iterable[TxnEvent]) -> dict[int, TxnEvent]:
+    """Transfer-out id -> its transfer-in, for pairs that agree on both legs."""
+    by_id = {e.id: e for e in events}
+    pairs: dict[int, TxnEvent] = {}
+    for out in by_id.values():
+        if out.kind != kinds.TRANSFER_OUT or out.pair_id is None:
+            continue
+        into = by_id.get(out.pair_id)
+        if (
+            into is not None
+            and into.kind == kinds.TRANSFER_IN
+            and into.pair_id == out.id
+            and into.ccy == out.ccy
+            and into.amount == out.amount
+        ):
+            pairs[out.id] = into
+    return pairs
+
+
+def run(
+    events: Sequence[Event],
+    deposit_matches: PoolResult,
+    ecb_rate: EcbRate,
+    money_market_ids: Collection[int | None],
+    *,
+    conversions: Sequence[Batch] = (),
+    back_pins: Sequence[Pin] = (),
+    deposit_ccy: str = "USD",
+) -> PoolState:
+    """Walk ``events`` (any input order) through the cash pool.
+
+    ``deposit_matches`` is ``fx_pool.match_deposits``'s result for deposits in
+    ``deposit_ccy`` (the currency fx_pool's conversions deliver). ``conversions`` are
+    the same batches: they date each origin and offer the units no deposit took (and
+    the kept units) to a conversion back. ``back_pins`` reuse the 7.3 pin rows with
+    ``deposit_id`` = the withdrawal txn id and ``conversion_id`` = the conversion back.
+    A transfer pair must agree on currency and amount; otherwise the out leg works like
+    a withdrawal and the in leg like a deposit received in its currency.
+    """
+    eng = _Engine(deposit_matches, ecb_rate, money_market_ids, conversions, deposit_ccy)
+    kept = _Kept(conversions, deposit_matches)
+    txns = [e for e in events if isinstance(e, TxnEvent)]
+    pairs = _paired(txns)
+    paired_in = {e.id for e in pairs.values()}
+    pins_by_back: dict[int, list[Pin]] = {}
+    for p in back_pins:
+        pins_by_back.setdefault(p.conversion_id, []).append(p)
+    rules: Mapping[str, Callable[[TxnEvent], None]] = {
+        kinds.DEPOSIT: eng.deposit,
+        kinds.BUY: eng.buy,
+        kinds.SELL: eng.sell,
+        kinds.DIVIDEND_CASH: eng.income,
+        kinds.INTEREST: eng.income,
+        kinds.DIVIDEND_REINVEST: eng.reinvest,
+        kinds.FEE: eng.fee,
+        kinds.SPLIT: eng.split,
+        kinds.WITHDRAWAL: eng.withdrawal,
+    }
+    for ev in sorted(events, key=_order):
+        if isinstance(ev, ConversionBack):
+            eng.conversion_back(ev, pins_by_back.get(ev.id, []), kept)
+        elif ev.kind == kinds.TRANSFER_OUT:
+            into = pairs.get(ev.id)
+            if into is None:
+                eng.withdrawal(ev)
+            else:
+                eng.transfer(ev, into)
+        elif ev.kind == kinds.TRANSFER_IN:
+            if ev.id not in paired_in:
+                eng.received(ev)
+        else:
+            rules[ev.kind](ev)
+    lots = [lot for pool in eng.lots.values() for lot in pool if lot.amount > 0]
+    lots.sort(key=lambda x: (x.account_key, x.opened, x.seq))
+    return PoolState(
+        lots=tuple(lot.frozen() for lot in lots),
+        draws=tuple(eng.draws),
+        holdings={k: h.frozen() for k, h in sorted(eng.holdings.items())},
+        buy_cost_eur=eng.buy_cost,
+        sale_market_eur=eng.sale_market,
+        fees_eur=eng.fees,
+        uncovered=tuple(sorted(eng.uncovered)),
+        conversions_back=eng.back,
+    )
