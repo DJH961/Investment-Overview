@@ -6,6 +6,7 @@ rows on the fly. v1.1 will introduce a ``snapshots`` cache (spec §4.1).
 
 from __future__ import annotations
 
+import bisect
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -345,13 +346,132 @@ def compute_cash_balance(
     return total
 
 
+@dataclass(frozen=True)
+class CashShortfall:
+    """A day a brokerage account's ledger cash would have ended below zero (native)."""
+
+    account_id: int
+    on: date
+    currency: str
+    #: How far below zero the day ended (positive); the balance counts as 0 instead.
+    native: Decimal
+
+
+@dataclass(frozen=True)
+class LedgerCash:
+    """Every account's ledger cash as a step function of the day (P18, one rule)."""
+
+    #: Account id -> ``(day, balance at that day's end)``, days ascending.
+    steps: dict[int, list[tuple[date, Decimal]]]
+    shortfalls: list[CashShortfall]
+
+    def at(self, account_id: int, on: date) -> Decimal:
+        """The balance after every transaction dated ``<= on`` (0 before the first)."""
+        points = self.steps.get(account_id)
+        if not points:
+            return ZERO
+        i = bisect.bisect_right(points, (on, _MAX_DEC))
+        return points[i - 1][1] if i else ZERO
+
+
+_MAX_DEC = Decimal("Infinity")
+
+
+def ledger_cash(session: Session, *, end: date) -> LedgerCash:
+    """The ledger cash rule (7.4 P18), through ``end``; memoized per session.
+
+    * A savings / cash account: its balance, the running sum of every
+      ``net_native`` (:func:`compute_cash_balance`).
+    * Any other (brokerage) account: the cash outside money-market funds, the
+      running sum of its ``net_native``, except that a reinvested dividend (its
+      ``dividend_reinvest`` row and its paired ``dividend_cash`` leg) never touches
+      cash (its shares are already a holding). A swept account books every cash
+      move as a money-market buy or sell the same day, so it nets to zero and only
+      the fund counts. A balance that would end a day below zero (a deposit missing
+      from the ledger) is held at zero and recorded as a :class:`CashShortfall`
+      (the ``negative_broker_cash`` health check reads it), the same rule as the
+      Currency page's broker-cash book (``fx_attribution_rows``).
+    """
+    return memo(session, ("ledger_cash", end), lambda: _ledger_cash(session, end))
+
+
+def _ledger_cash(session: Session, end: date) -> LedgerCash:
+    txns = list(transactions_repo.list_transactions(session, end=end))
+    reinvested = dividends.reinvest_keys(txns)
+    accounts = {a.id: a for a in accounts_repo.list_accounts(session)}
+    day_net: dict[int, dict[date, Decimal]] = {}
+    for t in txns:
+        account = accounts.get(t.account_id)
+        if account is None or not t.net_native:
+            continue
+        brokerage = account.account_type not in CASH_ACCOUNT_TYPES
+        if brokerage and (
+            t.kind == kinds.DIVIDEND_REINVEST
+            or (
+                t.kind == kinds.DIVIDEND_CASH
+                and (t.account_id, t.instrument_id, t.date) in reinvested
+            )
+        ):
+            continue
+        per_day = day_net.setdefault(t.account_id, {})
+        per_day[t.date] = per_day.get(t.date, ZERO) + t.net_native
+    steps: dict[int, list[tuple[date, Decimal]]] = {}
+    shortfalls: list[CashShortfall] = []
+    for account_id, per_day in day_net.items():
+        account = accounts[account_id]
+        brokerage = account.account_type not in CASH_ACCOUNT_TYPES
+        running = ZERO
+        points: list[tuple[date, Decimal]] = []
+        for on in sorted(per_day):
+            running += per_day[on]
+            if brokerage and running < 0:
+                shortfalls.append(
+                    CashShortfall(account_id, on, account.native_currency.upper(), -running)
+                )
+                running = ZERO
+            points.append((on, running))
+        steps[account_id] = points
+    shortfalls.sort(key=lambda s: (s.on, s.account_id))
+    return LedgerCash(steps=steps, shortfalls=shortfalls)
+
+
+def ledger_cash_balances(
+    session: Session, *, as_of: date | None = None
+) -> list[tuple[Account, Decimal]]:
+    """The ledger cash the book counts on ``as_of``, per account (non-zero, native).
+
+    One rule for every total (7.4 P18): see :func:`ledger_cash`. Brokerage cash is
+    never negative here.
+    """
+    on = as_of or exchange_today()
+    cash = ledger_cash(session, end=on)
+    out: list[tuple[Account, Decimal]] = []
+    for account in accounts_repo.list_accounts(session):
+        balance = cash.at(account.id, on)
+        if balance:
+            out.append((account, balance))
+    return out
+
+
+def broker_cash_shortfalls(session: Session, *, as_of: date | None = None) -> list[CashShortfall]:
+    """The days a brokerage account's cash went below zero (counted as 0), oldest first.
+
+    For the ``negative_broker_cash`` Data Health check (lane C): each is a deposit
+    or transfer that is probably missing from the ledger.
+    """
+    return ledger_cash(session, end=as_of or exchange_today()).shortfalls
+
+
 def total_portfolio_value(
     session: Session,
     *,
     as_of: date | None = None,
     positions: list[Position] | None = None,
 ) -> Decimal:
-    """Sum of all positions' EUR value + Savings cash balance in EUR.
+    """Sum of all positions' EUR value + every account's ledger cash in EUR.
+
+    Ledger cash per :func:`ledger_cash_balances` (7.4 P18): savings / cash balances
+    and uninvested brokerage cash outside money-market funds (never below zero).
 
     ``positions`` may be passed to reuse an already-computed roll-up for the
     same ``as_of`` date (avoids a redundant :func:`compute_positions` pass when
@@ -364,10 +484,7 @@ def total_portfolio_value(
 
     fx_rate = fx_service.get_rate_eur_to_quote(session, as_of)
     rate_cache: dict[str, Decimal | None] = {"USD": fx_rate}
-    for account in accounts_repo.list_accounts(session):
-        if account.account_type not in CASH_ACCOUNT_TYPES:
-            continue
-        balance_native = compute_cash_balance(session, account.id, as_of=as_of)
+    for account, balance_native in ledger_cash_balances(session, as_of=as_of):
         ccy = account.native_currency.upper()
         if ccy == "EUR":
             total_eur += balance_native
@@ -408,10 +525,7 @@ def total_portfolio_value_usd(
         elif usable and fx_usd is not None:
             total += p.current_value_eur * fx_usd
     rate_cache: dict[str, Decimal | None] = {"USD": fx_usd}
-    for account in accounts_repo.list_accounts(session):
-        if account.account_type not in CASH_ACCOUNT_TYPES:
-            continue
-        balance_native = compute_cash_balance(session, account.id, as_of=as_of)
+    for account, balance_native in ledger_cash_balances(session, as_of=as_of):
         ccy = account.native_currency.upper()
         if ccy == "USD":
             total += balance_native

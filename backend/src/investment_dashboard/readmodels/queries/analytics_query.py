@@ -175,21 +175,16 @@ def _session_returns(
 
 
 class _LedgerCash:
-    """Ledger cash (the running sum of ``net_native`` legs), valued in ``currency``.
+    """Every account's ledger cash, valued in ``currency``.
 
-    The snapshot value counts holdings (money-market sweep funds included) plus
-    savings/cash account balances, but NOT cash sitting in a brokerage account
-    outside a money-market fund (B-017). A deposit into such an account is an
-    external flow on its own date while the value only rose when the cash was
-    invested, so the daily return read the buy as a gain, and a deposit before the
-    first valued day was dropped entirely (the window starts on the first valued
-    day): TWR, volatility, beta and the funded benchmark went wrong for every
-    window holding such a flow. The Risk curve therefore adds that cash back
-    (``brokerage_only=True``: the savings/cash accounts are already in the
-    snapshot). A fully swept account (Vanguard: every cash row has its
-    money-market counter-leg on the same day) sums to zero, so nothing is counted
-    twice. The attribution table's "Cash" row uses every account
-    (``brokerage_only=False``), so its rows add up to the same book as the curve.
+    The one rule (7.4 P18, :func:`positions_service.ledger_cash`): savings / cash
+    balances and uninvested brokerage cash outside money-market funds, never below
+    zero. Since P18 the snapshot value counts this cash itself, so the Risk curve no
+    longer adds it on top (B-017: before, a deposit waiting in an unswept account
+    was missing from the value and the buy read as a gain). The attribution table's
+    "Cash" row reads it, so its rows add up to the same book as the curve. A fully
+    swept account (Vanguard: every cash row has its money-market counter-leg on the
+    same day) sums to zero.
 
     Each native amount is valued at ``day``'s own rate (one instant, a valuation,
     never a converted return); a missing rate omits it rather than counting it at
@@ -202,25 +197,12 @@ class _LedgerCash:
         txns: list[Transaction],
         *,
         currency: str,
-        brokerage_only: bool,
     ) -> None:
-        native_of = {
-            a.id: a.native_currency.upper()
-            for a in accounts_repo.list_accounts(session)
-            if not brokerage_only or a.account_type not in positions_service.CASH_ACCOUNT_TYPES
-        }
-        deltas: dict[date, dict[str, Decimal]] = {}
-        for t in txns:
-            native = native_of.get(t.account_id)
-            if native is None or not t.net_native:
-                continue
-            per_day = deltas.setdefault(t.date, {})
-            per_day[native] = per_day.get(native, ZERO) + t.net_native
+        native_of = {a.id: a.native_currency.upper() for a in accounts_repo.list_accounts(session)}
+        end = max((t.date for t in txns), default=None)
+        self._cash = positions_service.ledger_cash(session, end=end) if end else None
+        self._native_of = native_of
         self._session = session
-        self._deltas = deltas
-        self._dates = sorted(deltas)
-        self._idx = 0
-        self._running: dict[str, Decimal] = {}
         self._ccy = currency.upper()
         #: EUR -> quote rate series per currency, loaded once when first needed.
         self._rates: dict[str, dict[date, Decimal]] = {}
@@ -248,15 +230,16 @@ class _LedgerCash:
         return eur * rate if rate else None
 
     def through(self, day: date) -> Decimal:
-        """Cash after every transaction dated ``<= day`` (call with rising days)."""
-        while self._idx < len(self._dates) and self._dates[self._idx] <= day:
-            for native, amount in self._deltas[self._dates[self._idx]].items():
-                self._running[native] = self._running.get(native, ZERO) + amount
-            self._idx += 1
+        """Cash after every transaction dated ``<= day``."""
+        if self._cash is None:
+            return ZERO
+        running: dict[str, Decimal] = {}
+        for account_id, native in self._native_of.items():
+            amount = self._cash.at(account_id, day)
+            if amount:
+                running[native] = running.get(native, ZERO) + amount
         total = ZERO
-        for native, amount in self._running.items():
-            if amount == 0:
-                continue
+        for native, amount in running.items():
             value = self._value(native, amount, day)
             if value is not None:
                 total += value
@@ -306,8 +289,6 @@ def _build_curve(
             continue  # leg can't be derived: omitted, never counted as 0
         contribs_by_date[t.date] = contribs_by_date.get(t.date, ZERO) + amt
 
-    cash = _LedgerCash(session, txns, currency=currency, brokerage_only=True)
-
     # The benchmark overlay source: prefer the funded simulation (already in the
     # display currency, comparable to the portfolio value); otherwise fall back
     # to raw closes for the caller to rebase.
@@ -356,7 +337,7 @@ def _build_curve(
         points.append(
             EquityCurvePoint(
                 date=day,
-                portfolio_value=value + cash.through(day),
+                portfolio_value=value,
                 cumulative_contributions=cumulative,
                 benchmark_value=last_bench,
             )
@@ -533,7 +514,7 @@ def _cash_row(
     cash's own) its revaluation. ``None`` when the book never held cash.
     """
     txns = list(transactions_repo.list_transactions(session, end=end))
-    cash = _LedgerCash(session, txns, currency=currency, brokerage_only=False)
+    cash = _LedgerCash(session, txns, currency=currency)
     start_value = cash.through(start)
     end_value = cash.through(end)
     ov = cashflows.eur_overrides_for(session)
