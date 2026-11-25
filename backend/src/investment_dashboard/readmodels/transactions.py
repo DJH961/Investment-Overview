@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -18,18 +17,23 @@ from investment_dashboard.readmodels.queries.ledger_query import (
     month_totals,
     summarize_records,
 )
-from investment_dashboard.services import cashflows
+from investment_dashboard.services import cash_pool_service
 
 
 def _deposit_eur_amount(session: Session) -> EurAmount | None:
-    """EUR resolver for matched deposits: the FX pool's effective EUR (your rate).
+    """EUR resolver from the cash pool (7.4): deposits at your rate, buys at their pool cost.
 
-    ``None`` without conversions, so every row takes the derived ECB path.
+    A matched deposit gives the FX pool's effective EUR; a buy (when
+    ``fx.holding_cost_basis = pool``) minus the euros that bought its dollars.
+    Every other row returns ``None`` and takes the derived ECB path. ``None``
+    (no resolver) when there is nothing to resolve.
     """
-    overrides: dict[int, Decimal] = cashflows.eur_overrides_for(session)
-    if not overrides:
+    snapshot = cash_pool_service.build_pool_snapshot(session)
+    if not cash_pool_service.deposit_eur(snapshot) and not cash_pool_service.buy_eur_costs(
+        snapshot
+    ):
         return None
-    return lambda t: overrides.get(t.id) if t.id is not None else None
+    return cash_pool_service.pool_eur_amount(snapshot)
 
 
 def _record_dict(r: LedgerRecord) -> dict[str, Any]:

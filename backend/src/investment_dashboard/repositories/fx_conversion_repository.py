@@ -157,6 +157,22 @@ def get_by_external_ids(session: Session, external_ids: Sequence[str]) -> dict[s
     return {r.external_id: r for r in session.scalars(stmt).all() if r.external_id is not None}
 
 
+def list_usd_withdrawals(session: Session) -> list[DepositRow]:
+    """Withdrawal/transfer_out transactions on USD-native accounts (``usd`` positive)."""
+    stmt = (
+        select(Transaction.id, Transaction.date, Transaction.net_native)
+        .join(Account, Account.id == Transaction.account_id)
+        .where(
+            Account.native_currency == "USD",
+            Transaction.kind.in_(sorted(kinds.WITHDRAWAL_KINDS)),
+            Transaction.net_native.is_not(None),
+            Transaction.net_native < 0,
+        )
+        .order_by(Transaction.date, Transaction.id)
+    )
+    return [DepositRow(i, d, -n) for i, d, n in session.execute(stmt).all() if n is not None]
+
+
 def list_usd_received_marks(session: Session) -> set[int]:
     return set(session.scalars(select(UsdReceivedDeposit.deposit_txn_id)).all())
 

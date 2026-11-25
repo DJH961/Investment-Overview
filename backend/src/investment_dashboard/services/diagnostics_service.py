@@ -1270,17 +1270,21 @@ def check_uncovered_buys(session: Session) -> HealthItem:
 
 
 def check_negative_broker_cash(session: Session) -> HealthItem:
-    """Reads the ledger cash per brokerage account.
+    """Reads the P18 ledger-cash rule (``positions_service.broker_cash_shortfalls``).
 
-    Lane B2's P18 ``ledger_cash_balances`` rule should replace the per-account
-    ``compute_cash_balance`` call here when it lands.
+    The rule holds a brokerage account's cash at zero on a day it would end below
+    zero; each account's balance here is minus the cash it went short in total (the
+    deposits probably missing), so an account that ever went negative is flagged.
     """
+    short: dict[int, Decimal] = {}
+    for s in positions_service.broker_cash_shortfalls(session):
+        short[s.account_id] = short.get(s.account_id, Decimal(0)) + s.native
     balances: dict[str, Decimal] = {}
     for account in accounts_repo.list_accounts(session):
-        if account.account_type != "brokerage":
+        if account.account_type in positions_service.CASH_ACCOUNT_TYPES:
             continue
         name = f"{account.broker} {account.account_label} ({account.native_currency.upper()})"
-        balances[name] = positions_service.compute_cash_balance(session, account.id)
+        balances[name] = -short.get(account.id, Decimal(0))
     return journey_negative_broker_cash(balances)
 
 
