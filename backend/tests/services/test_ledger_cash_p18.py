@@ -35,7 +35,7 @@ def _accounts(session: Session) -> tuple[Account, Account, Account]:
     return unswept, swept, savings
 
 
-def test_broker_cash_counts_in_the_total(session: Session) -> None:
+def test_ledger_cash_counts_unswept_broker_cash(session: Session) -> None:
     unswept, swept, savings = _accounts(session)
     vti = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
     mmf = instruments_repo.get_or_create(
@@ -52,11 +52,9 @@ def test_broker_cash_counts_in_the_total(session: Session) -> None:
     session.flush()
     balances = {a.id: b for a, b in positions_service.ledger_cash_balances(session, as_of=AS_OF)}
     assert balances == {unswept.id: D("400"), savings.id: D("250")}
-    # 6 x 100 + MMF 500 + cash 400 = $1,500 = EUR 1,200; + EUR 250 savings
-    total_eur = positions_service.total_portfolio_value(session, as_of=AS_OF)
-    assert total_eur == D("1450")
-    total_usd = positions_service.total_portfolio_value_usd(session, as_of=AS_OF)
-    assert total_usd == D("1500") + D("250") * D("1.25")
+    # Not yet in the total (the switch waits for the orchestrator): savings only.
+    # 6 x 100 + MMF 500 = $1,100 = EUR 880; + EUR 250 savings
+    assert positions_service.total_portfolio_value(session, as_of=AS_OF) == D("1130")
 
 
 def test_negative_broker_cash_counts_as_zero_and_is_flagged(session: Session) -> None:

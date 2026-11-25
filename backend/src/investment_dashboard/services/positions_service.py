@@ -468,10 +468,11 @@ def total_portfolio_value(
     as_of: date | None = None,
     positions: list[Position] | None = None,
 ) -> Decimal:
-    """Sum of all positions' EUR value + every account's ledger cash in EUR.
+    """Sum of all positions' EUR value + Savings cash balance in EUR.
 
-    Ledger cash per :func:`ledger_cash_balances` (7.4 P18): savings / cash balances
-    and uninvested brokerage cash outside money-market funds (never below zero).
+    Not yet the P18 rule: switching this (and the USD total) to
+    :func:`ledger_cash_balances` puts idle broker cash in the total, which moves
+    the Holdings page, Periods, graphs and the snapshots too (see lane B2's report).
 
     ``positions`` may be passed to reuse an already-computed roll-up for the
     same ``as_of`` date (avoids a redundant :func:`compute_positions` pass when
@@ -484,7 +485,10 @@ def total_portfolio_value(
 
     fx_rate = fx_service.get_rate_eur_to_quote(session, as_of)
     rate_cache: dict[str, Decimal | None] = {"USD": fx_rate}
-    for account, balance_native in ledger_cash_balances(session, as_of=as_of):
+    for account in accounts_repo.list_accounts(session):
+        if account.account_type not in CASH_ACCOUNT_TYPES:
+            continue
+        balance_native = compute_cash_balance(session, account.id, as_of=as_of)
         ccy = account.native_currency.upper()
         if ccy == "EUR":
             total_eur += balance_native
@@ -525,7 +529,10 @@ def total_portfolio_value_usd(
         elif usable and fx_usd is not None:
             total += p.current_value_eur * fx_usd
     rate_cache: dict[str, Decimal | None] = {"USD": fx_usd}
-    for account, balance_native in ledger_cash_balances(session, as_of=as_of):
+    for account in accounts_repo.list_accounts(session):
+        if account.account_type not in CASH_ACCOUNT_TYPES:
+            continue
+        balance_native = compute_cash_balance(session, account.id, as_of=as_of)
         ccy = account.native_currency.upper()
         if ccy == "USD":
             total += balance_native

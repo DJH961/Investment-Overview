@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.domain import dividends, periods
 from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
+from investment_dashboard.domain.instruments import is_money_market_effective
 from investment_dashboard.domain.kinds import TransactionKind
 from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.domain.returns import (
@@ -36,6 +37,7 @@ from investment_dashboard.domain.returns import (
 )
 from investment_dashboard.repositories import (
     accounts_repo,
+    instrument_overrides_repo,
     transactions_repo,
 )
 from investment_dashboard.services import (
@@ -46,6 +48,7 @@ from investment_dashboard.services import (
     positions_service,
     snapshots_service,
 )
+from investment_dashboard.services.instrument_enrichment_service import effective_instrument
 
 if TYPE_CHECKING:
     from investment_dashboard.domain.late_data import DaySplit
@@ -227,17 +230,25 @@ def build_retained_cash_account_ids(
     session: Session,
     transactions: Sequence[Transaction],
 ) -> set[int]:
-    """Accounts whose distributions are already retained in terminal value.
-
-    Since 7.4 (P18) every account: the total counts each account's ledger cash
-    (savings balances, money-market funds, and uninvested brokerage cash outside
-    them, ``positions_service.ledger_cash_balances``), so a dividend or interest
-    payment stays in the value until a withdrawal takes it out. Counting it as a
-    distribution as well would count it twice. (Before, only savings / cash
-    accounts and accounts holding a money-market fund kept their payouts.)
-    """
-    del transactions  # kept for the callers' signature
-    return {account.id for account in accounts_repo.list_accounts(session)}
+    """Accounts whose distributions are already retained in terminal value."""
+    retained = {
+        account.id
+        for account in accounts_repo.list_accounts(session)
+        if account.account_type in _RETAINED_CASH_ACCOUNT_TYPES
+    }
+    overrides = instrument_overrides_repo.get_override_map(
+        session, {t.instrument.id for t in transactions if t.instrument is not None}
+    )
+    retained |= {
+        t.account_id
+        for t in transactions
+        if t.account_id is not None
+        and t.instrument is not None
+        and is_money_market_effective(
+            t.instrument, effective_instrument(t.instrument, overrides.get(t.instrument.id))
+        )
+    }
+    return retained
 
 
 # Canonical stream builders (re-exported for existing callers).
@@ -1052,9 +1063,12 @@ def _book_holdings(
         for p in positions
         if p.current_value_native
     ]
-    # Savings / cash balances and uninvested brokerage cash (7.4 P18), the same
-    # rule as ``positions_service.total_portfolio_value``.
-    for account, balance in positions_service.ledger_cash_balances(session, as_of=on):
+    for account in accounts_repo.list_accounts(session):
+        if account.account_type not in {"savings", "cash"}:
+            continue
+        balance = positions_service.compute_cash_balance(session, account.id, as_of=on)
+        if not balance:
+            continue
         ccy = account.native_currency.upper()
         fallback = ZERO
         if ccy not in {"EUR", "USD"}:
