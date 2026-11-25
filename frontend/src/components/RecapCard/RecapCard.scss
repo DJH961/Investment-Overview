@@ -3,8 +3,8 @@
 // The month / year recap: one header line (icon, title, stepper or ×), then one row of
 // figures with hairlines between them, like the Daily Brief and the stat strips.
 // Phones: two even columns; a lone last figure spans both (no half-empty row). Every
-// figure is one line (label, figure, at most one short note), so the figures of a row
-// sit on one line.
+// cell is exactly two lines (label, figure), so the figures of a row sit on one line and
+// no cell leaves an empty line under it.
 .recap-card {
   min-width: 0;
   overflow: hidden;
@@ -63,6 +63,38 @@
     flex-wrap: wrap;
     margin: calc(-1 * var(--border-width)) 0 0 calc(-1 * var(--border-width));
 
+    // Even counts get a fixed grid, so no width ever leaves a short last row: one row
+    // on a desktop, rows of three (six figures) or one row of four on a tablet.
+    &--n4,
+    &--n6,
+    &--n8 {
+      @include m.tablet-up {
+        display: grid;
+      }
+    }
+
+    &--n4 {
+      @include m.tablet-up {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+    }
+
+    &--n6 {
+      @include m.tablet-up {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      @include m.desktop {
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+      }
+    }
+
+    &--n8 {
+      @include m.tablet-up {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+    }
+
     @include m.phone {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -83,10 +115,6 @@
     padding: var(--space-3) var(--space-5);
     border-top: var(--border-width) solid var(--color-border);
     border-left: var(--border-width) solid var(--color-border);
-
-    &--lead {
-      flex: 1.4 1 11rem;
-    }
 
     @include m.phone {
       padding: var(--space-3) var(--space-4);
@@ -114,14 +142,5 @@
 
   &__none {
     color: var(--color-muted);
-  }
-
-  &__note {
-    margin: 0;
-    color: var(--color-muted);
-    font-size: var(--font-size-xs);
-    font-variant-numeric: tabular-nums;
-    line-height: var(--line-height-base);
-    @include m.truncate;
   }
 }

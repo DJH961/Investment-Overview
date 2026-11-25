@@ -18,52 +18,46 @@ export interface RecapFact {
   key: string;
   label: string;
   value: ReactNode;
-  note?: ReactNode;
 }
 
 /**
- * The figures of one side, in reading order. Server figures only; a line with nothing
- * to say is left out (cashed out while 0, a period without conversions). The dollar view
- * shows dollars only: the currency part, the conversion cost and the real return are
- * euro stories (the owner holds dollar funds, so in dollars they are empty).
+ * The figures of one side, in reading order: a label and one figure each, no note lines,
+ * so every cell has the same height and nothing leaves an empty line. Server figures
+ * only; a line with nothing to say is left out (cashed out while 0, dividends while 0, a
+ * period without conversions). The dollar view shows dollars only: the currency part,
+ * the conversion cost and the real return are euro stories. The period's closing value
+ * fills in when the count would be odd, so a phone never shows a lone figure.
  */
-export function recapFacts(side: RecapSideDto, currency: ReportingCurrency): RecapFact[] {
+export function recapFacts(
+  side: RecapSideDto,
+  currency: ReportingCurrency,
+  granularity: "month" | "year" = "month",
+): RecapFact[] {
   const eur = currency === "EUR";
-  const money = (v: string | null, signed = false) => (
-    <Money amount={toNum(v)} currency={currency} digits={0} signed={signed} colored={signed} />
+  const money = (v: string | null | number, signed = false) => (
+    <Money amount={typeof v === "number" ? v : toNum(v)} currency={currency} digits={0} signed={signed} colored={signed} />
   );
-  const income = (toNum(side.dividends) ?? 0) + (toNum(side.interest) ?? 0);
-  const value = toNum(side.closing_value);
   const facts: RecapFact[] = [
     {
       key: "return",
       label: eur ? "Return in euros" : "Return",
       value: <Percent ratio={toNum(side.nominal_return)} signed colored />,
-      note: value !== null ? <>Value {money(side.closing_value)}</> : undefined,
     },
   ];
   if (eur) {
     const real = toNum(side.real_return);
     facts.push({
       key: "real",
-      label: "Real return",
+      // "to <month>": the price index is published weeks after the month ends.
+      label: side.real_to ? `Real · to ${formatMonth(side.real_to, "short")}` : "Real · index not out",
       value: real !== null ? <Percent ratio={real} signed colored /> : <span className="recap-card__none">–</span>,
-      note: side.real_to ? `After prices to ${formatMonth(side.real_to, "short")}` : "Prices not published yet",
     });
   }
   facts.push({ key: "contributed", label: "Contributed", value: money(side.contributed) });
-  const cashedOut = toNum(side.cashed_out);
-  if (cashedOut) facts.push({ key: "cashed-out", label: "Cashed out", value: money(side.cashed_out) });
-  facts.push({
-    key: "market",
-    label: "Market",
-    value: money(side.market, true),
-    note: income ? (
-      <>
-        incl. <Money amount={income} currency={currency} digits={0} /> dividends
-      </>
-    ) : undefined,
-  });
+  if (toNum(side.cashed_out)) facts.push({ key: "cashed-out", label: "Cashed out", value: money(side.cashed_out) });
+  facts.push({ key: "market", label: "Market", value: money(side.market, true) });
+  const income = (toNum(side.dividends) ?? 0) + (toNum(side.interest) ?? 0);
+  if (income) facts.push({ key: "dividends", label: "Of which dividends", value: money(income) });
   if (eur && toNum(side.currency) !== null) {
     facts.push({ key: "currency", label: "Currency", value: money(side.currency, true) });
   }
@@ -71,9 +65,15 @@ export function recapFacts(side: RecapSideDto, currency: ReportingCurrency): Rec
   if (eur && cost !== null && side.conversions > 0) {
     facts.push({
       key: "cost",
-      label: "Conversion cost",
+      label: side.conversions === 1 ? "Conversion cost" : `Cost · ${side.conversions} conversions`,
       value: <Money amount={-cost} currency={currency} digits={2} signed colored />,
-      note: side.conversions === 1 ? "1 conversion" : `${side.conversions} conversions`,
+    });
+  }
+  if (facts.length % 2 === 1 && toNum(side.closing_value) !== null) {
+    facts.splice(1, 0, {
+      key: "value",
+      label: granularity === "year" ? "Value at year end" : "Value at month end",
+      value: money(side.closing_value),
     });
   }
   return facts;
@@ -118,7 +118,7 @@ function RecapBody({
   onPeriod?: (period: string) => void;
 }) {
   const { mutate } = useAckRecap();
-  const facts = recapFacts(r[currency], currency);
+  const facts = recapFacts(r[currency], currency, r.granularity);
   const at = periods.indexOf(r.period);
   const prev = at > 0 ? periods[at - 1] : null;
   const next = at >= 0 && at < periods.length - 1 ? periods[at + 1] : null;
@@ -159,12 +159,11 @@ function RecapBody({
           />
         )}
       </header>
-      <dl className="recap-card__facts">
-        {facts.map((f, i) => (
-          <div key={f.key} className={i === 0 ? "recap-card__fact recap-card__fact--lead" : "recap-card__fact"} data-testid={`recap-${f.key}`}>
+      <dl className={`recap-card__facts recap-card__facts--n${facts.length}`}>
+        {facts.map((f) => (
+          <div key={f.key} className="recap-card__fact" data-testid={`recap-${f.key}`}>
             <dt className="recap-card__label">{f.label}</dt>
             <dd className="recap-card__value">{f.value}</dd>
-            {f.note && <dd className="recap-card__note">{f.note}</dd>}
           </div>
         ))}
       </dl>
