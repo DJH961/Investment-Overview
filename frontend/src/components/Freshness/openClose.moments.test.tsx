@@ -56,7 +56,9 @@ describe("the top bar chip, the phase and the day words at every open / close mo
       // dayWords reads the wall clock ("Today" vs "Last session"), so pin it to the moment.
       vi.useFakeTimers({ toFake: ["Date"] });
       vi.setSystemTime(now);
-      onTestFinished(() => vi.useRealTimers());
+      onTestFinished(() => {
+        vi.useRealTimers();
+      });
       const phase = marketPhase({ freshness: m.f, session: null, pricesLive: null, payloadLive: m.payloadLive, now });
       expect(phase).toBe(m.phase);
       const view = describeFreshness(m.f as never, {
