@@ -58,12 +58,17 @@ def _deposit(account_id: int, total: str, **kw: object) -> TransactionInput:
     )
 
 
-def test_create_cash_freezes_both_legs(session: Session, account_id: int) -> None:
+def test_create_cash_stores_native_only(session: Session, account_id: int) -> None:
+    """P19: the frozen legs stay NULL; EUR/USD are derived from net_native when read."""
+    from investment_dashboard.services import cashflows, fx_service
+
     res = svc.create(session, _deposit(account_id, "100"))
     txn = res.transaction
     assert txn.net_native == Decimal("100")
-    assert txn.net_usd == Decimal("100")
-    assert txn.net_eur == Decimal("80.000000")  # 100 / 1.25 at the trade-date rate
+    assert (txn.net_usd, txn.net_eur, txn.fx_rate_to_eur) == (None, None, None)
+    rates = fx_service.get_rates(session, base="EUR", quote="USD")
+    assert cashflows.txn_usd_amount(txn, eur_to_usd=rates) == Decimal("100")
+    assert cashflows.txn_eur_amount(txn, eur_to_usd=rates) == Decimal("80")  # 100 / 1.25
     assert res.warnings == []
 
 

@@ -69,7 +69,7 @@ def test_project_from_session_uses_average_contribution(session: Session) -> Non
         session,
         broker="fidelity",
         account_label="Fid",
-        native_currency="USD",
+        native_currency="EUR",  # EUR deposits: native = EUR (P19)
         account_type="brokerage",
     )
     # Two years of deposits: 1000 and 3000 → average 2000.
@@ -79,14 +79,14 @@ def test_project_from_session_uses_average_contribution(session: Session) -> Non
                 account_id=acct.id,
                 date=date(2023, 6, 1),
                 kind="deposit",
-                net_eur=Decimal("1000"),
+                net_native=Decimal("1000"),
                 source=TransactionSource.MANUAL,
             ),
             Transaction(
                 account_id=acct.id,
                 date=date(2024, 6, 1),
                 kind="deposit",
-                net_eur=Decimal("3000"),
+                net_native=Decimal("3000"),
                 source=TransactionSource.MANUAL,
             ),
         ]

@@ -228,7 +228,11 @@ def _check_fx_live(session: Session, *, now: datetime | None = None) -> HealthIt
 
 
 def _check_fx_legs(session: Session) -> HealthItem:
-    """Transactions whose frozen EUR/USD legs are incomplete (an FX gap)."""
+    """Transactions whose derived EUR/USD legs are incomplete (an FX gap).
+
+    The legs come from ``net_native`` and that date's rate (P19); a gap means
+    no EUR→USD rate on or before the trade date (or a third currency).
+    """
     dates: list[date] = transaction_fx_service.missing_fx_dates(session)
     count = len(dates)
     if count == 0:
@@ -248,8 +252,8 @@ def _check_fx_legs(session: Session) -> HealthItem:
             f"{count} trade date(s) have transactions missing a EUR or USD leg "
             "because the FX rate for that day wasn't available. Returns in the "
             "missing currency fall back to a blank rather than a wrong number. "
-            "Use Settings → Data refresh → Refresh FX rates, which backfills the "
-            "frozen legs once the rate is cached."
+            "Use Settings → Data refresh → Refresh FX rates; the legs fill in "
+            "by themselves once the rate is cached."
         ),
         examples=_examples([d.isoformat() for d in dates]),
     )

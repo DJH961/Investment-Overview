@@ -13,7 +13,10 @@ from investment_dashboard.readmodels.queries.deposits_query import (
     compute_summary,
     list_deposit_rows,
 )
-from investment_dashboard.repositories import accounts_repo
+from investment_dashboard.repositories import accounts_repo, fx_repo
+
+#: EUR→USD on every day (forward-filled); the EUR legs are derived from it (P19).
+RATE = Decimal("1.25")
 
 
 def _seed(session: Session) -> int:
@@ -24,6 +27,7 @@ def _seed(session: Session) -> int:
         native_currency="USD",
         account_type="brokerage",
     )
+    fx_repo.upsert_rates(session, {date(2023, 1, 1): RATE})
     today = date.today()
     session.add_all(
         [
@@ -32,7 +36,7 @@ def _seed(session: Session) -> int:
                 date=date(2023, 6, 1),
                 kind="deposit",
                 net_native=Decimal("500.00"),
-                net_eur=Decimal("450.00"),
+                net_eur=Decimal("400.00"),
                 source=TransactionSource.MANUAL,
             ),
             Transaction(
@@ -40,7 +44,7 @@ def _seed(session: Session) -> int:
                 date=date(today.year, 1, 10),
                 kind="deposit",
                 net_native=Decimal("1000.00"),
-                net_eur=Decimal("900.00"),
+                net_eur=Decimal("800.00"),
                 source=TransactionSource.MANUAL,
             ),
             Transaction(
@@ -48,7 +52,7 @@ def _seed(session: Session) -> int:
                 date=today,
                 kind="deposit",
                 net_native=Decimal("200.00"),
-                net_eur=Decimal("180.00"),
+                net_eur=Decimal("160.00"),
                 source=TransactionSource.MANUAL,
             ),
             Transaction(
@@ -56,7 +60,7 @@ def _seed(session: Session) -> int:
                 date=date(today.year, 1, 15),
                 kind="interest",
                 net_native=Decimal("12.00"),
-                net_eur=Decimal("11.00"),
+                net_eur=Decimal("9.60"),
                 source=TransactionSource.MANUAL,
             ),
             # Non-deposit kinds must be excluded.
@@ -86,12 +90,12 @@ def test_summary_totals(session: Session) -> None:
     _seed(session)
     today = date.today()
     summary = compute_summary(session, today=today)
-    # 450 + 900 + 180 = 1530 (3 deposits, no withdrawals)
-    assert summary.total_contrib_eur == Decimal("1530.00")
-    # YTD deposits = 900 + 180 = 1080
-    assert summary.ytd_contrib_eur == Decimal("1080.00")
-    # MTD = today's only = 180
-    assert summary.mtd_contrib_eur == Decimal("180.00")
+    # (500 + 1000 + 200) / 1.25 = 400 + 800 + 160 = 1360 (3 deposits, no withdrawals)
+    assert summary.total_contrib_eur == Decimal("1360.00")
+    # YTD deposits = 800 + 160 = 960
+    assert summary.ytd_contrib_eur == Decimal("960.00")
+    # MTD = today's only = 160
+    assert summary.mtd_contrib_eur == Decimal("160.00")
     # Seed account is USD-native, so the USD totals come straight from
     # net_native (no EUR round-trip) regardless of whether FX history
     # was seeded — verifies the v2.4 fix for the deposits-USD column.
@@ -131,7 +135,7 @@ def test_withdrawals_reduce_contributions_once(session: Session) -> None:
                 date=date(2023, 6, 1),
                 kind="deposit",
                 net_native=Decimal("1000.00"),
-                net_eur=Decimal("900.00"),
+                net_eur=Decimal("800.00"),
                 net_usd=Decimal("1000.00"),
                 source=TransactionSource.MANUAL,
             ),
@@ -140,18 +144,19 @@ def test_withdrawals_reduce_contributions_once(session: Session) -> None:
                 date=date(2023, 7, 1),
                 kind="withdrawal",
                 net_native=Decimal("-300.00"),
-                net_eur=Decimal("-270.00"),
+                net_eur=Decimal("-240.00"),
                 net_usd=Decimal("-300.00"),
                 source=TransactionSource.MANUAL,
             ),
         ]
     )
+    fx_repo.upsert_rates(session, {date(2023, 1, 1): RATE})
     session.flush()
 
     summary = compute_summary(session, today=date(2023, 8, 1))
     # 1000 deposit − 300 withdrawal = 700 net, in every currency leg.
     assert summary.total_contrib_usd == Decimal("700.00")
-    assert summary.total_contrib_eur == Decimal("630.00")
+    assert summary.total_contrib_eur == Decimal("560.00")  # 700 / 1.25
 
 
 def test_eur_computed_from_trade_date_fx_not_parity(session: Session) -> None:

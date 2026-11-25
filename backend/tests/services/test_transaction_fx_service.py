@@ -94,10 +94,10 @@ class TestBackfill:
         assert legs.net_usd == Decimal("1000")
         assert abs((legs.net_eur or Decimal(0)) - Decimal("925.93")) < Decimal("0.01")
 
-    def test_backfill_fills_missing_legs(self, session: Session) -> None:
+    def test_backfill_writes_nothing(self, session: Session) -> None:
+        """P19: the check never stores a leg; derived legs are complete with a rate."""
         account_id = _seed(session, native="USD")
         _fx(session)
-        # A row written before the v2.9 freeze: net_usd / net_eur are NULL.
         txn = Transaction(
             account_id=account_id,
             date=date(2024, 1, 5),
@@ -108,52 +108,39 @@ class TestBackfill:
         transactions_repo.insert_transaction(session, txn)
 
         result = transaction_fx_service.backfill_missing_legs(session)
-        assert result.updated == 1
-        assert result.incomplete == 0
+        assert (result.examined, result.updated, result.incomplete) == (0, 0, 0)
+        forced = transaction_fx_service.backfill_missing_legs(session, force=True)
+        assert (forced.examined, forced.updated, forced.incomplete) == (1, 0, 0)
 
         refreshed = transactions_repo.get_transaction(session, txn.id)
         assert refreshed is not None
-        assert refreshed.net_usd == Decimal("1000")  # USD-native: verbatim
-        assert refreshed.net_eur is not None
-        assert abs(refreshed.net_eur - Decimal("925.93")) < Decimal("0.01")  # 1000/1.08
-
-    def test_backfill_is_noop_on_healthy_ledger(self, session: Session) -> None:
-        account_id = _seed(session, native="USD")
-        _fx(session)
-        txn = Transaction(
-            account_id=account_id,
-            date=date(2024, 1, 5),
-            kind="deposit",
-            net_native=Decimal("1000"),
-            net_eur=Decimal("925.93"),
-            net_usd=Decimal("1000"),
-            source="manual",
+        assert (refreshed.net_usd, refreshed.net_eur, refreshed.fx_rate_to_eur) == (
+            None,
+            None,
+            None,
         )
-        transactions_repo.insert_transaction(session, txn)
-        result = transaction_fx_service.backfill_missing_legs(session)
-        assert result.updated == 0
 
-    def test_force_recompute_repairs_after_fx_correction(self, session: Session) -> None:
+    def test_gap_heals_when_the_rate_lands(self, session: Session) -> None:
         account_id = _seed(session, native="USD")
         txn = Transaction(
             account_id=account_id,
             date=date(2024, 1, 5),
             kind="deposit",
             net_native=Decimal("1000"),
+            net_eur=Decimal("925.93"),  # a frozen leg does not count (P19)
             net_usd=Decimal("1000"),
             source="manual",
         )
         transactions_repo.insert_transaction(session, txn)
-        # No FX yet: EUR leg can't be derived.
+        # No FX yet: the EUR leg can't be derived.
         first = transaction_fx_service.backfill_missing_legs(session)
         assert first.incomplete == 1
-        # FX arrives; a forced recompute now fills the EUR leg.
+        # FX arrives: the derived leg is complete, nothing written.
         _fx(session)
         second = transaction_fx_service.backfill_missing_legs(session, force=True)
         assert second.incomplete == 0
-        refreshed = transactions_repo.get_transaction(session, txn.id)
-        assert refreshed is not None
-        assert refreshed.net_eur is not None
+        assert second.updated == 0
+        assert transaction_fx_service.missing_fx_dates(session) == []
 
     def test_missing_fx_dates_lists_gap(self, session: Session) -> None:
         account_id = _seed(session, native="USD")
