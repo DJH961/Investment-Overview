@@ -17,6 +17,8 @@ import type { HoldingRowDto } from "../../lib/queries/holdings";
 import { toNum } from "../../lib/queries/portfolio";
 import { useIsPhone } from "../../lib/useMediaQuery";
 import { formatQuantity as formatShares } from "../Transactions/numbers";
+import { usePrefs } from "../../lib/prefs";
+import { EurCost, hasEurCost, SoldLots, useTrancheTrail, type JourneyLot, type SoldLot } from "./TrancheJourney";
 import { formatAge } from "./holdingFormat";
 
 /** As many decimals as the server sent (trailing zeros dropped, at most 6). */
@@ -82,7 +84,7 @@ function Gain({ amount, pct, ccy, scale = 0 }: { amount: string | null; pct: str
   );
 }
 
-function LotRow({ r, ccy, nested = false, accounts, scale }: { r: TrancheRowDto; ccy: string; nested?: boolean; accounts: boolean; scale: number }) {
+function LotRow({ r, ccy, nested = false, accounts, scale, eur, onTrail }: { r: TrancheRowDto; ccy: string; nested?: boolean; accounts: boolean; scale: number; eur?: boolean; onTrail?: (buyId: number) => void }) {
   const sold = (toNum(r.quantity_bought) ?? 0) - (toNum(r.quantity_left) ?? 0);
   return (
     <tr className={clsx("holding-page__lot", nested && "holding-page__lot--nested")}>
@@ -111,6 +113,11 @@ function LotRow({ r, ccy, nested = false, accounts, scale }: { r: TrancheRowDto;
       <td className="holding-page__lot-td holding-page__lot-td--right holding-page__lot-td--cost">
         <Money amount={toNum(r.cost_native)} currency={ccy} digits={0} />
       </td>
+      {eur && (
+        <td className="holding-page__lot-td holding-page__lot-td--right">
+          <EurCost lot={r as JourneyLot} onTrail={onTrail} />
+        </td>
+      )}
       <td className="holding-page__lot-td holding-page__lot-td--right">
         <Money amount={valueNow(r.cost_native, r.gain_native)} currency={ccy} digits={0} />
         <span className="holding-page__lot-sub holding-page__lot-sub--cost">
@@ -134,6 +141,8 @@ function GroupRow({
   account,
   accounts,
   scale,
+  eur = false,
+  onTrail,
 }: {
   g: TrancheGroupDto;
   members: TrancheRowDto[];
@@ -141,7 +150,11 @@ function GroupRow({
   account: string;
   accounts: boolean;
   scale: number;
+  eur?: boolean;
+  onTrail?: (buyId: number) => void;
 }) {
+  // The group's euro cost: the sum of its tranches (linear, server figures).
+  const groupEur = members.reduce((t, r) => t + Number((r as JourneyLot).cost_eur ?? 0), 0);
   const [open, setOpen] = useState(false);
   const id = `lot-group-${g.account_id}`;
   return (
@@ -175,6 +188,12 @@ function GroupRow({
         <td className="holding-page__lot-td holding-page__lot-td--right holding-page__lot-td--cost">
           <Money amount={toNum(g.cost_native)} currency={ccy} digits={0} />
         </td>
+        {eur && (
+          <td className="holding-page__lot-td holding-page__lot-td--right">
+            <Money amount={groupEur} currency="EUR" digits={0} />
+            <span className="holding-page__lot-sub">{members.length} rates</span>
+          </td>
+        )}
         <td className="holding-page__lot-td holding-page__lot-td--right">
           <Money amount={valueNow(g.cost_native, g.gain_native)} currency={ccy} digits={0} />
           <span className="holding-page__lot-sub holding-page__lot-sub--cost">
@@ -190,12 +209,12 @@ function GroupRow({
       </tr>
       {open && (
         <tr id={id} className="holding-page__lot-nest" aria-label={`Reinvested dividends in ${account}`}>
-          <td colSpan={accounts ? 8 : 7} className="holding-page__lot-nest-cell" aria-label={`${g.count} reinvested tranches`}>
+          <td colSpan={(accounts ? 8 : 7) + (eur ? 1 : 0)} className="holding-page__lot-nest-cell" aria-label={`${g.count} reinvested tranches`}>
             <table className="holding-page__lots holding-page__lots--nested">
               <caption className="holding-page__sr">Reinvested dividends in {account}</caption>
               <tbody>
                 {members.map((r) => (
-                  <LotRow key={r.id} r={r} ccy={ccy} nested accounts={accounts} scale={scale} />
+                  <LotRow key={r.id} r={r} ccy={ccy} nested accounts={accounts} scale={scale} eur={eur} onTrail={onTrail} />
                 ))}
               </tbody>
             </table>
@@ -259,7 +278,7 @@ function CardBody({
   );
 }
 
-function LotCard({ r, ccy, nested = false, scale }: { r: TrancheRowDto; ccy: string; nested?: boolean; scale: number }) {
+function LotCard({ r, ccy, nested = false, scale, eur, onTrail }: { r: TrancheRowDto; ccy: string; nested?: boolean; scale: number; eur?: boolean; onTrail?: (buyId: number) => void }) {
   const same = toNum(r.quantity_left) === toNum(r.quantity_bought);
   return (
     <li className="holding-page__row-item">
@@ -280,6 +299,11 @@ function LotCard({ r, ccy, nested = false, scale }: { r: TrancheRowDto; ccy: str
           ccy={ccy}
           scale={scale}
         />
+        {eur && (
+          <span className="holding-page__lotcard-eur">
+            In euros <EurCost lot={r as JourneyLot} onTrail={onTrail} />
+          </span>
+        )}
       </div>
     </li>
   );
@@ -356,6 +380,8 @@ function Footer({ d }: { d: HoldingTranchesDto }) {
 export function TranchesTab({ row }: { row: HoldingRowDto }) {
   const q = useHoldingTranches(row.instrument_id);
   const isPhone = useIsPhone();
+  const { currency } = usePrefs();
+  const trail = useTrancheTrail();
   if (q.isError) return <ErrorState message="Could not load the tranches." onRetry={() => void q.refetch()} />;
   if (q.isPending) return <Skeleton height="12rem" />;
   const d = q.data;
@@ -372,8 +398,11 @@ export function TranchesTab({ row }: { row: HoldingRowDto }) {
   const price = d.price_native ?? null;
   const scale = Math.max(0, ...[...d.rows, ...d.groups].map((x) => Math.abs(toNum(x.gain_pct) ?? 0)));
   const gainHead = price !== null ? `Gain at ${formatMoney(toNum(price), ccy, { unmasked: true })}` : "Gain vs today";
-  const heads = ["Bought", ...(accounts ? ["Account"] : []), "Shares left / bought", "Bought at", "Cost", "Value now", "Status", gainHead];
-  const right = new Set(["Shares left / bought", "Bought at", "Cost", "Value now", gainHead]);
+  // 7.4: the euro view adds each tranche's cost in euros and the rate its dollars cost.
+  const eur = currency === "EUR" && hasEurCost(d.rows as JourneyLot[]);
+  const sold = ((d as typeof d & { sold_lots?: SoldLot[] }).sold_lots ?? []) as SoldLot[];
+  const heads = ["Bought", ...(accounts ? ["Account"] : []), "Shares left / bought", "Bought at", "Cost", ...(eur ? ["Cost in €"] : []), "Value now", "Status", gainHead];
+  const right = new Set(["Shares left / bought", "Bought at", "Cost", "Cost in €", "Value now", gainHead]);
   return (
     <div className="holding-page__panel">
       <p className="holding-page__note">
@@ -383,7 +412,7 @@ export function TranchesTab({ row }: { row: HoldingRowDto }) {
       {isPhone ? (
         <ul className="holding-page__rows">
           {loose.map((r) => (
-            <LotCard key={r.id} r={r} ccy={ccy} scale={scale} />
+            <LotCard key={r.id} r={r} ccy={ccy} scale={scale} eur={eur} onTrail={trail.open} />
           ))}
           {d.groups.map((g) => (
             <GroupCard key={`g${g.account_id}`} g={g} members={members(g)} ccy={ccy} scale={scale} />
@@ -404,11 +433,11 @@ export function TranchesTab({ row }: { row: HoldingRowDto }) {
             </thead>
             <tbody>
               {loose.map((r) => (
-                <LotRow key={r.id} r={r} ccy={ccy} accounts={accounts} scale={scale} />
+                <LotRow key={r.id} r={r} ccy={ccy} accounts={accounts} scale={scale} eur={eur} onTrail={trail.open} />
               ))}
               {d.groups.map((g) => (
                 <Fragment key={`g${g.account_id}`}>
-                  <GroupRow g={g} members={members(g)} ccy={ccy} account={accountOf(g.account_id)} accounts={accounts} scale={scale} />
+                  <GroupRow g={g} members={members(g)} ccy={ccy} account={accountOf(g.account_id)} accounts={accounts} scale={scale} eur={eur} onTrail={trail.open} />
                 </Fragment>
               ))}
             </tbody>
@@ -416,6 +445,8 @@ export function TranchesTab({ row }: { row: HoldingRowDto }) {
         </div>
       )}
       <Footer d={d} />
+      {currency === "EUR" && <SoldLots lots={sold} ccy={ccy} />}
+      {trail.sheet}
     </div>
   );
 }

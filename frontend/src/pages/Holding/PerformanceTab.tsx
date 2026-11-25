@@ -1,3 +1,4 @@
+import clsx from "clsx";
 import { useMemo, useState } from "react";
 import { Chart, isReferenceInSoftBounds, type ChartMarker, type ChartSeries } from "../../components/Chart";
 import { hasSplit, HoldingDaySplit } from "../../components/DaySplit";
@@ -8,7 +9,7 @@ import { Percent } from "../../components/Percent";
 import { SegmentedControl } from "../../components/SegmentedControl";
 import { useDisplayPrefs } from "../../lib/displayPrefs";
 import { useIsPhone } from "../../lib/useMediaQuery";
-import { chartMoneyFormat, formatMoney, formatQuantity } from "../../lib/format";
+import { chartMoneyFormat, formatMoney, formatNumber, formatPp, formatQuantity, signOf } from "../../lib/format";
 import type { ReportingCurrency } from "../../lib/prefs";
 import {
   HOLDING_RANGES,
@@ -136,6 +137,7 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 export function KeyFacts({ row, ccy }: { row: HoldingRowDto; ccy: ReportingCurrency }) {
   const day = useScreenPhase();
   const native = row.native_currency;
+  const journey = row as HoldingRowDto & { your_rate?: string | null; ecb_buy_avg?: string | null; fx_effect_pp?: string | null };
   return (
     <section className="holding-page__section" aria-labelledby="holding-facts">
       <h2 id="holding-facts" className="holding-page__section-title">
@@ -167,6 +169,20 @@ export function KeyFacts({ row, ccy }: { row: HoldingRowDto; ccy: ReportingCurre
         <Fact label="Growth">
           <Percent ratio={toNum(row.total_growth)} signed colored />
         </Fact>
+        {/* 7.4: the rate this holding's dollars really cost, beside the ECB on the buy days, and the
+            currency's share of its return (EUR growth minus USD growth, a server residual). Three
+            facts, so the grid stays full (12 = 4 rows of 3, 6 of 2). */}
+        {journey.your_rate != null && (
+          <>
+            <Fact label="Your rate">{formatNumber(toNum(journey.your_rate), 4)}</Fact>
+            <Fact label="ECB on buy days">{formatNumber(toNum(journey.ecb_buy_avg ?? null), 4)}</Fact>
+            <Fact label="FX effect">
+              <span className={clsx("holding-page__fx-pp", `holding-page__fx-pp--${signOf(toNum(journey.fx_effect_pp ?? null), 4)}`)}>
+                {formatPp(toNum(journey.fx_effect_pp ?? null), 1)}
+              </span>
+            </Fact>
+          </>
+        )}
       </dl>
     </section>
   );

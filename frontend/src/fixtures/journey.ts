@@ -569,7 +569,23 @@ function withHoldingsRate(body: unknown, data: Obj): unknown {
   const b = body as Record<"EUR" | "USD", Obj>;
   if (!b?.EUR || !b.USD) return body;
   const rate = journeyFor(bookOf(data)).EUR.stats.your_rate.rate;
-  return { ...b, EUR: { ...b.EUR, fx_your_rate: b.EUR.fx_your_rate ?? rate }, USD: { ...b.USD, fx_your_rate: b.USD.fx_your_rate ?? rate } };
+  // Per holding: its own blended rate, the ECB on its buy days, and the FX effect in points.
+  const lots = (side: Obj) => {
+    const list = side.holdings as Obj[] | undefined;
+    if (!list) return {};
+    return {
+      holdings: list.map((h, i) =>
+        h.is_money_market || h.native_currency !== "USD"
+          ? h
+          : { ...h, your_rate: h.your_rate ?? f4(Number(rate) - 0.004 * i), ecb_buy_avg: h.ecb_buy_avg ?? f4(Number(rate) + 0.0031 - 0.004 * i), fx_effect_pp: h.fx_effect_pp ?? f4(-0.031 - 0.012 * i) },
+      ),
+    };
+  };
+  return {
+    ...b,
+    EUR: { ...b.EUR, fx_your_rate: b.EUR.fx_your_rate ?? rate, ...lots(b.EUR) },
+    USD: { ...b.USD, fx_your_rate: b.USD.fx_your_rate ?? rate, ...lots(b.USD) },
+  };
 }
 
 function withCashedOut(body: unknown, data: Obj, periods: boolean): unknown {
@@ -620,6 +636,8 @@ function withTranches(body: unknown, data: Obj): unknown {
       market_eur: f2(market),
       currency_eur: f2(eurNow - costEur - market),
       back_in_euros: null,
+      // The buy behind the tranche (the fixture's tranches are invented: any buy of the symbol).
+      buy_id: transactions(data).find((t) => t.kind === "buy" && t.symbol === b.symbol)?.id ?? null,
       ...(book === "stress" && i === 0 ? { your_rate: null, cost_eur: null, gain_eur: null } : {}),
     };
   });

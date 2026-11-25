@@ -5,7 +5,7 @@ import { LinkButton } from "../Button";
 import { Percent } from "../Percent";
 import { Skeleton } from "../Skeleton";
 import { Sparkline } from "../Sparkline";
-import { formatAxisDate, formatMoney, formatPp, formatQuantity } from "../../lib/format";
+import { formatAxisDate, formatMoney, formatNumber, formatPp, formatQuantity } from "../../lib/format";
 import { usePrefs } from "../../lib/prefs";
 import { type HoldingPeekDto, useHoldingPeek } from "../../lib/queries/holding-detail";
 import type { HoldingRowDto } from "../../lib/queries/holdings";
@@ -176,6 +176,10 @@ export function HoldingPeek({ row, layout, id }: HoldingPeekProps) {
         <Fact label="Last dividend">
           <DividendFact p={p} />
         </Fact>
+        {/* 7.4: the rate this holding's dollars cost (pool blend), when the server has it. */}
+        {(p as typeof p & { your_rate?: string | null }).your_rate ? (
+          <Fact label="Your rate">{formatNumber(Number((p as typeof p & { your_rate?: string | null }).your_rate), 4)}</Fact>
+        ) : null}
       </dl>
     );
 

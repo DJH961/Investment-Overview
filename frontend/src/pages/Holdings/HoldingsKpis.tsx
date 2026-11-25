@@ -40,6 +40,9 @@ export function HoldingsKpis({ data, currency }: Props) {
   const loading = data === undefined;
   const s = data?.summary;
   const fx = data?.fx;
+  // 7.4: the rate your dollars cost (EUR/USD), written in the tile's own quote.
+  const yourRate = toNum((data as (typeof data & { fx_your_rate?: string | null }) | undefined)?.fx_your_rate ?? null);
+  const yourInQuote = yourRate === null || !fx ? null : fx.pair === "USD/EUR" ? 1 / yourRate : yourRate;
   const stats: Stat[] = [
     { label: "Total value", value: <Money amount={toNum(data?.total_value)} currency={currency} /> },
     {
@@ -107,7 +110,7 @@ export function HoldingsKpis({ data, currency }: Props) {
               )}
             </>
           ),
-          hint: fxStamp(fx),
+          hint: yourInQuote !== null ? `your rate ${formatNumber(yourInQuote, 4)}` : fxStamp(fx),
         }
       : { label: "FX EUR/USD", value: formatNumber(toNum(data?.fx_eur_usd), 4), hint: "all holdings in USD" },
     { label: "Up / down today", value: `${s?.gainers ?? 0} / ${s?.losers ?? 0}`, hint: "holdings" },
