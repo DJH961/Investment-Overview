@@ -61,6 +61,8 @@ class DepositsOut(ApiModel):
     other_ccy: Ccy
     as_of: str
     summary: DepositSummaryOut = Field(description="Whole ledger; ignores the row filters")
+    #: 7.4: euros that came back from cash-outs (received minus fees), whole ledger.
+    cashed_out_eur: DecStr = "0"
     summary_other: DepositSummaryOut
     years: list[int] = Field(description="Years with cash flows (unfiltered), newest first")
     by_year: list[DepositYearOut] = Field(description="Of the filtered rows, newest year first")

@@ -46,6 +46,7 @@ XIRR over those dollar flows; the euro side is ``domain.cash_out``'s, from euros
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping, Sequence
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import ROUND_HALF_EVEN, Decimal
@@ -876,11 +877,24 @@ def load_inputs(session: Any, *, today: date | None = None) -> JourneyInputs | N
     )
 
 
+_BUILDING: ContextVar[bool] = ContextVar("journey_building", default=False)
+
+
 @cached_read
 def _cached(session: Any) -> JourneyInputs | None:
     return load_inputs(session)
 
 
 def load_inputs_cached(session: Any) -> JourneyInputs | None:
-    """:func:`load_inputs`, cached until the next ledger or price change."""
-    return _cached(session=session)  # type: ignore[no-any-return]
+    """:func:`load_inputs`, cached until the next ledger or price change.
+
+    ``None`` when called while the inputs are being built (a read model the pool
+    service itself uses never waits on the journey).
+    """
+    if _BUILDING.get():
+        return None
+    token = _BUILDING.set(True)
+    try:
+        return _cached(session=session)  # type: ignore[no-any-return]
+    finally:
+        _BUILDING.reset(token)

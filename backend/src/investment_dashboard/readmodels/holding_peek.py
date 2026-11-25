@@ -25,7 +25,7 @@ from investment_dashboard.domain.instruments import (
 )
 from investment_dashboard.domain.returns import Cashflow, modified_dietz
 from investment_dashboard.errors import ValidationError
-from investment_dashboard.readmodels import holding_detail
+from investment_dashboard.readmodels import holding_detail, journey_fields
 from investment_dashboard.readmodels import tranches as tranches_readmodel
 from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.repositories import (
@@ -62,7 +62,13 @@ def build(session: Session, instrument_id: int) -> dict[str, Any] | None:
         "week": _week(session, instrument_id),
         "tranches": _tranches(session, instrument_id),
         **_last_activity(session, instrument_id),
+        "your_rate": _your_rate(journey_fields.inputs_for(session), instrument_id),
     }
+
+
+def _your_rate(inputs: Any, instrument_id: int) -> str | None:
+    """7.4 ``your_rate`` (``None`` before the cash pool exists)."""
+    return None if inputs is None else journey_fields.peek_your_rate(inputs, instrument_id)
 
 
 def build_all(session: Session, *, now: datetime | None = None) -> dict[int, dict[str, Any]]:
@@ -110,9 +116,11 @@ def build_all(session: Session, *, now: datetime | None = None) -> dict[int, dic
         today=today,
     )
 
+    journey = journey_fields.inputs_for(session)
     return {
         iid: {
             "instrument_id": iid,
+            "your_rate": _your_rate(journey, iid),
             "currency": instr.native_currency,
             "week": weeks.get(iid),
             "tranches": tranches[iid],

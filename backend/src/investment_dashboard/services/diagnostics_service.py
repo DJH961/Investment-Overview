@@ -1176,6 +1176,15 @@ def check_health(session: Session) -> HealthReport:
         _check_holding_intraday(session),
         _check_price_feed(session),
         _check_providers(),
+        # 7.4 journey checks (withdrawals_not_converted is info: shown by the read model).
+        *(
+            check(session)
+            for check in JOURNEY_CHECKS
+            if check is not check_withdrawals_not_converted
+        ),
+        # 7.4 lane E: backup age and the end-of-day job's steps.
+        check_backup_age(),
+        check_eod_steps(session),
     ]
     memory = _check_memory()
     if memory is not None:

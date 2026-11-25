@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import ConfigDict, Field
 
@@ -46,6 +47,14 @@ class TransactionOut(ApiModel):
     is_estimate: bool = Field(
         default=False,
         description="A recurring-plan estimate not yet settled (import or typed figures).",
+    )
+    eur_basis: Literal["your_rate", "pool", "ecb", "native"] | None = Field(
+        default=None,
+        description="7.4: where the EUR figure comes from (null before the cash pool).",
+    )
+    trail_kind: Literal["deposit", "buy", "sell", "withdrawal"] | None = Field(
+        default=None,
+        description="7.4: the money trail this row opens (GET /trail/{kind}/{id}).",
     )
 
 

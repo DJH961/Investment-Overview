@@ -86,6 +86,11 @@ class LedgerRecord:
     cash_usd: Decimal | None = None
     #: ``True`` for a recurring-plan estimate not yet settled (7.3, P14).
     is_estimate: bool = False
+    #: 7.4: where the EUR figure comes from (``your_rate`` | ``pool`` | ``ecb`` |
+    #: ``native``); ``None`` before the cash pool exists.
+    eur_basis: str | None = None
+    #: 7.4: the money trail this row opens (``GET /trail/{kind}/{id}``), or ``None``.
+    trail_kind: str | None = None
 
 
 def _fmt_money(value: Decimal | None, currency: str, places: int = 2) -> str:
@@ -120,6 +125,7 @@ def list_ledger_records(
     sort: str = "date",
     order: str = "desc",
     eur_amount: EurAmount | None = None,
+    with_journey: bool = True,
 ) -> list[LedgerRecord]:
     """Return raw ledger records in newest-first order.
 
@@ -134,10 +140,39 @@ def list_ledger_records(
         session, **_filter_kwargs(filters), limit=limit, offset=offset, sort=sort, order=order
     )
     eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
+    journey = _journey(session) if with_journey and txns else None
     return [
-        _to_record(t, eur_to_usd=eur_to_usd, fallback_rate=fx_rate, eur_amount=eur_amount)
+        _with_journey(
+            _to_record(t, eur_to_usd=eur_to_usd, fallback_rate=fx_rate, eur_amount=eur_amount),
+            journey,
+        )
         for t in txns
     ]
+
+
+def _journey(session: Session) -> Any:
+    from investment_dashboard.readmodels import journey_fields  # noqa: PLC0415
+
+    return journey_fields.inputs_for(session)
+
+
+def _with_journey(r: LedgerRecord, journey: Any) -> LedgerRecord:
+    """7.4 ``eur_basis`` / ``trail_kind`` (unchanged without a cash pool)."""
+    if journey is None:
+        return r
+    from dataclasses import replace  # noqa: PLC0415
+
+    from investment_dashboard.readmodels import journey_fields  # noqa: PLC0415
+
+    fields = journey_fields.record_fields(
+        journey,
+        txn_id=r.id,
+        on=r.date,
+        kind=r.kind,
+        account_id=r.account_id,
+        ccy=r.native_currency,
+    )
+    return replace(r, **fields)
 
 
 def count_ledger_records(session: Session, filters: LedgerFilters | None = None) -> int:
@@ -157,7 +192,8 @@ def get_ledger_record(
     if txn is None:
         return None
     eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
-    return _to_record(txn, eur_to_usd=eur_to_usd, fallback_rate=fx_rate, eur_amount=eur_amount)
+    record = _to_record(txn, eur_to_usd=eur_to_usd, fallback_rate=fx_rate, eur_amount=eur_amount)
+    return _with_journey(record, _journey(session))
 
 
 def list_ledger_rows(
@@ -175,7 +211,9 @@ def list_ledger_rows(
     """
     return [
         _format_record(r)
-        for r in list_ledger_records(session, filters, fx_rate=fx_rate, eur_amount=eur_amount)
+        for r in list_ledger_records(
+            session, filters, fx_rate=fx_rate, eur_amount=eur_amount, with_journey=False
+        )
     ]
 
 
@@ -205,7 +243,9 @@ def summarize_ledger(
 ) -> LedgerSummary:
     """Aggregate KPI figures for the (optionally filtered) ledger."""
     return summarize_records(
-        list_ledger_records(session, filters, fx_rate=fx_rate, eur_amount=eur_amount)
+        list_ledger_records(
+            session, filters, fx_rate=fx_rate, eur_amount=eur_amount, with_journey=False
+        )
     )
 
 

@@ -21,6 +21,7 @@ from investment_dashboard.domain.day_move import HoldingDaySplit
 from investment_dashboard.domain.instruments import is_nav_priced
 from investment_dashboard.domain.late_data import Holding, value_at_rate
 from investment_dashboard.domain.returns import capital_gain_excl_income
+from investment_dashboard.readmodels import journey_fields
 from investment_dashboard.readmodels._context import build_context
 from investment_dashboard.readmodels._serialize import dec, iso
 from investment_dashboard.readmodels.queries.overview_query import (
@@ -595,6 +596,18 @@ def build(
     rows = [
         holding_row(c, by_id[c.instrument_id], metrics.get(c.instrument_id), ccy) for c in cards
     ]
+    # 7.4 KeyFacts (your rate, ECB on buy days, FX effect); absent without a pool.
+    journey = journey_fields.inputs_for(session)
+    if journey is not None:
+        for row, card in zip(rows, cards, strict=True):
+            row.update(
+                journey_fields.key_facts_fields(
+                    journey,
+                    card.instrument_id,
+                    growth_eur=card.total_growth_eur,
+                    growth_usd=card.total_growth_usd,
+                )
+            )
     # Mutual funds with an ETF twin: the estimate while the NAV is pending, the
     # twin's accuracy once it posted. Money is valued at the one rate now.
     estimates = intraday_snapshots_service.twin_estimates(session, now)
@@ -660,6 +673,9 @@ def build(
         "ccy": ccy,
         "as_of": ctx.as_of.isoformat(),
         "fx_eur_usd": dec(ctx.fx_rate_eur_usd),
+        "fx_your_rate": (
+            journey_fields.holdings_fx_your_rate(journey) if journey is not None else None
+        ),
         "total_value": dec(total_value),
         "total_cost_basis": dec(total_cost),
         "total_capital_gain": dec(total_gain),
