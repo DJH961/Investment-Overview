@@ -176,12 +176,14 @@ export function Periods() {
 
   // The recap (7.4): the last finished month by default, stepping through finished periods.
   const [recapPeriod, setRecapPeriod] = useState<string | null>(null);
+  const mData = monthly.data;
+  const yData = yearly.data;
   const recapPeriods = useMemo(
     () => ({
-      month: mRows.filter((r) => !r.is_current).map((r) => r.label),
-      year: yRows.filter((r) => !r.is_current).map((r) => r.label),
+      month: (mData?.rows ?? []).filter((r) => !r.is_current).map((r) => r.label),
+      year: (yData?.rows ?? []).filter((r) => !r.is_current).map((r) => r.label),
     }),
-    [mRows, yRows],
+    [mData, yData],
   );
 
   // By-year view: the last two years of months as a bar strip on top.
