@@ -20,7 +20,7 @@ plus its last `Next:` line.
 | Contract + golden G1/G2 | done 2026-11-25 | integration | owner still checks the G1 numbers (contract §3) |
 | Lane A — P19 frozen legs | started | see lane report | |
 | Lane B1 — cash pool domain | started | see lane report | |
-| Lane E — recap + real return | started | see lane report | |
+| Lane E — recap + real return | restarted with impeccable agent | lane/v7.4-e-recap (worktree agent-a13dde251d4c6378a) | handover at 311f23fe: HICP adapter, cache tier, service, real-return maths done; next: eod step, Periods real return, recap API, health checks, RecapCard |
 | Journey UI mockups | approved 2026-11-25 (v2) | — | aligned trail rows, cash-out EUR vs USD, 4 stats full width; see plan "Approved mockup decisions" |
 | Owner golden check (B1) | G1 OK by owner 2026-11-25 | — | B2 may start once lane A is merged |
 | Lane B2 — wiring | waiting on A + owner gate | | |
