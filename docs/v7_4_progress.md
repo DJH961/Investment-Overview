@@ -24,7 +24,7 @@ plus its last `Next:` line.
 | Journey UI mockups | approved 2026-11-25 (v2) | — | aligned trail rows, cash-out EUR vs USD, 4 stats full width; see plan "Approved mockup decisions" |
 | Owner golden check (B1) | G1 OK by owner 2026-11-25 | — | B2 may start once lane A is merged |
 | Lane B2 — wiring | merged; follow-up: direction filters in fx_cost, recurring, currency_deposits, conversions API | lane/v7.4-b2-wiring | P18 totals deferred to a later release (owner 2026-11-26); rule + check stay dormant; patch = commit 09d26368 |
-| Lane C — journey read models | merged 8239d132; adding the unowned payload hooks | lane/v7.4-c-journey | decisions 1–8 accepted; hooks: B2 tranches, E periods, C the rest; JOURNEY_CHECKS registered by C |
+| Lane C — journey read models | done, merged d6203dee | lane/v7.4-c-journey | decisions 1–8 accepted; hooks: B2 tranches, E periods, C the rest; JOURNEY_CHECKS registered by C |
 | Lane D — journey UI | started (impeccable) | lane/v7.4-d-journey-ui | fixtures + temp journey-types.ts |
 | Shots → owner review | to do | | |
 | Full tests, CI, release 7.4.0 | to do | | ask about DEPLOY_MODE first |
