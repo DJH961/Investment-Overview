@@ -24,7 +24,7 @@ plus its last `Next:` line.
 | Journey UI mockups | approved 2026-11-25 (v2) | — | aligned trail rows, cash-out EUR vs USD, 4 stats full width; see plan "Approved mockup decisions" |
 | Owner golden check (B1) | G1 OK by owner 2026-11-25 | — | B2 may start once lane A is merged |
 | Lane B2 — wiring | started (ledger_query hook after A merges) | lane/v7.4-b2-wiring | |
-| Lane C — journey read models | started | lane/v7.4-c-journey | codes against contract_api §7 seam |
+| Lane C — journey read models | merged 8239d132; adding the unowned payload hooks | lane/v7.4-c-journey | decisions 1–8 accepted; hooks: B2 tranches, E periods, C the rest; JOURNEY_CHECKS registered by C |
 | Lane D — journey UI | started (impeccable) | lane/v7.4-d-journey-ui | fixtures + temp journey-types.ts |
 | Shots → owner review | to do | | |
 | Full tests, CI, release 7.4.0 | to do | | ask about DEPLOY_MODE first |
@@ -36,3 +36,4 @@ plus its last `Next:` line.
 - 2026-11-25: lane E told to hand over; it restarts as a skills-capable agent (impeccable). Owner rule: align text and keep empty lines to a minimum, never pad the other boxes.
 - 2026-11-25: B1 merged. Contract part 2 (docs/v7_4_contract_api.md) written; lanes B2, C, D started.
 - 2026-11-25: usage limit stopped B2, C, D and E mid-work. Lane A merged. All four resumed with SendMessage (same agents, same context). E re-points 0030 to d9b3f1a7c2e5.
+- 2026-11-25: PR #434 (overflow at 768-1440 px, fixtures deploy gate) merged into 7.4 and closed. Fixed the date-dependent openClose.moments test; main keeps failing that test until 7.4 merges. Lane C merged.
