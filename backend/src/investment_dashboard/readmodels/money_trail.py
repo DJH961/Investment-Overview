@@ -313,8 +313,8 @@ class _Trail:
                     pieces.append((o, d.amount * o.eur / d.orig_eur))
             else:
                 pieces.append((None, d.amount))
-            for o, usd in pieces:
-                p = self.upstream(d.lot_id, o, usd)
+            for origin, usd in pieces:
+                p = self.upstream(d.lot_id, origin, usd)
                 p.flagged = p.flagged or d.flagged
                 p.steps += tail(d, usd)
                 paths.append(p)
@@ -526,13 +526,15 @@ def _conversion(tr: _Trail, id_: int) -> dict[str, Any] | None:
     co = tr.cash_outs.get(id_)
     if co is not None:
         draws = list(tr.state.conversions_back.get(id_, co.draws))
-        paths = tr.paths_for_draws(draws, lambda _d, usd: [tr.back_step(id_, usd)], co.usd_sent)
+        back_paths = tr.paths_for_draws(
+            draws, lambda _d, usd: [tr.back_step(id_, usd)], co.usd_sent
+        )
         rate = co.usd_sent / co.eur_received if co.eur_received > 0 else None
         split = _split(co.market_eur, co.currency_eur, co.conversion_cost_eur)
         return _out(
             "conversion",
             id_,
-            paths,
+            back_paths,
             co.usd_sent,
             split=split,
             your_rate=rate,

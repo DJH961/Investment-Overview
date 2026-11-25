@@ -844,8 +844,12 @@ def _rate_now(session: Any, today: date) -> Decimal | None:
 
 def snapshot_provider() -> Callable[..., PoolSnapshotLike] | None:
     """B2's ``build_pool_snapshot`` (contract §7), or ``None`` before it is merged."""
+    import importlib  # noqa: PLC0415
+
     try:
-        from investment_dashboard.services import cash_pool_service  # noqa: PLC0415
+        cash_pool_service = importlib.import_module(
+            "investment_dashboard.services.cash_pool_service"
+        )
     except ImportError:
         return None
     fn = getattr(cash_pool_service, "build_pool_snapshot", None)
