@@ -154,6 +154,7 @@ class CostRowOut(ApiModel):
     timing_pct: DecStr | None = Field(
         description="rate / month_avg - 1: positive = better than the month's average."
     )
+    direction: Literal["to_usd", "to_eur"] = "to_usd"
 
 
 class CostTimingOut(ApiModel):
@@ -190,6 +191,13 @@ class CostsOut(ApiModel):
     rows: list[CostRowOut]
     #: The range as dates (one meaning for the whole page, 7.3.1).
     window: RangeWindow | None = None
+    back_to_eur: CostsOut | None = Field(
+        default=None,
+        description=(
+            "The same figures for the conversions back to EUR (7.4), in that direction: "
+            "eur_sent = euros received, usd_received = dollars sent. Null without one."
+        ),
+    )
 
 
 class SliceOut(ApiModel):

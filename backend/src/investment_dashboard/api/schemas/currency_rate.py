@@ -74,6 +74,9 @@ class ConversionMarker(ApiModel):
     amount_to: DecStr | None = None
     from_ccy: str
     to_ccy: str
+    #: ``to_eur`` = a conversion back (7.4): amount_from is the dollars sent,
+    #: amount_to the euros received; the chart draws it with its own shape.
+    direction: Literal["to_usd", "to_eur"] = "to_usd"
     #: Against the settled ECB fixing of the conversion's date (all-in, fees included).
     kind: Literal["above_reference", "below_reference"] | None = None
     #: ``all_in_rate / ecb_rate - 1``; negative = fewer dollars per euro than the ECB.

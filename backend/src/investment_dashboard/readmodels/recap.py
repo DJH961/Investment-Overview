@@ -30,7 +30,7 @@ from __future__ import annotations
 import re
 from datetime import date
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from investment_dashboard.activity_log import activity
 from investment_dashboard.domain import fx_attribution as fa
@@ -78,15 +78,40 @@ def _bridge(session: Session, ccy: str, period: str) -> fa.Bridge | None:
     return next((b for b in totals if b.label == period), None)
 
 
-def _conversion_cost(session: Session, period: str) -> tuple[dict[str, Decimal | None], int]:
-    """Cost of the conversions dated in the period, per side, and how many there were."""
+_DIRECTIONS: tuple[Literal["to_usd", "to_eur"], ...] = ("to_usd", "to_eur")
+
+
+def _conversion_cost(
+    session: Session, period: str
+) -> tuple[dict[str, Decimal | None], int, dict[str, dict[str, Any]]]:
+    """Cost of the conversions dated in the period, both directions (7.4).
+
+    ``(cost per side, count, by direction)``: the total adds the conversions back
+    (``fx_spread`` prices each in its own direction); ``by direction`` is
+    ``{side: {"to_usd": {...}, "to_eur": {...}}}`` with each direction's cost and count.
+    """
     first, last = _bounds(period)
-    in_period = [c for c in fx_cost_service.conversion_costs(session) if first <= c.date <= last]
+    per: dict[str, list[Any]] = {
+        d: [
+            c
+            for c in fx_cost_service.conversion_costs(session, direction=d)
+            if first <= c.date <= last
+        ]
+        for d in _DIRECTIONS
+    }
+    by_dir: dict[str, dict[str, Any]] = {"EUR": {}, "USD": {}}
+    for d, rows in per.items():
+        for side, attr in (("EUR", "cost_eur"), ("USD", "cost_usd")):
+            by_dir[side][d] = {
+                "cost": dec(sum((getattr(c, attr) or ZERO for c in rows), ZERO)) if rows else None,
+                "count": len(rows),
+            }
+    in_period = [c for rows in per.values() for c in rows]
     if not in_period:
-        return {"EUR": None, "USD": None}, 0
+        return {"EUR": None, "USD": None}, 0, by_dir
     eur = sum((c.cost_eur or ZERO for c in in_period), ZERO)
     usd = sum((c.cost_usd or ZERO for c in in_period), ZERO)
-    return {"EUR": eur, "USD": usd}, len(in_period)
+    return {"EUR": eur, "USD": usd}, len(in_period), by_dir
 
 
 def _side(
@@ -118,12 +143,14 @@ def _side(
 @cached_read
 def _figures(*, session: Session, period: str, as_of: str) -> dict[str, Any]:
     monthly = len(period) == 7
-    cost, count = _conversion_cost(session, period)
+    cost, count, by_dir = _conversion_cost(session, period)
     out: dict[str, Any] = {}
     for ccy in CCYS:
         rows = periods.build_for_ccy(session, monthly=monthly, ccy=ccy, fill_gaps=monthly)["rows"]
         row = next((r for r in rows if r["label"] == period), None)
-        out[ccy] = _side(row, _bridge(session, ccy, period), cost[ccy], count, ccy)
+        out[ccy] = _side(row, _bridge(session, ccy, period), cost[ccy], count, ccy) | {
+            "conversion_cost_by_direction": by_dir[ccy]
+        }
     return out
 
 

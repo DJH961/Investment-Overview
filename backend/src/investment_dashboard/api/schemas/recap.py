@@ -11,6 +11,13 @@ from investment_dashboard.api.schemas.common import ApiModel, DecStr
 _FRAC = "fraction, 0.01 = 1%"
 
 
+class RecapDirectionCost(ApiModel):
+    """One direction's share of the period's conversion cost."""
+
+    cost: DecStr | None = Field(description="null when there was no conversion that way")
+    count: int
+
+
 class RecapSide(ApiModel):
     """One period in one reporting currency (``null`` = not available)."""
 
@@ -21,9 +28,15 @@ class RecapSide(ApiModel):
     dividends: DecStr | None
     interest: DecStr | None
     conversion_cost: DecStr | None = Field(
-        description="Fees + spread against the ECB fixing of the period's conversions"
+        description=(
+            "Fees + spread against the ECB fixing of the period's conversions, both "
+            "directions (conversions back to EUR included, 7.4)"
+        )
     )
-    conversions: int = Field(description="Conversions dated in the period")
+    conversions: int = Field(description="Conversions dated in the period, both directions")
+    conversion_cost_by_direction: dict[Literal["to_usd", "to_eur"], RecapDirectionCost] = Field(
+        default_factory=dict, description="conversion_cost and conversions split by direction"
+    )
     opening_value: DecStr | None
     closing_value: DecStr | None
     nominal_return: DecStr | None = Field(description=f"The Periods row's growth ({_FRAC})")

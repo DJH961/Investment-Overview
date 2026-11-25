@@ -143,22 +143,31 @@ def _trend(daily: Sequence[tuple[date, Decimal]]) -> dict[str, Any] | None:
 def _markers(session: Session, start: date, end: date) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     # Estimated conversions never get a marker: ``conversions_with_fixings`` skips them.
-    for row in fx_cost_service.conversions_with_fixings(session):
+    # Both directions (7.4): a conversion back carries ``direction: "to_eur"`` so the
+    # chart can give it its own shape; its rate is still USD per 1 EUR.
+    rows = [
+        *fx_cost_service.conversions_with_fixings(session),
+        *fx_cost_service.conversions_with_fixings(session, direction="to_eur"),
+    ]
+    for row in rows:
         if not start <= row.date <= end or row.eur_sent <= 0:
             continue
         cost = fx_spread.conversion_cost(row)
         kind = None
         if cost.off_pct is not None:
-            # Against the fixing: more dollars per euro than the reference is a saving.
+            # Against the fixing: a better deal than the reference (more dollars per
+            # euro, or more euros per dollar going back) is a saving.
             kind = "above_reference" if cost.off_pct > 0 else "below_reference"
+        back = row.direction == "to_eur"
         out.append(
             {
                 "date": row.date.isoformat(),
                 "rate": dec(row.usd_received / row.eur_sent),
-                "amount_from": dec(row.eur_sent),
-                "amount_to": dec(row.usd_received),
-                "from_ccy": "EUR",
-                "to_ccy": "USD",
+                "amount_from": dec(row.usd_received if back else row.eur_sent),
+                "amount_to": dec(row.eur_sent if back else row.usd_received),
+                "from_ccy": "USD" if back else "EUR",
+                "to_ccy": "EUR" if back else "USD",
+                "direction": row.direction,
                 "kind": kind,
                 "off_pct": dec(cost.off_pct),
                 "conversion_id": row.id,

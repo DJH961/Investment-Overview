@@ -88,6 +88,9 @@ class ConversionCost:
     #: ``rate / month_avg - 1`` (rate = usd / eur_sent, fees left out): positive = you
     #: converted at a better rate (more dollars per euro) than the month's average.
     timing_pct: Decimal | None = None
+    #: ``"to_eur"``: a conversion back (``eur_sent`` = euros received, ``usd_received``
+    #: = dollars sent; see :func:`_back_cost`).
+    direction: Direction = "to_usd"
 
 
 @dataclass(frozen=True, slots=True)
@@ -270,6 +273,7 @@ def _back_cost(c: Conversion) -> ConversionCost:
         timing_pct=(
             c.month_avg / rate - ONE if c.month_avg is not None and c.month_avg > 0 else None
         ),
+        direction="to_eur",
     )
 
 
@@ -347,13 +351,23 @@ def summarise(rows: Sequence[ConversionCost]) -> CostSummary:
         cost_usd=cost_usd,
         cost_pct_usd=cost_usd / conv_usd if conv_usd > 0 else None,
         avg_off_pct=weighted / converted if converted > 0 else None,
-        all_in_rate=(
-            sum((r.usd_received for r in rows), ZERO)
-            / sum((r.eur_sent + r.fees_eur for r in rows), ZERO)
-            if rows
-            else None
-        ),
+        all_in_rate=_all_in(rows),
     )
+
+
+def _all_in(rows: Sequence[ConversionCost]) -> Decimal | None:
+    """``sum(usd) / sum(euros net of fees)``: fees add to the euros sent, or come off the
+    euros received for a conversion back (the per-row rule)."""
+    eur = sum(
+        (
+            r.eur_sent - r.fees_eur if r.direction == "to_eur" else r.eur_sent + r.fees_eur
+            for r in rows
+        ),
+        ZERO,
+    )
+    if not rows or eur <= 0:
+        return None
+    return sum((r.usd_received for r in rows), ZERO) / eur
 
 
 def provider_avg_off_pct(rows: Sequence[ConversionCost], provider: str | None) -> Decimal | None:
