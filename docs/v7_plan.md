@@ -20,8 +20,11 @@
 > side, an honest "Mixed", your regular amount instead of €1,000), market open and close
 > end to end, and the dev tools (`npm run shots`, fixture URL switches incl. `?at=` and
 > `?fixtures=nice`, `tools.release`, `scripts/test_changed.py`, `market_clock`).
-> **Next: push 8 (7.4, one rate everywhere).** Owner is on a short break; loose ends to
-> pick up with 7.4:
+> **Next: push 8 (7.4, "Follow your dollars"), planned 2026-11-25 in
+> [`v7_4_plan.md`](v7_4_plan.md), which supersedes push 8 below where they differ.** It covers
+> the whole journey, from conversion to cash-out back to euros, and pulls P8 recaps and P10
+> real return forward from 7.6. 7.5 waits until after the owner's break. Loose ends that
+> came with 7.4:
 > - Transactions' EUR column and per-holding EUR cost still use ECB rates (7.4 scope).
 > - One UI sentence on how the Overview currency card relates to Impact (7.4).
 > - Market moments: no exchange holidays or half days in `?at=` yet.
