@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from investment_dashboard.domain import tranches as tranches_domain
 from investment_dashboard.domain.instruments import is_money_market_effective
 from investment_dashboard.domain.market_hours import exchange_today
+from investment_dashboard.readmodels import journey_fields as jf
 from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.repositories import (
     accounts_repo,
@@ -81,6 +82,21 @@ def build(session: Session, instrument_id: int) -> dict[str, Any] | None:
     native_of = {a.id: a.native_currency.upper() for a in accounts_repo.list_accounts(session)}
     snapshot = cash_pool_service.build_pool_snapshot(session, as_of=as_of)
     eur = _eur_costs(session, view.rows, instrument_id, snapshot, native_of)
+    inputs = jf.inputs_for(session) if snapshot.basis == "pool" else None
+    rows = [_row(r, names, eur.get(r.tranche.id)) for r in view.rows]
+    if inputs is not None:
+        for r, row in zip(view.rows, rows, strict=True):
+            t = r.tranche
+            value = t.quantity_left * price if price is not None else None
+            fields = jf.tranche_fields(
+                inputs,
+                account_id=t.account_id,
+                instrument_id=instrument_id,
+                cost_native=t.cost_native,
+                value_native=value,
+            )
+            # a EUR account (or no pool holding) keeps its own cost
+            row.update({k: v for k, v in fields.items() if v is not None or k not in row})
     return {
         "instrument_id": instrument_id,
         "symbol": instr.symbol,
@@ -89,7 +105,7 @@ def build(session: Session, instrument_id: int) -> dict[str, Any] | None:
         "eur_basis": snapshot.basis,
         "as_of": as_of.isoformat(),
         "price_native": dec(price),
-        "rows": [_row(r, names, eur.get(r.tranche.id)) for r in view.rows],
+        "rows": rows,
         "groups": [
             {
                 "account_id": g.account_id,

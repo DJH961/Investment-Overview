@@ -328,7 +328,7 @@ def test_snapshot_is_cached_per_ledger_change(session: Session) -> None:
 
 
 def test_tranche_eur_cost_from_the_pool(session: Session) -> None:
-    from investment_dashboard.readmodels import tranches  # noqa: PLC0415
+    from investment_dashboard.readmodels import tranches
 
     ids = seed_g1(session)
     view = tranches.build(session, ids["x"])

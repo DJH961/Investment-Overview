@@ -75,6 +75,11 @@ def test_negative_broker_cash_counts_as_zero_and_is_flagged(session: Session) ->
         "USD",
         D("300"),
     )
+    from investment_dashboard.services import diagnostics_service
+
+    item = diagnostics_service.check_negative_broker_cash(session)
+    assert item.severity == "warning"
+    assert item.count == 1
     balances = dict(positions_service.ledger_cash_balances(session, as_of=AS_OF))
     assert {a.id: b for a, b in balances.items()} == {unswept.id: D("100"), savings.id: D("-20")}
 

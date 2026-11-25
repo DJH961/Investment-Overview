@@ -38,6 +38,21 @@ class TrancheRowOut(ApiModel):
         default=None,
         description="Your original euros behind those shares (book minus market EUR)",
     )
+    your_rate: DecStr | None = Field(
+        default=None, description="USD per EUR your dollars cost for this holding (pool blend)"
+    )
+    gain_eur: DecStr | None = Field(
+        default=None, description="Value now in EUR minus cost_eur; null without a price"
+    )
+    market_eur: DecStr | None = Field(
+        default=None, description="Part of gain_eur from the price, at today's rate"
+    )
+    currency_eur: DecStr | None = Field(
+        default=None, description="Part of gain_eur from the rate move (gain - market)"
+    )
+    back_in_euros: bool | None = Field(
+        default=None, description="Null while still in dollars (an open tranche is always null)"
+    )
 
 
 class TrancheGroupOut(ApiModel):
