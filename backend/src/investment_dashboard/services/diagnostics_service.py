@@ -1182,6 +1182,9 @@ def check_health(session: Session) -> HealthReport:
             for check in JOURNEY_CHECKS
             if check is not check_withdrawals_not_converted
         ),
+        # 7.4 lane E: backup age and the end-of-day job's steps.
+        check_backup_age(),
+        check_eod_steps(session),
     ]
     memory = _check_memory()
     if memory is not None:

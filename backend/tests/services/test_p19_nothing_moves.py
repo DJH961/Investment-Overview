@@ -73,6 +73,11 @@ MOVED: dict[str, tuple[str, str]] = {
 #: 7.4 lane B2 (cash pool, ``fx.holding_cost_basis = pool``): the 5 Feb buy's $800 came
 #: from the 1 Feb deposit ($1,000 for €850), so it cost €680, not $800 / 1.25 = €640.
 #: Its month and the average trade size follow. ``path -> (value after P19, 7.4 value)``.
+#: Fields 7.4 added that the pre-7.4 code did not have (new, not moved): every path
+#: ending in one of these is expected at this value. The seed converts nothing back,
+#: so the Deposits and Periods cashed-out figures are 0.
+ADDED_SUFFIXES: dict[str, str] = {".cashed_out_eur": "0.0000"}
+
 MOVED_POOL: dict[str, tuple[str, str]] = {
     "transactions.rows[2024-02-05 buy -800].net_eur": ("-640.0000", "-680.0000"),
     "transactions.rows[2024-02-05 buy -800].cash_eur": ("-640.0000", "-680.0000"),
@@ -221,6 +226,10 @@ def test_nothing_moves_but_the_matched_deposit_eur(session: Session) -> None:
     seed(session)
     got = figures(session)
     expected = _expected()
+    for path in set(got) - set(expected):
+        for suffix, value in ADDED_SUFFIXES.items():
+            if path.endswith(suffix):
+                expected[path] = value
     diff = {
         k: (expected.get(k), got.get(k))
         for k in sorted(set(expected) | set(got))

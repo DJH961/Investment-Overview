@@ -29,9 +29,16 @@ def g1_pool(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(currency_journey, "load_inputs", lambda *_a, **_k: g1.inputs())
 
 
+@pytest.fixture
+def no_pool(monkeypatch: pytest.MonkeyPatch) -> None:
+    """As before lane B2: no pool service at all."""
+    monkeypatch.setattr(currency_journey, "snapshot_provider", lambda: None)
+
+
 def test_payloads_without_a_pool(
     api_client: TestClient,
     seeded: None,  # noqa: F811
+    no_pool: None,
 ) -> None:
     holdings = _get(api_client, "/api/holdings/both")
     for ccy in ("EUR", "USD"):
@@ -111,6 +118,23 @@ def test_ledger_record_hook(g1_pool: None) -> None:
         "eur_basis": None,
         "trail_kind": None,
     }
+
+
+def test_payloads_with_the_real_pool(
+    api_client: TestClient,
+    seeded: None,  # noqa: F811
+) -> None:
+    """Lane B2's pool service on the seeded ledger: every payload still validates."""
+    journey = _get(api_client, "/api/currency/journey")
+    assert len(journey["eur"]["stats"]) == 4
+    overview = _get(api_client, "/api/overview/both")
+    life = overview["EUR"]["currency"]["lifetime"]
+    if journey["eur"]["bridge"] is not None:
+        assert life["fx_pnl_eur"] == journey["eur"]["bridge"]["total_eur"]
+    for path in ("/api/holdings/both", "/api/holdings/peeks", "/api/deposits/both"):
+        _get(api_client, path)
+    _get(api_client, "/api/transactions")
+    _get(api_client, "/api/diagnostics")
 
 
 def test_check_health_registers_the_journey_checks() -> None:
