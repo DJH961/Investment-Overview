@@ -73,7 +73,7 @@ MATCHES = match_deposits(
 def _t(
     id_: int, d: date, kind: str, amount: str, inst: int | None = None, qty: str = "0"
 ) -> TxnEvent:
-    return TxnEvent(id_, d, kind, ACC, "USD", D(amount), inst, D(qty))  # type: ignore[arg-type]
+    return TxnEvent(id_, d, kind, ACC, "USD", D(amount), inst, D(qty))
 
 
 def ledger(sale_usd: str) -> list[Event]:

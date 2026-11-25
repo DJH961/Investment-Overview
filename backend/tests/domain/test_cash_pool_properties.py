@@ -134,7 +134,7 @@ def ledgers(draw: st.DrawFn, *, flat: Decimal | None = None) -> Ledger:
             events.append(ConversionBack(BACK_ID + n, d, "USD", amount, received, fees))
             continue
         instrument = None if kind in {"deposit", "withdrawal", "fee", "interest"} else inst
-        events.append(TxnEvent(n + 1, d, kind, acc, "USD", amount, instrument, qty))  # type: ignore[arg-type]
+        events.append(TxnEvent(n + 1, d, kind, acc, "USD", amount, instrument, qty))
     deposits = [
         UsdDeposit(e.id, e.date, e.amount)
         for e in events
@@ -176,7 +176,11 @@ def test_dollars_are_conserved_per_account(lg: Ledger) -> None:
         key = str(e.account_id)
         where[e.id] = key
         mmf = e.instrument_id == MMF
-        if e.kind in {"deposit", "dividend_cash", "interest"} or (e.kind == "sell" and not mmf) or (e.kind == "dividend_reinvest" and mmf):
+        if (
+            e.kind in {"deposit", "dividend_cash", "interest"}
+            or (e.kind == "sell" and not mmf)
+            or (e.kind == "dividend_reinvest" and mmf)
+        ):
             add(key, e.amount)
         elif e.kind == "fee" or (e.kind == "buy" and not mmf):
             add(key, -e.amount)
