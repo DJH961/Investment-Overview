@@ -51,6 +51,8 @@ def _record_dict(r: LedgerRecord) -> dict[str, Any]:
         "net_eur": dec(r.net_eur),
         "net_usd": dec(r.net_usd),
         "source": r.source,
+        "eur_basis": r.eur_basis,
+        "trail_kind": r.trail_kind,
     }
 
 
@@ -95,6 +97,8 @@ def _detail_dict(r: LedgerRecord) -> dict[str, Any]:
         "cash_eur": dec(r.cash_eur),
         "cash_usd": dec(r.cash_usd),
         "is_estimate": r.is_estimate,
+        "eur_basis": r.eur_basis,
+        "trail_kind": r.trail_kind,
     }
 
 
