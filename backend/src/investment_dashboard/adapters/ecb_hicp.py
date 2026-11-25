@@ -13,9 +13,13 @@ ECB Data Portal:
 * The old key ``ICP.M.U2.N.000000.4.INX`` (2015 = 100) was discontinued on
   4 Feb 2026, when Eurostat changed the HICP method and the ECB replaced the ICP
   dataset with ``HICP``. Do not go back to it.
-* **Licence:** ECB statistics may be reused free of charge, including
-  commercially, provided the source is acknowledged ("Source: ECB, Eurostat").
-  No key, no account; the request carries no personal data.
+* **Licence:** checked on 25 Nov 2026 against the ECB's "Disclaimer and
+  copyright" page (ecb.europa.eu/services/using-our-site/disclaimer): users
+  "may make free use of the information" on condition that the ECB is cited as
+  the source, the data are shown accurately, and any change the user makes (for
+  example a growth rate) is stated. So: cite "Source: ECB, Eurostat" and say the
+  real return is our own calculation from the index. No commercial restriction
+  is stated. No key, no account; the request carries no personal data.
 
 Only ratios of the index are used (``HICP[m1] / HICP[m0]``), so the base year
 does not matter, but a series is never mixed with another base.

@@ -119,7 +119,8 @@ async def test_closed_market_pulls_only_what_is_missing() -> None:
     for _ in range(10):
         r.now += timedelta(minutes=1)
         ran += await r.sched.step()
-    assert ran.count("fx") == 10
+    # Each of those ticks fetched the live spot itself (7.4): no FX job beside it.
+    assert ran.count("fx") == 0
     assert ran.count("tick") == 10  # asked every minute; the TTL spaces the real pulls
     r.missing = False  # the NAV landed
     ran = []
@@ -353,7 +354,8 @@ async def test_paused_job_is_skipped_until_expiry(no_pauses: Any) -> None:
     no_pauses.set_pause(["tick"], until=r.now + timedelta(hours=1), now=r.now)
     assert await r.sched.step() == []
     r.now += timedelta(hours=2)  # the pause expired by itself (FX is due again too)
-    assert await r.sched.step() == ["tick", "fx"]
+    # FX is due again too, but the tick fetches the live spot itself (7.4).
+    assert await r.sched.step() == ["tick"]
     with pytest.raises(ValueError, match="7 days"):
         no_pauses.set_pause(["tick"], until=r.now + timedelta(days=30), now=r.now)
     with pytest.raises(ValueError, match="unknown"):
@@ -412,9 +414,11 @@ def test_eod_job_fetches_the_live_spot_first(monkeypatch: pytest.MonkeyPatch) ->
         "_run_cache_janitor",
     ):
         monkeypatch.setattr(boot, name, lambda n=name: calls.append(n))
+    monkeypatch.setattr(scheduler, "_refresh_hicp", lambda: calls.append("_refresh_hicp"))
     scheduler.default_eod_job()
     assert calls[0] == "_refresh_live_fx"
     assert "_refresh_fx" in calls
+    assert calls[-1] == "_refresh_hicp"  # 7.4: the HICP index, once a day
 
 
 async def _next(sub: Any) -> dict[str, Any]:
