@@ -33,3 +33,4 @@ plus its last `Next:` line.
 
 - 2026-11-25: plan and contract written; lanes A, B1 and E started.
 - 2026-11-25: owner approved mockups v2 and G1. UI lanes use impeccable (design, audit, critique); the orchestrator runs impeccable-finish-reviewer.
+- 2026-11-25: lane E told to hand over; it restarts as a skills-capable agent (impeccable). Owner rule: align text and keep empty lines to a minimum, never pad the other boxes.

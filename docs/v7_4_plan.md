@@ -98,6 +98,11 @@ One new shared component, **`components/MoneyTrail/`**. It is a chain of steps, 
 - **Aligned rows (owner, 2026-11-25).** Every step has the same four rows: icon, label,
   **bold figure**, detail. Across the steps they line up, so the bold figures sit on one line
   (CSS subgrid, or fixed row tracks).
+  - The mockup is good enough as a direction, but its alignment and white space are not
+    perfect yet. When building, align the text **and** keep empty lines to a minimum. Empty
+    lines often appear only because one box wraps or has an extra line. Fix that at the
+    source: shorter wording, a tighter detail line, or moving the extra fact into the sheet
+    below the trail. Never pad the other boxes to match.
 
 **Approved mockup decisions (owner, 2026-11-25):**
 - The cash-out result card puts **euros beside dollars**: put in, market, currency (euros
