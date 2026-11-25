@@ -135,6 +135,7 @@ def test_eod_job_reports_failed_steps(monkeypatch: pytest.MonkeyPatch) -> None:
         "_run_cache_janitor",
     ):
         monkeypatch.setattr(boot, name, lambda n=name: n != "_refresh_prices")
+    monkeypatch.setattr(scheduler, "_refresh_hicp", lambda: True)
     assert scheduler.default_eod_job() == {scheduler.EOD_FAILED_STEPS: ["<lambda>"]}
 
 
@@ -153,6 +154,7 @@ def test_eod_job_clean_run_reports_nothing(monkeypatch: pytest.MonkeyPatch) -> N
         "_run_cache_janitor",
     ):
         monkeypatch.setattr(boot, name, lambda: True)
+    monkeypatch.setattr(scheduler, "_refresh_hicp", lambda: True)
     assert scheduler.default_eod_job() is None
 
 

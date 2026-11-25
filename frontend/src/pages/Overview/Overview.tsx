@@ -9,6 +9,7 @@ import { AssetClassCard } from "../../components/AssetClassCard";
 import { CurrencyBox } from "../../components/CurrencyBox";
 import { CurrencyLifetime } from "../../components/CurrencyLifetime";
 import { DailyBrief } from "../../components/DailyBrief";
+import { RecapCard } from "../../components/RecapCard";
 import { EmptyState } from "../../components/EmptyState";
 import { ErrorState } from "../../components/ErrorState";
 import { HeroIntraday } from "../../components/HeroIntraday";
@@ -160,6 +161,8 @@ export function Overview() {
 
       {/* v7: the Daily Brief, directly above the stage, only when the server says one is due. */}
       <DailyBrief currency={currency} />
+      {/* 7.4: the recap of the month (in January, the year) just finished, until dismissed. */}
+      <RecapCard currency={currency} place="overview" />
       {/*
         The stage: the portfolio value, today's move and the chart as one composed
         statement on one lit surface, the centre of the app.

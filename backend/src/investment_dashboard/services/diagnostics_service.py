@@ -631,6 +631,100 @@ def _check_import_age(session: Session, *, today: date | None = None) -> HealthI
     )
 
 
+#: Backup age (7.4): a warning after this many days without a snapshot ...
+_BACKUP_WARN_DAYS = 2
+#: ... and an error after this many.
+_BACKUP_ERROR_DAYS = 7
+
+
+def check_backup_age(*, now: datetime | None = None) -> HealthItem:
+    """Days since the newest backup snapshot (7.4, lane E)."""
+    from investment_dashboard.services import backup_service  # noqa: PLC0415
+
+    title = "Backup age"
+    if not backup_service.is_configured():
+        return HealthItem(
+            key="backup_age",
+            title=title,
+            severity="ok",
+            count=0,
+            detail="Backups are not set up on this machine.",
+        )
+    last = backup_service.last_snapshot_time()
+    moment = now or datetime.now(UTC)
+    if last is None:
+        return HealthItem(
+            key="backup_age",
+            title=title,
+            severity="error",
+            count=1,
+            detail="No backup snapshot exists yet. Run a backup from Settings.",
+        )
+    age = moment - last
+    days = age.days
+    when = f"{last.day} {last.strftime('%b %Y')}, {_hhmm(last)}"
+    if age > timedelta(days=_BACKUP_ERROR_DAYS):
+        severity = "error"
+    elif age > timedelta(days=_BACKUP_WARN_DAYS):
+        severity = "warning"
+    else:
+        severity = "ok"
+    hours = int(age.total_seconds() // 3600)
+    ago = f"{days} day(s)" if days >= 1 else f"{hours} hour(s)"
+    detail = (
+        f"The last backup is {ago} old ({when})."
+        if severity == "ok"
+        else f"The last backup is {ago} old ({when}). Backups should run every night: "
+        "check the backup job on this page."
+    )
+    return HealthItem(
+        key="backup_age",
+        title=title,
+        severity=severity,
+        count=0 if severity == "ok" else 1,
+        detail=detail,
+    )
+
+
+def check_eod_steps(session: Session) -> HealthItem:
+    """Which steps of the last end-of-day job failed (7.4, lane E)."""
+    from investment_dashboard.db import config_read_session  # noqa: PLC0415
+    from investment_dashboard.services import scheduler  # noqa: PLC0415
+
+    with config_read_session(session) as cfg:
+        at, steps = scheduler.load_eod_result(cfg)
+    title = "End-of-day job"
+    if at is None:
+        return HealthItem(
+            key="eod_steps",
+            title=title,
+            severity="ok",
+            count=0,
+            detail="The end-of-day job has not run on this server yet.",
+        )
+    when = f"{at.day} {at.strftime('%b %Y')}, {_hhmm(at)}"
+    if not steps:
+        return HealthItem(
+            key="eod_steps",
+            title=title,
+            severity="ok",
+            count=0,
+            detail=f"Every step of the last end-of-day job ({when}) finished.",
+        )
+    names = [s.removeprefix("_").replace("_", " ") for s in steps]
+    return HealthItem(
+        key="eod_steps",
+        title=title,
+        severity="warning",
+        count=len(steps),
+        detail=(
+            f"{len(steps)} step(s) of the last end-of-day job ({when}) failed. "
+            "The activity log (market data) has the details; the next run tries again."
+        ),
+        examples=_examples(names),
+    )
+
+
 def _check_estimated_rows(session: Session) -> HealthItem:
     """One quiet prompt for recurring-plan est. rows still to settle (7.3, P14)."""
     from investment_dashboard.repositories import recurring_repo  # noqa: PLC0415
