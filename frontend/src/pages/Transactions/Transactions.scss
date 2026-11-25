@@ -207,6 +207,12 @@
     text-decoration: underline;
   }
 
+  &__cash-out-link {
+    display: inline-block;
+    margin-top: var(--space-4);
+    font-weight: var(--font-weight-medium);
+  }
+
   &__no-symbol {
     color: var(--color-muted);
     font-weight: var(--font-weight-medium);

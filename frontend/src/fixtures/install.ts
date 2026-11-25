@@ -33,6 +33,7 @@ import { currencyDollarFixture, currencyScenariosFixture } from "./currencyDolla
 import { currencyEffectFixture, effectScale } from "./currencyEffect";
 import { clockOffset, installClock, marketAt, parseMoment, patchForMoment, sessionEvents, nyDay, type Moment } from "./moment";
 import { rateHistoryFixture } from "./rateHistory";
+import { journeyAnswer, journeyExtend } from "./journey";
 import { recapFixture } from "./recap";
 import { v71Answer, v71Extend } from "./v71";
 
@@ -473,6 +474,12 @@ export async function installFixtures(): Promise<void> {
       }
       if (method === "GET") return respond(withView(data["GET /api/settings/values"], view));
     }
+    // 7.4 currency journey (see ./journey): its own reads, the cash-out preview.
+    const journey = journeyAnswer(url, method, data, typeof init?.body === "string" ? init.body : undefined);
+    if (journey !== undefined) {
+      const status = (journey as { __status?: number }).__status;
+      return status ? json({ detail: "Fixture answer" }, status) : respond(journey);
+    }
     if (method !== "GET") {
       const body = findBody(data, method, url.pathname + url.search);
       return body === undefined ? json({}) : respond(body);
@@ -500,10 +507,10 @@ export async function installFixtures(): Promise<void> {
     const made = v71Answer(url, data);
     if (made !== undefined) {
       const status = (made as { __status?: number }).__status;
-      return status ? json({ detail: "Fixture answer" }, status) : respond(made);
+      return status ? json({ detail: "Fixture answer" }, status) : respond(journeyExtend(url.pathname, made, data));
     }
     const recorded = findBody(data, "GET", url.pathname + url.search);
-    const extended = recorded === undefined ? undefined : v71Extend(url.pathname, recorded, data);
+    const extended = recorded === undefined ? undefined : journeyExtend(url.pathname, v71Extend(url.pathname, recorded, data), data);
     const body = url.pathname === "/api/currency/both" && dataset !== "empty" ? withStripTiles(extended, data) : extended;
     if (body === undefined || (typeof body === "object" && body !== null && "__status" in body)) {
       return json({ detail: "No fixture for this endpoint." }, 404);

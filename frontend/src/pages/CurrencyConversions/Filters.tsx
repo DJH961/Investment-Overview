@@ -12,9 +12,19 @@ export interface ConversionFilters {
   provider: string;
   /** Conversions with dollars still in the pool. */
   pool: boolean;
+  /** 7.4: to dollars, back to euros, or both. */
+  direction: DirectionFilter;
 }
 
-export const NO_FILTERS: ConversionFilters = { period: PERIOD_ALL, provider: "all", pool: false };
+export type DirectionFilter = "all" | "to_usd" | "to_eur";
+
+export const DIRECTION_FILTER_OPTIONS: { value: DirectionFilter; label: string }[] = [
+  { value: "all", label: "Both directions" },
+  { value: "to_usd", label: "To dollars" },
+  { value: "to_eur", label: "Back to euros" },
+];
+
+export const NO_FILTERS: ConversionFilters = { period: PERIOD_ALL, provider: "all", pool: false, direction: "all" };
 
 export const PROVIDER_FILTER_OPTIONS = [
   { value: "all", label: "All providers" },
@@ -24,7 +34,7 @@ export const PROVIDER_FILTER_OPTIONS = [
 ];
 
 export function activeCount(f: ConversionFilters): number {
-  return [f.period !== PERIOD_ALL, f.provider !== "all", f.pool].filter(Boolean).length;
+  return [f.period !== PERIOD_ALL, f.provider !== "all", f.pool, f.direction !== "all"].filter(Boolean).length;
 }
 
 /** A pill that switches a filter on or off; the check mark carries the state, not only the color. */
@@ -51,6 +61,8 @@ export function ToggleChip({
 }
 
 interface FilterBarProps {
+  /** Show the direction filter (once there is a conversion back to euros). */
+  directions?: boolean;
   value: ConversionFilters;
   onChange: (next: ConversionFilters) => void;
   periods: { value: string; label: string }[];
@@ -63,12 +75,21 @@ interface FilterBarProps {
  * Compact toolbar above the list. Desktop: period, provider and "Still in the pool" in one
  * row. Phone: one Filters button that opens a sheet with the same three controls.
  */
-export function FilterBar({ value, onChange, periods, shown, total }: FilterBarProps) {
+export function FilterBar({ value, onChange, periods, shown, total, directions = false }: FilterBarProps) {
   const [sheet, setSheet] = useState(false);
   const n = activeCount(value);
   const patch = (p: Partial<ConversionFilters>) => onChange({ ...value, ...p });
   const controls = (
     <>
+      {directions && (
+        <Select
+          className="filter-bar__select"
+          ariaLabel="Direction"
+          value={value.direction}
+          onValueChange={(direction) => patch({ direction: direction as DirectionFilter })}
+          options={DIRECTION_FILTER_OPTIONS}
+        />
+      )}
       <Select className="filter-bar__select" ariaLabel="Period" value={value.period} onValueChange={(period) => patch({ period })} options={periods} />
       <Select
         className="filter-bar__select"

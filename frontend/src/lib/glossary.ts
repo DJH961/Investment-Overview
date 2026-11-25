@@ -28,6 +28,11 @@ export const GLOSSARY: GlossaryEntry[] = [
   { key: "unrealised_gain", term: "Unrealized gain", definition: "Value minus cost basis of what you still hold, without dividends. It is the part of the capital gain that is not yet locked in by a sale." },
   { key: "total_return", term: "Total return", definition: "Capital gain plus dividend income (cash and reinvested), after fees, for the whole portfolio including sold positions. Same number on Overview and Holdings." },
   { key: "net_invested", term: "Net invested", definition: "Deposits minus withdrawals to date." },
+  { key: "your_rate", term: "Your rate", definition: "The blended EUR/USD exchange rate you actually paid for the dollars you still hold, weighted across your conversions with fees counted in." },
+  { key: "conversion_cost", term: "Conversion cost", definition: "What converting between euros and dollars cost against the ECB daily reference rate of that day: provider fees plus the rate spread, both ways." },
+  { key: "waiting", term: "Waiting", definition: "What the exchange rate moved while converted dollars sat in your USD account between the conversion and the broker deposit." },
+  { key: "realised_fx", term: "Realized FX", definition: "The exchange-rate gain or loss locked in when dollars are converted back to euros, measured against the euros that originally bought those dollars." },
+  { key: "unrealised_fx", term: "Unrealized FX", definition: "The exchange-rate gain or loss on dollars you still hold in your USD account, broker cash, or investments, measured against what those dollars cost you. It becomes realized only when you convert back to euros." },
 ];
 
 const BY_KEY = new Map(GLOSSARY.map((g) => [g.key, g]));

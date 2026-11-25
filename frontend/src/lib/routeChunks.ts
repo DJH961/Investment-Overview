@@ -20,6 +20,7 @@ const loaders = {
   Import: () => import("../pages/Import").then((m) => ({ default: m.Import })),
   Instruments: () => import("../pages/Instruments").then((m) => ({ default: m.Instruments })),
   CurrencyConversions: () => import("../pages/CurrencyConversions").then((m) => ({ default: m.CurrencyConversions })),
+  CashOut: () => import("../pages/CashOut").then((m) => ({ default: m.CashOut })),
   Recurring: () => import("../pages/Recurring").then((m) => ({ default: m.Recurring })),
   Allocations: () => import("../pages/Allocations").then((m) => ({ default: m.Allocations })),
   Diagnostics: () => import("../pages/Diagnostics").then((m) => ({ default: m.Diagnostics })),

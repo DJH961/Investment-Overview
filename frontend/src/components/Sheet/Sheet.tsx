@@ -9,15 +9,17 @@ export interface SheetProps {
   onOpenChange: (open: boolean) => void;
   title: string;
   children?: ReactNode;
+  /** Room for a money trail across (desktop); phones stay full width. */
+  wide?: boolean;
 }
 
 /** Mobile bottom sheet (also fine on larger screens, where it is centred and capped in width). */
-export function Sheet({ open, onOpenChange, title, children }: SheetProps) {
+export function Sheet({ open, onOpenChange, title, children, wide = false }: SheetProps) {
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal>
         <RadixDialog.Overlay className="sheet__overlay" />
-        <RadixDialog.Content className="sheet__content" aria-describedby={undefined}>
+        <RadixDialog.Content className={wide ? "sheet__content sheet__content--wide" : "sheet__content"} aria-describedby={undefined}>
           <span className="sheet__handle" aria-hidden />
           <header className="sheet__header">
             <RadixDialog.Title className="sheet__title">{title}</RadixDialog.Title>

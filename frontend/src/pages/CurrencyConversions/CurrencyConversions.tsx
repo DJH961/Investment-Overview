@@ -1,4 +1,4 @@
-import { Coins, Copy, FileUp, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
+import { Coins, Copy, FileUp, MoreHorizontal, Pencil, Plus, Trash2, Undo2 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router";
 import { Button, LinkButton } from "../../components/Button";
@@ -32,11 +32,13 @@ import {
 } from "../../lib/queries/manage";
 import { offEcbText, trimDecimal, weekdayDate } from "./matching";
 import { costStatItems, PeriodRate, useCostsAll } from "./CostBits";
-import { ConversionHead, ConversionRow } from "./ConversionRow";
+import { ConversionHead, ConversionRow, directionOf } from "./ConversionRow";
+import { BackFundingRow, backStatItems } from "./BackToEuros";
+import { useJourney } from "../../lib/queries/journey";
 import { SettleSheet } from "../../components/SettleSheet";
 import { useEstimateQueue } from "../Transactions/EstChip";
 import { DepositRow } from "./DepositRow";
-import { activeCount, FilterBar, NO_FILTERS, PROVIDER_FILTER_OPTIONS, ToggleChip, type ConversionFilters } from "./Filters";
+import { activeCount, DIRECTION_FILTER_OPTIONS, FilterBar, NO_FILTERS, PROVIDER_FILTER_OPTIONS, ToggleChip, type ConversionFilters, type DirectionFilter } from "./Filters";
 import { Fold } from "./Fold";
 import {
   groupByYear,
@@ -300,6 +302,9 @@ export function CurrencyConversions() {
   const list = useFxConversions();
   const pool = useFxPool();
   const costs = useCostsAll();
+  // 7.4: cash-outs (conversions back to euros) and their results, from the journey (euro view).
+  const journey = useJourney("EUR");
+  const cashOuts = new Map((journey.data?.cash_outs ?? []).map((o) => [o.conversion_id, o]));
   const est = useEstimateQueue("fx_conversion");
   const del = useDeleteConversion();
   const { toast } = useToast();
@@ -325,6 +330,7 @@ export function CurrencyConversions() {
     period: validPeriod(params.get("period"), periods),
     provider: PROVIDER_FILTER_OPTIONS.some((o) => o.value === providerParam) ? (providerParam as string) : "all",
     pool: params.get("pool") === "1",
+    direction: DIRECTION_FILTER_OPTIONS.some((o) => o.value === params.get("direction")) ? (params.get("direction") as DirectionFilter) : "all",
   };
   const needs = params.get("needs") === "1";
   const writeParams = (next: ConversionFilters, nextNeeds: boolean) => {
@@ -332,6 +338,7 @@ export function CurrencyConversions() {
     if (next.period !== PERIOD_ALL) out.set("period", next.period);
     if (next.provider !== "all") out.set("provider", next.provider);
     if (next.pool) out.set("pool", "1");
+    if (next.direction !== "all") out.set("direction", next.direction);
     if (nextNeeds) out.set("needs", "1");
     setParams(out, { replace: true });
   };
@@ -340,8 +347,11 @@ export function CurrencyConversions() {
     (c) =>
       inPeriod(c.date, filters.period, today) &&
       (filters.provider === "all" || c.provider === filters.provider) &&
-      (!filters.pool || Number(c.remaining_usd) > 0.005),
+      (!filters.pool || Number(c.remaining_usd) > 0.005) &&
+      (filters.direction === "all" || directionOf(c) === filters.direction),
   );
+  const toUsd = conversions.filter((c) => directionOf(c) === "to_usd");
+  const backs = conversions.filter((c) => directionOf(c) === "to_eur");
   const shownDeposits = deposits.filter(
     (d) => inPeriod(d.date, filters.period, today) && (!needs || (d.status !== "matched" && d.status !== "received_usd")),
   );
@@ -427,8 +437,15 @@ export function CurrencyConversions() {
       <span className="conversions__label--short">Import</span>
     </LinkButton>
   );
+  const cashOutButton = (
+    <LinkButton variant="secondary" leftIcon={<Undo2 aria-hidden />} to="/cash-out" aria-label="Cash out to euros">
+      <span className="conversions__label--long">Cash out</span>
+      <span className="conversions__label--short">Cash out</span>
+    </LinkButton>
+  );
   const actions = (
     <div className="conversions__actions">
+      {cashOutButton}
       {importButton}
       {addButton}
     </div>
@@ -440,7 +457,7 @@ export function CurrencyConversions() {
       <SettleSheet rows={est.queue} onClose={est.close} />
       <PageHeader
         title="Currency conversions"
-        subtitle="What your EUR to USD conversions really cost, and which one paid for each deposit."
+        subtitle="What your conversions really cost, both ways, and which one paid for each deposit."
         actions={actions}
       />
 
@@ -460,6 +477,7 @@ export function CurrencyConversions() {
           <StatStrip
             label="Conversions at a glance"
             six
+            eight
             items={[
               {
                 key: "pool",
@@ -475,10 +493,10 @@ export function CurrencyConversions() {
               {
                 key: "count",
                 label: "Conversions",
-                value: conversions.length,
+                value: toUsd.length,
                 note: (
                   <>
-                    <Money amount={sumOf(conversions, (c) => c.eur_sent)} currency="EUR" digits={0} /> sent
+                    <Money amount={sumOf(toUsd, (c) => c.eur_sent)} currency="EUR" digits={0} /> sent
                   </>
                 ),
               },
@@ -490,6 +508,7 @@ export function CurrencyConversions() {
                 note: pool.data ? `of ${deposits.length} deposits` : undefined,
               },
               ...costStatItems(costs),
+              ...backStatItems(journey.data?.back_in_euros ?? null),
             ]}
           />
           <Card title="Conversions" flush>
@@ -498,6 +517,7 @@ export function CurrencyConversions() {
                 value={filters}
                 onChange={(next) => writeParams(next, needs)}
                 periods={periods}
+                directions={backs.length > 0}
                 shown={shownConversions.length}
                 total={conversions.length}
               />
@@ -530,7 +550,7 @@ export function CurrencyConversions() {
                       <ConversionHead />
                       <ul className="conversions__list" aria-label="Currency conversions">
                         {rows.map((c) => (
-                          <ConversionRow key={c.id} c={c} menu={menuFor(c)} onSettle={() => est.open(c.id)} />
+                          <ConversionRow key={c.id} c={c} menu={menuFor(c)} onSettle={() => est.open(c.id)} cashOut={cashOuts.get(c.id) ?? null} initialTrail={params.get("trail") === String(c.id)} />
                         ))}
                       </ul>
                     </>
@@ -617,6 +637,19 @@ export function CurrencyConversions() {
                 </ul>
               )}
             </FoldedList>
+          )}
+          {backs.length > 0 && (
+            <Card
+              title="How each conversion back was funded"
+              subtitle="Withdrawals pinned to a conversion first, then the oldest withdrawals, then the rest of the USD account at what it cost."
+              flush
+            >
+              <ul className="conversions__backs" aria-label="Conversions back to euros">
+                {backs.map((c) => (
+                  <BackFundingRow key={c.id} c={c} />
+                ))}
+              </ul>
+            </Card>
           )}
         </>
       )}

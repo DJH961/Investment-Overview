@@ -1,7 +1,10 @@
-import { ChevronDown, ChevronRight, Wallet } from "lucide-react";
+import { ChevronDown, ChevronRight, Route, Undo2, Wallet } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router";
+import { CashOutCard } from "../../components/CashOutCard";
 import { Chip } from "../../components/Chip";
+import { TrailPanel } from "../../components/MoneyTrail";
+import type { CashOutOut, ConversionDirection } from "../../lib/journey-types";
 import { Money } from "../../components/Money";
 import { formatDate, formatMoney, formatNumber, getFormatPrefs } from "../../lib/format";
 import type { FxConversion } from "../../lib/queries/manage";
@@ -93,8 +96,30 @@ function Fact({ label, children, title }: { label: string; children: ReactNode; 
  * row). Narrower: the title line (date, provider, dollars, menu), one summary line that opens
  * the rest (all-in rate, the ECB fixing, fees, note), and the chips of the deposits it paid for.
  */
-export function ConversionRow({ c, menu, onSettle }: { c: FxConversion; menu: ReactNode; onSettle?: () => void }) {
+/** 7.4: the conversion's direction (the server sends it; older answers: from the currencies). */
+export function directionOf(c: FxConversion): ConversionDirection {
+  const d = (c as FxConversion & { direction?: ConversionDirection }).direction;
+  return d ?? (c.from_ccy === "USD" ? "to_eur" : "to_usd");
+}
+
+export function ConversionRow({
+  c,
+  menu,
+  onSettle,
+  cashOut,
+  initialTrail = false,
+}: {
+  c: FxConversion;
+  menu: ReactNode;
+  onSettle?: () => void;
+  /** A conversion back to euros: its result (from the journey), shown when the row opens its trail. */
+  cashOut?: CashOutOut | null;
+  /** Open with the trail (or result) showing: a `?trail=<id>` link. */
+  initialTrail?: boolean;
+}) {
   const [open, setOpen] = useState(false);
+  const [trail, setTrail] = useState(initialTrail);
+  const back = directionOf(c) === "to_eur";
   const e = ecbCell(c);
   // An estimate already wears the "est." chip: the plan's own "est. (recurring plan)" note would say it twice.
   const note = c.is_estimate && c.note?.startsWith("est.") ? null : c.note;
@@ -108,6 +133,11 @@ export function ConversionRow({ c, menu, onSettle }: { c: FxConversion; menu: Re
       <div className="conv__id">
         <span className="conv__date">{formatDate(c.date)}</span>
         <div className="conv__tags">
+          {back && (
+            <Chip size="sm" outline icon={<Undo2 aria-hidden />}>
+              Back to euros
+            </Chip>
+          )}
           {c.provider && (
             <Chip size="sm" outline>
               {providerLabel(c.provider)}
@@ -122,9 +152,10 @@ export function ConversionRow({ c, menu, onSettle }: { c: FxConversion; menu: Re
         </div>
       </div>
       <div className="conv__hero">
-        <Money amount={Number(c.usd_received)} currency="USD" className="conv__usd" />
+        {/* Back to euros: the euros received lead, from the dollars sent (amounts keep their currency). */}
+        <Money amount={Number(back ? c.eur_sent : c.usd_received)} currency={back ? "EUR" : "USD"} className="conv__usd" />
         <span className="conv__sent conv__sent--wide">
-          from <Money amount={Number(c.eur_sent)} currency="EUR" />
+          from <Money amount={Number(back ? c.usd_received : c.eur_sent)} currency={back ? "USD" : "EUR"} />
           {fees > 0 && (
             <>
               {" "}
@@ -178,8 +209,41 @@ export function ConversionRow({ c, menu, onSettle }: { c: FxConversion; menu: Re
           </span>
           {open ? <ChevronDown aria-hidden className="conv__chevron" /> : <ChevronRight aria-hidden className="conv__chevron" />}
         </button>
-        <PaidChips c={c} />
+        <span className="conv__paid-row">
+          {back ? (
+            <span className="conv__chips">
+              <span className="conv__paid-label">Dollars from</span>
+              <span className="conv__paid-date conv__paid-date--pool">USD account</span>
+            </span>
+          ) : (
+            <PaidChips c={c} />
+          )}
+          <button
+            type="button"
+            className="conv__trail-toggle"
+            aria-expanded={trail}
+            aria-label={back ? "Result of this cash-out" : "Where these dollars went"}
+            onClick={() => setTrail((t) => !t)}
+          >
+            <Route aria-hidden className="conv__trail-icon" />
+            {back ? "Result" : "Trail"}
+          </button>
+        </span>
       </div>
+
+      {trail && (
+        <div className="conv__trail">
+          {back ? (
+            cashOut ? (
+              <CashOutCard out={cashOut} />
+            ) : (
+              <p className="conv__sub">The result shows once the server has matched these dollars.</p>
+            )
+          ) : (
+            <TrailPanel kind="conversion" id={c.id} label="Where these dollars went" />
+          )}
+        </div>
+      )}
 
       {open && (
         <dl className="conv__detail">

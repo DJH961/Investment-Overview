@@ -35,6 +35,16 @@ function Chip({ label, value, currency, pct }: { label: string; value: string | 
   );
 }
 
+type PeriodRowWithCashOut = PeriodRowOut & { cashed_out_eur?: string | null; cashed_out?: string | null };
+
+function cashOutChip(row: PeriodRowWithCashOut, currency: ReportingCurrency) {
+  const v = toNum(row.cashed_out);
+  if (v !== null && v > 0) return <Chip label="Cashed out" value={row.cashed_out ?? null} currency={currency} />;
+  const eur = toNum(row.cashed_out_eur);
+  if (eur !== null && eur > 0) return <Chip label="Cashed out" value={row.cashed_out_eur ?? null} currency="EUR" />;
+  return null;
+}
+
 function Growth({ label, value, currency }: { label: string; value: string | null; currency: ReportingCurrency }) {
   return (
     <span className="period-year__growth">
@@ -78,6 +88,7 @@ function MonthRow({ row, currency, other }: { row: PeriodRowOut; currency: Repor
         <Chip label="Total" value={row.total_growth_compounded} currency={currency} pct />
         <Chip label="In" value={row.contributions} currency={currency} />
         {flowDiffers(row) && <Chip label="Net flow" value={row.net_flow} currency={currency} />}
+        {cashOutChip(row, currency)}
         <Chip label="Div." value={row.dividends} currency={currency} />
       </div>
     </li>
@@ -136,6 +147,7 @@ function PhoneYear({
             <span className="period-year__chips">
               <Chip label="In" value={s.contributions} currency={currency} />
               {flowDiffers(s) && <Chip label="Net flow" value={s.net_flow} currency={currency} />}
+              {cashOutChip(s, currency)}
               <Chip label="Div." value={s.dividends} currency={currency} />
             </span>
           </>

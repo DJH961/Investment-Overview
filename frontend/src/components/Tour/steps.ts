@@ -40,6 +40,15 @@ export const TOUR_STEPS: TourStep[] = [
     phone: { selector: MORE_TAB, body: "Under More: a what-if calculator projects future value from your current mix, contributions and an expected return band." },
   },
   {
+    selector: 'a[href="/currency"]',
+    title: "Follow your dollars",
+    body: "See where your converted dollars sit, what your rate cost, and the trail from each conversion to your holdings and back to euros.",
+    phone: {
+      selector: MORE_TAB,
+      body: "Under More: see where your converted dollars sit, what your rate cost, and the trail from each conversion to your holdings and back to euros.",
+    },
+  },
+  {
     selector: 'a[href="/import"]',
     title: "Bring in your data",
     body: "Upload a broker export, preview it, then confirm. Nothing is written until you confirm.",

@@ -16,6 +16,7 @@ describe("Help", () => {
       </MemoryRouter>,
     );
     expect(screen.getByText("Your portfolio at a glance")).toBeInTheDocument();
+    expect(screen.getByText("Follow your dollars")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /replay tour/i }));
     expect(await screen.findByText("overview page")).toBeInTheDocument();
     expect(localStorage.getItem("iv.tour.replay")).toBe("1");
@@ -31,5 +32,7 @@ describe("Help", () => {
     for (const i of NAV_ITEMS) expect(screen.getAllByText(i.label).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: /glossary/i }));
     expect(screen.getByText("Sharpe ratio")).toBeInTheDocument();
+    expect(screen.getByText("Your rate")).toBeInTheDocument();
+    expect(screen.getByText("Realized FX")).toBeInTheDocument();
   });
 });

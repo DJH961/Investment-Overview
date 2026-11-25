@@ -30,7 +30,8 @@ import {
 import { filterLedger, monthTotals, sortLedger, summarizeLedger, useLedgerAll } from "../../lib/queries/ledgerAll";
 import { useFxConversions, useFxPool, type DepositMatch } from "../../lib/queries/manage";
 import { depositsById } from "../CurrencyConversions/matching";
-import { RateChip, RateSheet } from "./RateChip";
+import { RateChip, RateSheet, TrailChip, TrailSheet } from "./RateChip";
+import type { TrailKind } from "../../lib/journey-types";
 import { EstChip, useEstimateQueue } from "./EstChip";
 import { ReminderCard } from "../../components/ReminderCard";
 import { SettleSheet } from "../../components/SettleSheet";
@@ -43,6 +44,12 @@ import { KIND_OPTIONS, TransactionForm } from "./TransactionForm";
 import "./Transactions.scss";
 
 const PAGE_SIZE = 50;
+
+/** 7.4: the server names the rows that have a money trail (buys, sales, withdrawals; deposits use the rate chip). */
+function trailKindOf(r: TransactionOut): TrailKind | null {
+  const k = (r as TransactionOut & { trail_kind?: TrailKind | null }).trail_kind;
+  return k === "buy" || k === "sell" || k === "withdrawal" ? k : null;
+}
 const ALL = "all";
 const KIND_LABEL: Record<string, string> = {
   ...Object.fromEntries(KIND_OPTIONS.map((o) => [o.value, o.label])),
@@ -217,6 +224,11 @@ export function Transactions() {
   const est = useEstimateQueue();
   const depositMap = useMemo(() => depositsById(fxPool.data?.deposits ?? []), [fxPool.data]);
   const [rateFor, setRateFor] = useState<DepositMatch | null>(null);
+  // `?trail=buy-123` opens that row's trail (links from the Holding page, Data Health, the cash-out flow).
+  const [trailFor, setTrailFor] = useState<{ kind: TrailKind; id: number } | null>(() => {
+    const m = /^(buy|sell|withdrawal|deposit)-(\d+)$/.exec(searchParams.get("trail") ?? "");
+    return m ? { kind: m[1] as TrailKind, id: Number(m[2]) } : null;
+  });
 
   const create = useCreateTransaction();
   const update = useUpdateTransaction();
@@ -284,6 +296,7 @@ export function Transactions() {
           <span className="transactions-page__kind-cell">
             <span className={`transactions-page__kind transactions-page__kind--${r.kind}`}>{KIND_LABEL[r.kind] ?? r.kind}</span>
             {match && <RateChip match={match} onOpen={setRateFor} />}
+            {!match && trailKindOf(r) && <TrailChip kind={trailKindOf(r)!} onOpen={() => setTrailFor({ kind: trailKindOf(r)!, id: r.id })} />}
             {r.is_estimate && <EstChip onOpen={() => est.open(r.id)} />}
           </span>
         );
@@ -556,6 +569,8 @@ export function Transactions() {
             {form}
           </Dialog>
         ))}
+
+      <TrailSheet target={trailFor} onClose={() => setTrailFor(null)} />
 
       <RateSheet
         match={rateFor}
