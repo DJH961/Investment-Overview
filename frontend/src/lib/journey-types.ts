@@ -173,3 +173,10 @@ export interface LifetimeJourneyFields {
 }
 
 export type ConversionDirection = "to_usd" | "to_eur";
+
+/** (lane D ask) A conversion back's funding, for "How each conversion back was funded". */
+export interface ConversionBackFunding {
+  funded_by?: { withdrawal_id: number; date: string; usd: Dec; pinned: boolean }[];
+  /** Dollars taken from the rest of the USD account (FIFO, at their cost). */
+  rest_usd?: Dec | null;
+}

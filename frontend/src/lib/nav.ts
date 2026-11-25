@@ -74,6 +74,7 @@ export function moreSections(): { group: NavGroup; items: NavItem[] }[] {
 export function titleFor(pathname: string): string {
   // A looked-up instrument (7.1) is not a menu page.
   if (pathname.startsWith("/lookup/")) return "Look up";
+  if (pathname === "/cash-out") return "Cash out";
   const item = NAV_ITEMS.find((i) => pathname === i.to || pathname.startsWith(`${i.to}/`));
   return item ? (item.short ?? item.label) : "Investment Overview";
 }

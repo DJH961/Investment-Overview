@@ -76,6 +76,7 @@ export function App() {
               <Route path="/instruments" element={lazyPage("Instruments")} />
               <Route path="/conversions" element={lazyPage("CurrencyConversions")} />
               <Route path="/recurring" element={lazyPage("Recurring")} />
+              <Route path="/cash-out" element={lazyPage("CashOut")} />
               <Route path="/allocations" element={lazyPage("Allocations")} />
               <Route path="/diagnostics" element={lazyPage("Diagnostics")} />
               <Route path="/settings" element={lazyPage("Settings")} />

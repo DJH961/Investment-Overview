@@ -300,7 +300,8 @@ function trailFor(kind: string, id: number, data: Obj): TrailOut | { __status: n
     }
     if (!dep) return { __status: 404 };
     buy ??= rows.filter((r) => r.kind === "buy" && r.symbol && !isSweep(r, data) && r.date >= dep!.date).sort((a, b) => a.date.localeCompare(b.date))[0];
-    const usdBuy = buy ? Math.abs(Number(buy.net_native)) : Number(dep.usd);
+    // A deposit (or its conversion) follows all its dollars on; a buy only its own.
+    const usdBuy = kind === "buy" && buy ? Math.abs(Number(buy.net_native)) : Number(dep.usd);
     // The stress book's larger buys draw on two deposits (and say how many more).
     const two = book === "stress" && kind === "buy";
     const earlier = two ? deposits[Math.max(0, deposits.indexOf(dep) - 1)] : undefined;
@@ -318,7 +319,7 @@ function trailFor(kind: string, id: number, data: Obj): TrailOut | { __status: n
       ecbCost += usd / ecb;
       const steps = upstream(d, slice, conv, usd);
       if (buy) {
-        steps.push(step("bought", buy.date, "Bought", usd, "USD", String(buy.symbol), buy.instrument_id ? `/holding/${buy.instrument_id}` : null));
+        steps.push(step("bought", buy.date, "Bought", usd, "USD", kind === "buy" ? String(buy.symbol) : `${buy.symbol} and more`, buy.instrument_id ? `/holding/${buy.instrument_id}` : null));
         const worthEur = (valueUsd * (usd / usdBuy)) / now;
         const costEur = (Number(slice.eur) * usd) / Number(slice.usd);
         steps.push(step("worth_now", null, "Worth now", worthEur, "EUR", `at ${now.toFixed(4)} today`, null, worthEur - costEur));
@@ -484,6 +485,10 @@ function withJourneyRows(body: unknown, data: Obj): unknown {
   };
 }
 
+function withdrawalDate(id: number, data: Obj): string {
+  return [...cashOutRows(data), ...transactions(data)].find((r) => r.id === id)?.date ?? ANCHOR;
+}
+
 function withDirection(body: unknown, data: Obj): unknown {
   if (!Array.isArray(body)) return body;
   const book = bookOf(data);
@@ -514,6 +519,10 @@ function withDirection(body: unknown, data: Obj): unknown {
       remaining_usd: "0.00",
       used_by: [],
       withdrawal_id: p.withdrawal_id,
+      // The stress book's first conversion back used more than its withdrawal ($12,500 of a
+      // $12,500 withdrawal, pinned); the others drew on the USD account.
+      funded_by: p.withdrawal_id ? [{ withdrawal_id: p.withdrawal_id, date: withdrawalDate(p.withdrawal_id, data), usd: f2(p.usd), pinned: book === "stress" }] : [],
+      rest_usd: p.withdrawal_id ? "0.00" : f2(p.usd),
       is_estimate: false,
       note: null,
     }));

@@ -6,6 +6,7 @@ import { TrailPanel, trailTitle } from "../../components/MoneyTrail";
 import { Sheet } from "../../components/Sheet";
 import { formatDate, formatMoney, formatNumber } from "../../lib/format";
 import type { TrailKind } from "../../lib/journey-types";
+import { useTrail } from "../../lib/queries/journey";
 import type { DepositMatch, FxConversion } from "../../lib/queries/manage";
 import { providerLabel, rateChipLabel } from "../CurrencyConversions/matching";
 
@@ -101,9 +102,18 @@ export function TrailChip({ kind, onOpen }: { kind: TrailKind; onOpen: () => voi
 /** The money trail behind one buy, sale or withdrawal, in a sheet wide enough to run across on desktop. */
 export function TrailSheet({ target, onClose }: { target: { kind: TrailKind; id: number } | null; onClose: () => void }) {
   const title = target ? trailTitle(target.kind) : "";
+  // A sale or withdrawal still in dollars: the way into the guided cash-out (same cached trail).
+  const trail = useTrail(target?.kind ?? null, target?.id ?? null);
+  const stillInDollars =
+    target && (target.kind === "sell" || target.kind === "withdrawal") && trail.data && trail.data.paths[0]?.steps.at(-1)?.key !== "back";
   return (
     <Sheet open={target !== null} onOpenChange={(o) => !o && onClose()} title={title} wide>
       {target && <TrailPanel kind={target.kind} id={target.id} label={title} />}
+      {stillInDollars && (
+        <Link to={`/cash-out?${target.kind}=${target.id}`} className="transactions-page__rate-link transactions-page__cash-out-link">
+          Cash out to euros →
+        </Link>
+      )}
     </Sheet>
   );
 }

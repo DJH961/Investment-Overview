@@ -44,7 +44,7 @@ export function RatePair({ trail }: { trail: TrailOut }) {
 export function TrailSplitRows({ trail }: { trail: TrailOut }) {
   const s = trail.split;
   if (!s) return null;
-  const realised = trail.kind === "sell" || trail.kind === "withdrawal" || trail.kind === "conversion";
+  const realised = trail.paths[0]?.steps.at(-1)?.key === "back";
   const rows: [string, string][] = [
     ["Market", s.market_eur],
     ["Currency", s.currency_eur],
