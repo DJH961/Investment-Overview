@@ -103,3 +103,76 @@ def test_usd_view_labels_the_other_lens(
         if head["effect_pp"] is not None:
             assert head["other_lens"]["label"] == "Seen from euros"
             assert D(head["other_lens"]["value"]) == D(head["effect_pp"])
+
+
+# -- 7.4 journey section (lane C): a synthetic G1 pool stands in for B2's service ------
+
+
+@pytest.fixture
+def journey_g1(monkeypatch: pytest.MonkeyPatch) -> None:
+    from investment_dashboard.readmodels import currency_journey
+    from readmodels import journey_g1 as g1  # tests/readmodels (rootdir on sys.path)
+
+    monkeypatch.setattr(currency_journey, "load_inputs", lambda *_a, **_k: g1.inputs())
+
+
+def test_journey_section_needs_no_pool_service(
+    api_client: TestClient,
+    seeded: None,  # noqa: F811
+) -> None:
+    both = _get(api_client, "/api/currency/journey")
+    assert set(both) == {"eur", "usd"}
+    assert len(both["eur"]["stats"]) == 4
+
+
+def test_journey_bridge_total_is_the_overview_fx_gain(
+    api_client: TestClient,
+    seeded: None,  # noqa: F811
+    journey_g1: None,
+) -> None:
+    both = _get(api_client, "/api/currency/journey")
+    eur, usd = both["eur"], both["usd"]
+    lines = sum(D(line["eur"]) for line in eur["bridge"]["lines"])
+    assert D(eur["bridge"]["total_eur"]) == lines
+    overview = _get(api_client, "/api/overview/both")
+    for ccy in ("EUR", "USD"):
+        life = overview[ccy]["currency"]["lifetime"]
+        assert life["fx_pnl_eur"] == eur["bridge"]["total_eur"]
+        assert life["breakeven_rate"] is not None
+        assert D(life["your_rate"]) == D(eur["stats"]["your_rate"]["rate"])
+        assert D(life["realised_eur"]) == D(eur["back_in_euros"]["realised_eur"])
+    assert usd["bridge"] is None
+    assert usd["stats"]["invested"]["eur_cost"] is None
+    assert usd["stats"]["invested"]["usd"] == eur["stats"]["invested"]["usd"]
+    assert api_client.get("/api/currency/journey", headers={"If-None-Match": "x"}).headers["ETag"]
+
+
+def test_trail_and_preview_endpoints(
+    api_client: TestClient,
+    seeded: None,  # noqa: F811
+    journey_g1: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trail = _get(api_client, "/api/trail/buy/202")
+    assert len(trail["paths"]) == 2
+    assert api_client.get("/api/trail/buy/999999").status_code == 404
+    assert api_client.get("/api/trail/split/1").status_code == 422
+    # Preview CB1 on the ledger before it was saved: the same result as the saved one.
+    from investment_dashboard.readmodels import currency_journey
+    from investment_dashboard.services import read_cache
+    from readmodels import journey_g1 as g1
+
+    monkeypatch.setattr(currency_journey, "load_inputs", lambda *_a, **_k: g1.inputs(back=False))
+    read_cache.invalidate()
+    body = {
+        "withdrawal_id": 206,
+        "usd_sent": "280",
+        "eur_received": "198",
+        "fees_eur": "0",
+        "date": "2026-04-10",
+    }
+    resp = api_client.post("/api/cash-out/preview", json=body)
+    assert resp.status_code == 200, resp.text
+    out = resp.json()
+    assert out["conversion_id"] is None
+    assert out["eur"]["realised"] == "38.00"
