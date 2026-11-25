@@ -58,7 +58,9 @@ class IntradayValue(Base):
     __tablename__ = "intraday_value"
 
     captured_at: Mapped[datetime] = mapped_column(DateTime, primary_key=True)
-    market_value_eur: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    # Nullable since migration 0029 (7.4, P19): readers derive EUR as
+    # ``market_value_usd / fx_eur_usd`` and only fall back to this column.
+    market_value_eur: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
     fx_eur_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 8), nullable=True)
     # Native USD value of the intraday-priced holdings (FX-free). EUR is derived
     # as ``market_value_usd / fx_eur_usd``; NULL on rows written before 0017.

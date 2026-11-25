@@ -32,7 +32,6 @@ from investment_dashboard.repositories import import_batches_repo, transactions_
 from investment_dashboard.services import (
     recurring_service,
     transaction_edit_service,
-    transaction_fx_service,
 )
 
 if TYPE_CHECKING:
@@ -195,7 +194,7 @@ def apply_import_update(
 
     The row keeps its id; account, instrument and kind stay (they matched). Date,
     quantity, price, fees, net, description, ``external_id`` and ``source`` come from
-    ``incoming`` and the frozen FX legs are recomputed for the new date and amount.
+    ``incoming``; the frozen FX legs are cleared (P19: EUR/USD are derived).
     The caller records :func:`before_image` first so an undo can restore the row.
 
     Callers refresh the caches once for all updates (see :func:`apply_updates`).
@@ -204,11 +203,6 @@ def apply_import_update(
         # The broker's figures settle a recurring plan's est. row (and a buy's core-fund
         # leg). Done first: the leg is found through the row's pre-update identity.
         recurring_service.confirm_estimate(session, existing)
-    account = existing.account
-    native = account.native_currency if account is not None else (incoming.native_currency or "USD")
-    legs = transaction_fx_service.compute_legs(
-        session, native_currency=native, net_native=incoming.net_native, on=incoming.date
-    )
     transactions_repo.update_transaction(
         session,
         existing.id,
@@ -219,9 +213,9 @@ def apply_import_update(
         gross_native=incoming.gross_native,
         fees_native=incoming.fees_native,
         net_native=incoming.net_native,
-        fx_rate_to_eur=legs.fx_rate_to_eur,
-        net_eur=legs.net_eur,
-        net_usd=legs.net_usd,
+        fx_rate_to_eur=None,
+        net_eur=None,
+        net_usd=None,
         description=incoming.description or existing.description,
         external_id=incoming.external_id,
         source=incoming.source,

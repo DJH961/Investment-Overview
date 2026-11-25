@@ -44,7 +44,6 @@ from investment_dashboard.services import (
     manual_entry,
     prices_service,
     transaction_edit_service,
-    transaction_fx_service,
 )
 
 if TYPE_CHECKING:
@@ -380,12 +379,6 @@ def _write_settlement_leg(session: Session, parent: Transaction) -> Transaction 
     if parent.external_id is None:
         parent.external_id = f"manual:{parent.id}"
         session.flush()
-    legs = transaction_fx_service.compute_legs(
-        session,
-        native_currency=account.native_currency,
-        net_native=values.net_native,
-        on=parent.date,
-    )
     txn = transactions_repo.new_transaction(
         account_id=parent.account_id,
         date=parent.date,
@@ -394,9 +387,6 @@ def _write_settlement_leg(session: Session, parent: Transaction) -> Transaction 
         quantity=values.quantity,
         price_native=values.price,
         net_native=values.net_native,
-        fx_rate_to_eur=legs.fx_rate_to_eur,
-        net_eur=legs.net_eur,
-        net_usd=legs.net_usd,
         description=f"{MANUAL_SETTLEMENT_DESCRIPTION_PREFIX} · {fund.symbol}",
         external_id=settlement_external_id_for(parent.external_id),
         source=TransactionSource.MANUAL,

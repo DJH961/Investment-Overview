@@ -126,8 +126,8 @@ def _prepare(session: Session, data: TransactionInput) -> _Prepared:
     warnings: list[str] = []
     if not legs.complete:
         warnings.append(
-            f"FX rate missing for {data.date.isoformat()}: the EUR/USD legs are incomplete "
-            "and will be backfilled once rates are available."
+            f"FX rate missing for {data.date.isoformat()}: the EUR/USD figures "
+            "will show once rates are available."
         )
     fields: dict[str, object] = {
         "account_id": data.account_id,
@@ -139,9 +139,10 @@ def _prepare(session: Session, data: TransactionInput) -> _Prepared:
         "gross_native": gross_native,
         "fees_native": abs(fee_mag) if fee_mag is not None else None,
         "net_native": net_native,
-        "fx_rate_to_eur": legs.fx_rate_to_eur,
-        "net_eur": legs.net_eur,
-        "net_usd": legs.net_usd,
+        # P19: EUR/USD are derived from ``net_native`` at report time.
+        "fx_rate_to_eur": None,
+        "net_eur": None,
+        "net_usd": None,
         "description": (data.description or "").strip() or None,
     }
     return _Prepared(fields, net_native, native_ccy, warnings)
@@ -310,9 +311,6 @@ def maybe_money_market_leg(
     if parent.external_id is None:
         parent.external_id = f"manual:{parent.id}"
         session.flush()
-    leg_legs = transaction_fx_service.compute_legs(
-        session, native_currency=native_ccy, net_native=leg.net_native, on=txn_date
-    )
     mm_txn = transactions_repo.new_transaction(
         account_id=parent.account_id,
         date=txn_date,
@@ -321,9 +319,6 @@ def maybe_money_market_leg(
         quantity=leg.quantity,
         price_native=leg.price,
         net_native=leg.net_native,
-        fx_rate_to_eur=leg_legs.fx_rate_to_eur,
-        net_eur=leg_legs.net_eur,
-        net_usd=leg_legs.net_usd,
         description=f"{MANUAL_SETTLEMENT_DESCRIPTION_PREFIX} · {mm_instrument.symbol}",
         external_id=settlement_external_id_for(parent.external_id),
         source=TransactionSource.MANUAL,
@@ -387,9 +382,6 @@ def resync_settlement_leg(
         session.delete(leg)
         session.flush()
         return
-    leg_legs = transaction_fx_service.compute_legs(
-        session, native_currency=native_ccy, net_native=values.net_native, on=parent.date
-    )
     leg.import_batch_id = None  # follows its edited parent out of the import batch
     leg.account_id = parent.account_id
     leg.date = parent.date
@@ -397,7 +389,7 @@ def resync_settlement_leg(
     leg.quantity = values.quantity
     leg.price_native = values.price
     leg.net_native = values.net_native
-    leg.fx_rate_to_eur = leg_legs.fx_rate_to_eur
-    leg.net_eur = leg_legs.net_eur
-    leg.net_usd = leg_legs.net_usd
+    leg.fx_rate_to_eur = None
+    leg.net_eur = None
+    leg.net_usd = None
     session.flush()

@@ -384,19 +384,26 @@ def get_with_relations(session: Session, txn_id: int) -> Transaction | None:
     ).first()
 
 
-def list_transactions_missing_legs(session: Session) -> Sequence[Transaction]:
-    """Rows still lacking a frozen FX leg (``net_eur`` or ``net_usd`` is NULL).
+def list_transactions_missing_legs(
+    session: Session, *, first_rate_date: date | None
+) -> Sequence[Transaction]:
+    """Cash rows whose derived EUR or USD leg cannot be computed (an FX gap).
 
-    Pushes the "needs backfill" predicate into the query instead of loading the
-    whole ledger and filtering in Python (B6). Ordered like
-    :func:`list_transactions` (date asc, id asc) so callers stay deterministic.
+    The legs are derived from ``net_native`` and the EUR→USD rate forward-filled
+    onto the row's date (P19: the frozen ``net_eur`` / ``net_usd`` columns are
+    never read). A EUR or USD account's row therefore lacks a leg only when it
+    predates ``first_rate_date`` (the oldest EUR→USD rate on file, ``None`` when
+    there is none); a row in any other currency has no derived legs at all.
+    Rows with no cash amount need no FX. Ordered like :func:`list_transactions`
+    (date asc, id asc) so callers stay deterministic.
     """
-    stmt = (
-        select(Transaction)
-        .where(or_(Transaction.net_eur.is_(None), Transaction.net_usd.is_(None)))
-        .order_by(Transaction.date, Transaction.id)
-    )
-    return session.scalars(stmt).all()
+    stmt = select(Transaction).where(Transaction.net_native.is_not(None))
+    if first_rate_date is not None:
+        ccy = func.upper(Account.native_currency)
+        stmt = stmt.join(Account, Transaction.account_id == Account.id).where(
+            or_(ccy.not_in(("EUR", "USD")), Transaction.date < first_rate_date)
+        )
+    return session.scalars(stmt.order_by(Transaction.date, Transaction.id)).all()
 
 
 def get_transaction(session: Session, txn_id: int) -> Transaction | None:

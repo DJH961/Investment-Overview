@@ -1,22 +1,20 @@
-"""Freeze each transaction's EUR + USD cash legs at the trade-date FX rate.
+"""Trade-date EUR + USD cash legs: completeness checks, never stored (P19).
 
 Spec §4.1 / §5.6 require every historical figure (KPIs, deposits, the
 cashflow stream feeding XIRR) to be valued at the FX rate in force on the
-*transaction's date*, not today's spot. Rather than re-derive that on every
-page render, this service computes both legs **once** — at import / manual
-entry — and persists them on the ``transactions`` row:
+*transaction's date*, not today's spot. Since 7.4 (P19) the legs are no longer
+frozen on the ``transactions`` row: every reader derives them from
+``net_native`` and that date's rate (``services/cashflows.py``), and a USD
+account's USD is its native amount. The ``net_eur``, ``net_usd`` and
+``fx_rate_to_eur`` columns stay ``NULL`` on new rows and are never read.
 
-* ``net_usd`` — the USD leg. For USD-native accounts (the common case) this
-  is exactly ``net_native``; USD is the booked currency, so it is frozen
-  verbatim and EUR is the derived side.
-* ``net_eur`` — the EUR leg (already persisted pre-v2.9; kept canonical).
-* ``fx_rate_to_eur`` — EUR per 1 unit of native currency, for audit.
+What is left here:
 
-Read paths prefer these frozen columns and only fall back to live FX
-derivation when a leg is ``NULL`` (a row written while FX history had a gap,
-or one that predates the backfill). A ``NULL`` leg is therefore a signal that
-the row should be revisited — :func:`backfill_missing_legs` (run on boot and
-from *Settings → Recalculate*) keeps retrying until accurate data lands.
+* :func:`compute_legs` works out the legs for one amount, so a writer can warn
+  when the FX history has a gap (the legs themselves are not stored);
+* :func:`backfill_missing_legs` and :func:`missing_fx_dates` report the rows
+  whose derived legs cannot be computed yet (no rate on file);
+* :func:`ensure_fx_coverage` refreshes the FX history an import needs.
 
 Tier note: ``fx_history`` is cache-tier data. The FX lookups here go through
 :mod:`investment_dashboard.services.fx_service` / a cache-tier session, so they
@@ -30,7 +28,6 @@ import logging
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
@@ -39,15 +36,12 @@ from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.repositories import transactions_repo
 from investment_dashboard.services import fx_service
 
-if TYPE_CHECKING:
-    from investment_dashboard.models import Transaction
-
 log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
 class TransactionLegs:
-    """Frozen currency legs for one transaction."""
+    """Derived currency legs for one amount (computed, never stored)."""
 
     fx_rate_to_eur: Decimal | None
     net_eur: Decimal | None
@@ -59,11 +53,11 @@ class TransactionLegs:
 
 @dataclass(frozen=True)
 class RecalcResult:
-    """Outcome of a (re)compute pass over the ledger."""
+    """Outcome of a leg check over the ledger."""
 
     examined: int
     updated: int
-    #: Rows still missing a leg after the pass (FX history gap).
+    #: Rows still missing a derived leg (FX history gap).
     incomplete: int
 
 
@@ -74,7 +68,7 @@ def compute_legs(
     net_native: Decimal | None,
     on: date,
 ) -> TransactionLegs:
-    """Compute frozen EUR/USD legs for a single cash amount on ``on``.
+    """Compute the EUR/USD legs of a single cash amount on ``on`` (not stored).
 
     ``native_currency`` is the booking currency (the account's
     ``native_currency``). Rates are looked up from ``fx_history`` with
@@ -123,76 +117,43 @@ def compute_legs(
     )
 
 
-def apply_legs(session: Session, txn: Transaction, *, force: bool = False) -> bool:
-    """Compute and write frozen legs onto ``txn``. Returns ``complete``.
-
-    When ``force`` is ``False`` an already-complete row (both legs present)
-    is left untouched, so the boot pass is cheap. ``force=True`` recomputes
-    unconditionally — used by *Settings → Recalculate* to repair rows after
-    FX history is corrected.
-    """
-    if not force and txn.net_eur is not None and txn.net_usd is not None:
-        return True
-    native_currency = txn.account.native_currency if txn.account else "EUR"
-    legs = compute_legs(
-        session,
-        native_currency=native_currency,
-        net_native=txn.net_native,
-        on=txn.date,
-    )
-    # Only overwrite a stored value when we have something better; never clear
-    # a previously frozen leg just because today's FX lookup came back empty.
-    if legs.fx_rate_to_eur is not None:
-        txn.fx_rate_to_eur = legs.fx_rate_to_eur
-    if legs.net_eur is not None:
-        txn.net_eur = legs.net_eur
-    if legs.net_usd is not None:
-        txn.net_usd = legs.net_usd
-    return legs.complete
+def _first_rate_date(session: Session) -> date | None:
+    rates = fx_service.get_rates(session, base="EUR", quote="USD")
+    return min(rates) if rates else None
 
 
 def backfill_missing_legs(session: Session, *, force: bool = False) -> RecalcResult:
-    """Populate frozen legs across the whole ledger.
+    """Count the ledger rows whose derived EUR/USD legs are still missing.
 
-    ``force=False`` (boot default) only touches rows missing a leg, so a
-    healthy ledger is a no-op. ``force=True`` recomputes every row from
-    current FX history — the *Settings → Recalculate* behaviour.
+    Nothing is written any more (P19): the legs are derived from ``net_native``
+    and the FX table when read, so once a missing rate lands the row heals by
+    itself. ``examined`` is the number of rows checked (every cash row when
+    ``force`` is set, else only the rows with a gap), ``updated`` is always 0
+    and ``incomplete`` counts the rows that still have no rate on file.
+    ``force`` is kept for the *Settings → Recalculate* job's signature.
     """
-    # ``force`` recomputes every row; the boot default only needs rows that are
-    # still missing a frozen leg, so push that filter into SQL (B6) instead of
-    # loading the whole ledger and discarding the healthy majority in Python.
+    missing = transactions_repo.list_transactions_missing_legs(
+        session, first_rate_date=_first_rate_date(session)
+    )
     if force:
-        txns = list(transactions_repo.list_transactions(session))
+        examined = sum(
+            1 for t in transactions_repo.list_transactions(session) if t.net_native is not None
+        )
     else:
-        txns = list(transactions_repo.list_transactions_missing_legs(session))
-    examined = 0
-    updated = 0
-    incomplete = 0
-    for txn in txns:
-        needs = force or txn.net_eur is None or txn.net_usd is None
-        if not needs:
-            continue
-        examined += 1
-        before = (txn.fx_rate_to_eur, txn.net_eur, txn.net_usd)
-        complete = apply_legs(session, txn, force=force)
-        after = (txn.fx_rate_to_eur, txn.net_eur, txn.net_usd)
-        if after != before:
-            updated += 1
-        if not complete:
-            incomplete += 1
-    session.flush()
-    return RecalcResult(examined=examined, updated=updated, incomplete=incomplete)
+        examined = len(missing)
+    return RecalcResult(examined=examined, updated=0, incomplete=len(missing))
 
 
 def missing_fx_dates(session: Session) -> list[date]:
-    """Trade dates of rows that still lack a frozen leg (FX-history gaps).
+    """Trade dates of cash rows whose derived legs lack a rate (FX-history gaps).
 
     Used by the importer to decide whether to retry an FX refresh and by the
     UI to report unresolved gaps to the user.
     """
-    txns = transactions_repo.list_transactions_missing_legs(session)
-    gaps = {t.date for t in txns if t.net_native is not None}
-    return sorted(gaps)
+    txns = transactions_repo.list_transactions_missing_legs(
+        session, first_rate_date=_first_rate_date(session)
+    )
+    return sorted({t.date for t in txns})
 
 
 def ensure_fx_coverage(

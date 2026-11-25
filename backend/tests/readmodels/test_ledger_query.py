@@ -78,7 +78,10 @@ def test_date_range_filter(session: Session) -> None:
 
 
 def test_usd_native_uses_net_native_for_net_usd(session: Session) -> None:
-    """USD-native rows must show the booked USD value, not a re-derived one."""
+    """USD-native rows show the booked USD; EUR is derived, never the frozen leg (P19)."""
+    from investment_dashboard.repositories import fx_repo
+
+    fx_repo.upsert_rates(session, {date(2024, 3, 1): Decimal("1.25")})
     acct = accounts_repo.create_account(
         session,
         broker="vanguard",
@@ -91,15 +94,15 @@ def test_usd_native_uses_net_native_for_net_usd(session: Session) -> None:
             account_id=acct.id,
             date=date(2024, 3, 1),
             kind="buy",
-            net_native=Decimal("-19.99"),
-            net_eur=Decimal("-17.24"),
+            net_native=Decimal("-20.00"),
+            net_eur=Decimal("-17.24"),  # a wrong frozen leg: ignored
             source=TransactionSource.MANUAL,
         )
     )
     session.flush()
     rows = list_ledger_rows(session, fx_rate=Decimal("1.20"))
-    assert rows[0]["net_usd"] == "$-19.99"
-    assert rows[0]["net_eur"] == "€-17.24"
+    assert rows[0]["net_usd"] == "$-20.00"
+    assert rows[0]["net_eur"] == "€-16.00"  # -20 / 1.25
 
 
 def test_eur_native_derives_only_net_usd(session: Session) -> None:
@@ -215,6 +218,9 @@ def test_money_market_reinvested_dividend_values_the_payout(session: Session) ->
 
 def test_normal_reinvested_dividend_keeps_its_cash_flow(session: Session) -> None:
     """A real (non money-market) reinvestment is untouched by the MM special case."""
+    from investment_dashboard.repositories import fx_repo
+
+    fx_repo.upsert_rates(session, {date(2024, 3, 31): Decimal("1.10")})
     acct = accounts_repo.create_account(
         session,
         broker="fidelity",
@@ -232,7 +238,7 @@ def test_normal_reinvested_dividend_keeps_its_cash_flow(session: Session) -> Non
             quantity=Decimal("0.42"),
             price_native=Decimal("120.50"),
             net_native=Decimal("-50.61"),
-            net_eur=Decimal("-46.00"),
+            net_eur=Decimal("-40.00"),  # a wrong frozen leg: ignored
             source=TransactionSource.MANUAL,
         )
     )
@@ -240,7 +246,7 @@ def test_normal_reinvested_dividend_keeps_its_cash_flow(session: Session) -> Non
     rows = list_ledger_rows(session, fx_rate=Decimal("1.10"))
     row = rows[0]
     assert row["net_usd"] == "$-50.61"
-    assert row["net_eur"] == "€-46.00"
+    assert row["net_eur"] == "€-46.01"  # -50.61 / 1.10
 
 
 def _seed_with_settlement_leg(session: Session) -> None:

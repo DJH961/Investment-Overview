@@ -144,8 +144,8 @@ class TestTransactionsRepo:
         assert {t.kind for t in deposits} == {"deposit"}
 
     def test_list_transactions_missing_legs(self, session: Session) -> None:
+        """P19: a gap is a cash row before the first rate, whatever the frozen legs say."""
         acct_id = _seed_account(session)
-        # One healthy row (both legs frozen) and two with a NULL leg.
         session.add(
             Transaction(
                 account_id=acct_id,
@@ -178,9 +178,26 @@ class TestTransactionsRepo:
             )
         )
         session.flush()
-        missing = transactions_repo.list_transactions_missing_legs(session)
-        # Only the two rows with a NULL leg, ordered by date asc.
-        assert [t.date for t in missing] == [date(2024, 1, 2), date(2024, 1, 3)]
+        session.add(
+            Transaction(
+                account_id=acct_id,
+                date=date(2024, 1, 4),
+                kind="split",  # no cash amount: needs no FX
+                source="manual",
+            )
+        )
+        session.flush()
+        missing = transactions_repo.list_transactions_missing_legs(
+            session, first_rate_date=date(2024, 1, 3)
+        )
+        # Only the cash rows before the first rate, ordered by date asc.
+        assert [t.date for t in missing] == [date(2024, 1, 1), date(2024, 1, 2)]
+        everything = transactions_repo.list_transactions_missing_legs(session, first_rate_date=None)
+        assert [t.date for t in everything] == [
+            date(2024, 1, 1),
+            date(2024, 1, 2),
+            date(2024, 1, 3),
+        ]
 
 
 class TestPricesRepo:

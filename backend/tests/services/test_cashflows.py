@@ -81,16 +81,18 @@ def test_streams_and_sums_omit_unknown_legs(session: Session) -> None:
     assert cashflows.sum_amounts([a, b], cashflows.CONTRIBUTION_KINDS, "EUR", eur_to_usd={}) == 500
 
 
-def test_frozen_legs_are_returned_verbatim(session: Session) -> None:
+def test_frozen_legs_are_never_read(session: Session) -> None:
+    """P19: a wrong frozen leg is ignored; EUR comes from net_native + the date's rate."""
     usd = _acct(session, "USD")
     t = _txn(
-        usd, "deposit", date(2024, 2, 1), net_native=D("1000"), net_eur=D("900"), net_usd=D("1000")
+        usd, "deposit", date(2024, 2, 1), net_native=D("1000"), net_eur=D("900"), net_usd=D("999")
     )
     session.add(t)
     session.flush()
-    assert cashflows.txn_eur_amount(t, eur_to_usd={}) == D("900")
+    rates = {date(2024, 1, 1): D("1.25")}
+    assert cashflows.txn_eur_amount(t, eur_to_usd=rates) == D("800")
     assert cashflows.txn_eur_amount(t, eur_overrides={t.id: D("950")}) == D("950")
-    assert cashflows.txn_usd_amount(t, eur_to_usd={}) == D("1000")  # USD never overridden
+    assert cashflows.txn_usd_amount(t, eur_to_usd={}) == D("1000")  # native, never the leg
 
 
 # --- plan section 7: two batches, three deposits -----------------------------
@@ -227,12 +229,14 @@ def test_cashflow_conversion_uses_each_dates_own_rate_not_frozen_leg(session: Se
     assert [f.amount for f in flows] == [D("-800"), D("-500")]
 
 
-def test_frozen_leg_is_fallback_when_no_rate_on_file(session: Session) -> None:
+def test_no_rate_on_file_means_no_eur_leg(session: Session) -> None:
+    """P19: the frozen leg is no fallback; no rate means ``None`` (missing-FX policy)."""
     usd = _acct(session, "USD")
     t = _txn(usd, "deposit", date(2024, 1, 10), net_native=D("1000"), net_eur=D("900"))
     session.add(t)
     session.flush()
-    assert cashflows.txn_eur_amount(t, eur_to_usd={}) == D("900")
+    assert cashflows.txn_eur_amount(t, eur_to_usd={}) is None
+    assert cashflows.txn_usd_amount(t, eur_to_usd={}) == D("1000")
 
 
 def test_eur_xirr_golden_uses_per_date_rates(session: Session) -> None:

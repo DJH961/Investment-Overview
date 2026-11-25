@@ -18,7 +18,7 @@ def _seed_two_jan_deposits(session: Session) -> None:
         session,
         broker="fidelity",
         account_label="Fidelity",
-        native_currency="USD",
+        native_currency="EUR",  # EUR deposits: native = EUR (P19)
         account_type="brokerage",
     )
     session.add_all(
@@ -27,14 +27,14 @@ def _seed_two_jan_deposits(session: Session) -> None:
                 account_id=acct.id,
                 date=date(2024, 1, 10),
                 kind="deposit",
-                net_eur=Decimal("1000"),
+                net_native=Decimal("1000"),
                 source=TransactionSource.MANUAL,
             ),
             Transaction(
                 account_id=acct.id,
                 date=date(2024, 2, 10),
                 kind="deposit",
-                net_eur=Decimal("1000"),
+                net_native=Decimal("1000"),
                 source=TransactionSource.MANUAL,
             ),
         ]
@@ -127,7 +127,7 @@ def test_growth_pct_computed_in_display_currency(session: Session) -> None:
         session,
         broker="fidelity",
         account_label="Fidelity",
-        native_currency="USD",
+        native_currency="EUR",  # EUR deposits: native = EUR (P19)
         account_type="brokerage",
     )
     session.add(
@@ -135,7 +135,7 @@ def test_growth_pct_computed_in_display_currency(session: Session) -> None:
             account_id=acct.id,
             date=date(2024, 1, 15),
             kind="deposit",
-            net_eur=Decimal("500"),
+            net_native=Decimal("500"),
             source=TransactionSource.MANUAL,
         )
     )
