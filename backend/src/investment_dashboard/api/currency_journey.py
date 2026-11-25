@@ -32,9 +32,8 @@ from investment_dashboard.services.read_cache import cached_read, conditional_bo
 router = APIRouter(tags=["currency"])
 
 
-@cached_read
 def _inputs(session: Session) -> journey_readmodel.JourneyInputs | None:
-    return journey_readmodel.load_inputs(session)
+    return journey_readmodel.load_inputs_cached(session)
 
 
 @cached_read

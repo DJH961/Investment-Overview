@@ -67,6 +67,7 @@ from investment_dashboard.domain.cash_pool import (
 from investment_dashboard.domain.fx_pool import Batch, PoolResult
 from investment_dashboard.domain.returns import Cashflow, xirr
 from investment_dashboard.readmodels._serialize import dec
+from investment_dashboard.services.read_cache import cached_read
 
 ZERO = Decimal(0)
 GRID = cash_out_domain.GRID
@@ -150,7 +151,7 @@ def _cent(x: Decimal) -> Decimal:
     return x.quantize(CENT, rounding=ROUND_HALF_EVEN)
 
 
-def _rate(x: Decimal | None) -> Decimal | None:
+def rate4(x: Decimal | None) -> Decimal | None:
     return None if x is None else x.quantize(RATE_DP, rounding=ROUND_HALF_EVEN)
 
 
@@ -713,9 +714,9 @@ def _view(ctx: _Ctx, j: Journey, *, eur: bool) -> dict[str, Any]:
             "broker_cash": _bucket_out(j.broker_cash, eur=eur),
             "invested": _bucket_out(j.invested, eur=eur, invested=True),
             "your_rate": {
-                "rate": dec(_rate(j.your_rate)),
-                "ecb_avg": dec(_rate(j.ecb_avg)),
-                "now": dec(_rate(j.rate_now)),
+                "rate": dec(rate4(j.your_rate)),
+                "ecb_avg": dec(rate4(j.ecb_avg)),
+                "now": dec(rate4(j.rate_now)),
             },
         },
         "bridge": bridge,
@@ -869,3 +870,13 @@ def load_inputs(session: Any, *, today: date | None = None) -> JourneyInputs | N
         today=day,
         txns=_txn_infos(session),
     )
+
+
+@cached_read
+def _cached(session: Any) -> JourneyInputs | None:
+    return load_inputs(session)
+
+
+def load_inputs_cached(session: Any) -> JourneyInputs | None:
+    """:func:`load_inputs`, cached until the next ledger or price change."""
+    return _cached(session=session)  # type: ignore[no-any-return]
