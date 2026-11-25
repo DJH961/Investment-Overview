@@ -76,7 +76,7 @@ Each step adds something the app can now measure:
 
    Golden values: buy, sell at a gain, withdraw, convert back at a different rate. The same again at a loss.
 
-5. **P18 broker cash in the Overview total.** Use one shared `ledger_cash_balances` rule; the old draft is `.claude/p18_draft.patch` if it still exists. Negative cash counts as zero in the total and gets a Data Health flag. Ship a list of the figures that move.
+5. **P18 broker cash: moved out of 7.4 (owner, 2026-11-26).** Not part of the currency journey. The shared `ledger_cash_balances` rule and the negative-cash check are built, but the Overview total does not use them. The switch (commit 09d26368) ships in a later release.
 
 6. **Journey read model.** `readmodels/currency_journey.py` works in buckets. Each bucket (USD account pool, broker cash, each holding, gone back to euros) has: USD now, EUR cost, EUR now.
 
