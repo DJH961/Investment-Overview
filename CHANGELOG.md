@@ -17,6 +17,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- Currency › Exposure, "The same rate, from each side": two by two whenever the card
+  itself is narrow (tablets included), not only on phones, so "-7.3% Headwind" never
+  spills out of its cell at 768–1440 px.
+- Market clock: the bell's ripple ring grows by transform only, so it no longer widens
+  the label row by 3 px.
+
+### CI
+- A failed `fixtures` job (drift guard and overflow detector) now stops the deploy: the
+  merge-commit gate lists it among the checks a PR must have passed.
+
 ## [7.3.1] — 2026-11-25
 
 ### Added
