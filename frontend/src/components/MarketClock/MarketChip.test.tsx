@@ -62,8 +62,9 @@ describe("MarketChip", () => {
       </QueryClientProvider>,
     );
     expect(screen.queryByTestId("market-chip-fill")).toBeNull();
-    expect(container.querySelector(".market-chip__text")).toHaveTextContent("Holiday · opens Fri 14:30");
-    expect(container.querySelector(".market-chip__short")).toHaveTextContent("Holiday · Fri 14:30");
+    expect(container.querySelector(".market-chip__text")).toHaveTextContent("Holiday until Fri 14:30");
+    expect(container.querySelector(".market-chip__short")).toHaveTextContent("Holiday until Fri");
+    expect(container.querySelector(".market-chip__short")).not.toHaveTextContent("14:30");
     expect(container.querySelector(".market-chip__word")).toHaveTextContent("Holiday");
   });
 });
