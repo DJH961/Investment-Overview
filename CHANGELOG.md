@@ -17,12 +17,35 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [7.4.0] — 2026-11-26
+
 ### Added
+- The currency journey: every dollar is traced from the euros you converted through the
+  deposit to the buy (a shared cash pool, fees reduce what arrives). It shows on a
+  holding's page and peek, as an Overview card and a Holdings tile, with a tour and
+  glossary entries; conversions feed the recap, the rate markers and the cost figures.
+- Month and year recaps with the real euro return (after euro-area inflation, HICP;
+  "Source: ECB, Eurostat", the real return is our calculation), on Periods and the Overview.
+- Transactions carry the euro basis and money-trail kind of each row.
+- Currency › Add conversion: a direction choice, EUR → USD or USD → EUR, so dollars
+  converted back to euros can be entered by hand; EUR → USD amounts can be typed
+  excluding or including fees.
+- Recurring: a conversion plan can be fixed in USD arriving instead of EUR converted.
 - Currency › Add conversion, USD → EUR: the fee is entered in dollars (native `fees_usd`,
   migration 0032) and comes out of the dollars sent; its euro value uses that
   conversion's own ECB fixing, and the all-in rate is dollars sent per euro received.
 
+### Changed
+- Periods: one compact table for all years on desktop (a year is a header row with its
+  months indented under it); on phones a native list with aligned month rows that open
+  on tap. Column sorting on Periods is gone.
+- Transaction cashflow legs are derived from the native amounts; the frozen EUR legs are
+  no longer read for matched deposits (P19).
+
 ### Fixed
+- Market chip: "Closed until Fri 3:30 PM", shortening to "Closed until Fri" and then
+  "Closed" when space is short.
+- Transactions: a month is never split across two pages.
 - Recurring › Set up your routine: each step keeps the cadence and amount you chose. Changing
   one step's rhythm (say monthly conversion, biweekly deposit, weekly buys) no longer
   restarts or overwrites the others; figures derived from the step before are hints, and

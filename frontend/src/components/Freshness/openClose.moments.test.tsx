@@ -119,14 +119,14 @@ describe("the top bar chip, the phase and the day words at every open / close mo
     expect(moversBasisLabel("2026-11-27", o)).toBe(dayMoveLabel("2026-11-27", o));
   });
 
-  it("the phone chip says when the market opens once it is shut, not just a countdown", () => {
+  it("the phone chip says 'Closed until <day>' once it is shut, not just a countdown", () => {
     const qc = new QueryClient();
     render(
       <QueryClientProvider client={qc}>
         <MarketChip freshness={fresh({ last_close_at: "2026-11-24T21:00:00Z", next_open_at: "2026-11-25T14:30:00Z" })} currency="EUR" now={new Date("2026-11-24T21:20:00Z")} />
       </QueryClientProvider>,
     );
-    expect(screen.getByRole("button")).toHaveTextContent("Closed · opens 14:30");
+    expect(screen.getByRole("button")).toHaveTextContent("Closed until 14:30");
   });
 });
 

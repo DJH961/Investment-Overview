@@ -15,7 +15,7 @@
 > The technical companion, with build notes per push, is
 > [`v7_implementation_notes.md`](v7_implementation_notes.md).
 >
-> **Status (2026-11-25): 7.3.1 is released.** It brings money-maths consistency on the
+> **Status (2026-11-26): 7.4.0 is released.** It brings money-maths consistency on the
 > Currency page (deposit carry counted as currency, one range meaning, EUR | USD side by
 > side, an honest "Mixed", your regular amount instead of €1,000), market open and close
 > end to end, and the dev tools (`npm run shots`, fixture URL switches incl. `?at=` and
