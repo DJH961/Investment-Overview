@@ -1292,6 +1292,10 @@ that push. The P numbers are labels other notes refer to.
   Owner on the 7.4 Cash out page: "super weird and odd within our journey and
   conversions"; leave it in 7.4, but in 7.6 refine it and give it a proper place in the
   journey (likely the last step after Conversions, not a separate island).
+- **Activity links to its conversions** (owner, 2026-11-26). Each contribution row on
+  Activity links directly to every conversion that paid for it ("Paid from Conversion
+  27 Oct 2026" becomes a link): one tap opens that conversion on the Conversions page
+  (scrolled to and opened) with its edit action at hand, on desktop and phone.
 - **Conversion fees, complete** (owner, 2026-11-26). Fees can be in either currency (EUR
   or USD, stored natively) for either direction (EUR → USD and USD → EUR); 7.4 only adds
   native USD fees on USD → EUR. Both directions get the "amount is excluding / including
