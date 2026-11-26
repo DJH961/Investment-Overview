@@ -1292,6 +1292,23 @@ that push. The P numbers are labels other notes refer to.
   Owner on the 7.4 Cash out page: "super weird and odd within our journey and
   conversions"; leave it in 7.4, but in 7.6 refine it and give it a proper place in the
   journey (likely the last step after Conversions, not a separate island).
+- **7.4 clean-up** (owner, 2026-11-26; details in `docs/v7_4_progress.md` › open issues):
+  - Middle widths (640-767 px): Conversions, Activity and Transactions still show their old
+    layouts there; give them the approved phone list (or the desktop table) so no width
+    falls between the two.
+  - Periods sorting: the 7.4 redesign dropped column sorting and the phone list has none;
+    bring back a way to sort (e.g. a small sort control: newest/oldest, best/worst growth)
+    that works on phone too.
+  - Date inputs in en-US format, not the browser locale (dd.mm.yyyy).
+  - Realistic (`nice`) fixtures: the Holding Value chart series does not match the
+    holding (≈€313K invested vs €26.5K value, "-112.88%"); fix the fixture and confirm the
+    app is right.
+  - Check "In the pool $0" on Conversions against the cash pool maths.
+  - Tests for the opened phone conversion row with all-in ≠ rate and kept-in-USD > 0, and
+    for the Recurring setup step-3 note ("buys exceed deposits").
+  - Direction filters (to USD / to EUR) in fx_cost, recurring, currency_deposits and the
+    conversions API; drop the frozen EUR legs and diagnostics `_check_frozen_legs` together.
+  - Stabilize the flaky `test_tiingo_fallback_backoff` hypothesis test.
 - **Activity links to its conversions** (owner, 2026-11-26). Each contribution row on
   Activity links directly to every conversion that paid for it ("Paid from Conversion
   27 Oct 2026" becomes a link): one tap opens that conversion on the Conversions page
