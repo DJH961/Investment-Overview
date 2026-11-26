@@ -19,7 +19,7 @@
 
   // The page's one subject: the growth chart on a lit stage surface.
   &__stage {
-    padding: var(--space-2) 0;
+    padding: 0;
     background: var(--stage-bg);
     border: var(--border-width) solid var(--stage-border);
     border-radius: var(--radius-xl);
@@ -82,8 +82,8 @@
 .periods-page__summary {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-3) var(--space-4);
-  margin: var(--space-2) 0 var(--space-3);
+  gap: var(--space-2) var(--space-4);
+  margin: var(--space-1) 0 0;
 
   @include m.tablet-up {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -91,8 +91,7 @@
 
   @include m.wide {
     grid-auto-flow: column;
-    grid-template-columns: minmax(12rem, 1.4fr);
-    grid-auto-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(10rem, 1.2fr) repeat(6, minmax(0, 1fr));
     align-items: end;
   }
 }
@@ -112,7 +111,7 @@
   &--lead {
     grid-column: 1 / -1;
 
-    @include m.desktop {
+    @include m.wide {
       grid-column: auto;
       padding-left: 0;
       border-left: 0;
@@ -135,7 +134,7 @@
 }
 
 .periods-page__stat--lead .periods-page__stat-value {
-  @include m.figure(var(--font-size-xl));
+  @include m.figure(var(--font-size-lg));
 }
 
 .periods-page__stat-sub {

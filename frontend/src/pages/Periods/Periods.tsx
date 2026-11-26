@@ -386,14 +386,12 @@ function YearSummary({
         <span className="periods-page__stat-label">Contributions</span>
         <span className="periods-page__stat-value">{money(row.contributions)}</span>
       </span>
-      {cashOutShown !== null && (
-        <span className="periods-page__stat">
-          <span className="periods-page__stat-label">Cashed out</span>
-          <span className="periods-page__stat-value">
-            <Money amount={cashOutShown} currency={cashOutCcy} digits={0} />
-          </span>
+      <span className="periods-page__stat">
+        <span className="periods-page__stat-label">Cashed out</span>
+        <span className="periods-page__stat-value">
+          {cashOutShown !== null ? <Money amount={cashOutShown} currency={cashOutCcy} digits={0} /> : MISSING}
         </span>
-      )}
+      </span>
       <span className="periods-page__stat">
         <span className="periods-page__stat-label">Dividends</span>
         <span className="periods-page__stat-value">{money(row.dividends)}</span>
