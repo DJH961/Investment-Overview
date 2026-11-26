@@ -1289,6 +1289,12 @@ that push. The P numbers are labels other notes refer to.
   with the realized-in-euros result per cash-out; (c) the same view on the Deposits page,
   so withdrawals sit next to deposits with their onward conversion; (d) recurring/planned
   cash-outs if the owner wants them. Golden values by hand for the euros realized.
+- **Conversion fees, complete** (owner, 2026-11-26). Fees can be in either currency (EUR
+  or USD, stored natively) for either direction (EUR → USD and USD → EUR); 7.4 only adds
+  native USD fees on USD → EUR. Both directions get the "amount is excluding / including
+  fees" choice for the sent total that 7.4 added for EUR → USD. Importers and all cost,
+  rate and cash-pool read models follow the fee's own currency, converted at that
+  conversion's own rate when reported in the other currency.
 
 **Already shipped:** ledger completeness checks (P7, 6.15.0 and 7.0), the market
 clock (P13, 7.0), the USD-view currency figure (P12, 7.0) and the day rule (D1,
