@@ -58,3 +58,4 @@ plus its last `Next:` line.
 - Flaky hypothesis test test_tiingo_fallback_backoff (pre-existing).
 - Add conversion dialog is EUR→USD only: USD→EUR ("Back to euros") rows come only from statement import; no manual entry (owner asked 2026-11-26).
 - Owner has NOT reviewed 7.4 shots yet (beyond antigravity dialogs): full shot review of all 7.4 views is still to do before release.
+- 2026-11-26: owner REJECTED Periods pass 1 (b99b8a38 merged; whitespace on phone and desktop untouched). Lane G redoing it to a concrete spec: one dense table for all years on desktop (year = header row, months indented 36-40 px rows), 2-3 line text rows on phone. Lane I (`lane/v7.4-i-back-to-eur`): manual USD→EUR entry in Add conversion (owner: important).
