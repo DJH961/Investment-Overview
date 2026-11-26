@@ -43,6 +43,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   no longer read for matched deposits (P19).
 
 ### Fixed
+- Currency › Impact: the 1W chart skips closed-market hours like the Overview chart.
 - The browser tab title is always "Investment Overview"; it never shows the portfolio
   value or day change (those stayed in browser history).
 - Market chip: "Closed until Fri 3:30 PM", shortening to "Closed until Fri" and then

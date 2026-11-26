@@ -25,7 +25,7 @@ import { toNum } from "../../../../lib/queries/portfolio";
 import type { CurrencyEffectDto, EffectBarDto, EffectRecordDto, HoldingEffectDto } from "../../../../lib/queries/currencyEffect";
 import { useTimeZone } from "../../../../lib/timezone";
 import { contextUntilMs, fractionTone, pctText, ppText, spanOf } from "../../numbers";
-import { compactSigned, gapWords, monthShort, periodLabel, ppDirection, ppFlat, ppSize, RETURNS_TIP } from "./impactFormat";
+import { compactSigned, gapWords, monthShort, periodLabel, ppDirection, ppFlat, ppSize, RETURNS_TIP, sessionsFromTimes } from "./impactFormat";
 import { CurrencyBar, InvestingHeadline } from "./ImpactInvesting";
 
 type Kind = "tailwind" | "headwind" | "neutral";
@@ -239,6 +239,9 @@ export function ImpactHero({ data, range, figures = [] }: { data: CurrencyEffect
   const tooltipTimeFormat = (t: number) =>
     !intraday ? formatDate(new Date(t), "medium") : range === "1d" ? formatTime(new Date(t), timeZone) : formatDayTime(t, timeZone);
 
+  // 1W: the Overview's session axis, so nights and the weekend do not show as flat stretches.
+  const sessions = useMemo(() => (intraday && range === "1w" ? sessionsFromTimes(pts.map((p) => Date.parse(p.t))) : []), [intraday, range, pts]);
+
   const gapLead = isGapLead(data);
   // The chart only says something when the rate moved this side's book.
   const showChart = pts.length > 1 && !gapLead && (!inv || inv.deposit_count > 0);
@@ -259,7 +262,8 @@ export function ImpactHero({ data, range, figures = [] }: { data: CurrencyEffect
             return c === undefined || c === null ? null : `Currency ${formatMoney(c, ccy, { signed: true, digits: 0 })}`;
           }}
           valueFormat={chartMoneyFormat(ccy, "axis")}
-          xMode={intraday && range === "1d" ? "time" : "date"}
+          xMode={intraday && range === "1d" ? "time" : sessions.length ? "session" : "date"}
+          sessions={sessions}
           shade={before ? [before] : undefined}
           timeFormat={timeFormat}
           tooltipTimeFormat={tooltipTimeFormat}
