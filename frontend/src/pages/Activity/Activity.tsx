@@ -1,5 +1,5 @@
 import { Inbox } from "lucide-react";
-import { useCallback, useMemo } from "react";
+import { type ReactNode, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
@@ -28,6 +28,8 @@ import { toNum } from "../../lib/queries/portfolio";
 import { useShellStatus } from "../../lib/shell";
 import { usePersistentState, type Validator } from "../../lib/usePersistentState";
 import { Maybe } from "../Periods/Maybe";
+import { useIsPhone } from "../../lib/useMediaQuery";
+import { PhoneActivityList, type PhoneActivityItem } from "./PhoneActivity";
 import "./Activity.scss";
 
 type Tab = "contributions" | "dividends";
@@ -63,6 +65,7 @@ function ImportButton() {
 
 export function Activity() {
   const { currency } = usePrefs();
+  const phone = useIsPhone();
   const other = currency === "EUR" ? "USD" : "EUR";
   const [tab, setTab] = usePersistentState<Tab>("activity.tab", "contributions", oneOf(TABS) as Validator<Tab>);
   const [accountPref, setAccount] = usePersistentState<string>("activity.account", ALL);
@@ -116,7 +119,13 @@ export function Activity() {
   };
 
   const depositColumns: Column<DepositRowDto>[] = [
-    { key: "date", header: "Date", primary: true, sortValue: (r) => r.date, cell: (r) => formatDate(r.date) },
+    {
+      key: "date",
+      header: "Date",
+      primary: true,
+      sortValue: (r) => r.date,
+      cell: (r) => formatDate(r.date),
+    },
     {
       key: "kind",
       header: "Kind",
@@ -124,7 +133,13 @@ export function Activity() {
       sortValue: (r) => r.kind,
       cell: (r) => <span className="activity-page__kind">{r.kind.replace("_", " ")}</span>,
     },
-    { key: "account", header: "Account", phone: "sub", sortValue: (r) => r.account, cell: (r) => r.account },
+    {
+      key: "account",
+      header: "Account",
+      phone: "sub",
+      sortValue: (r) => r.account,
+      cell: (r) => r.account,
+    },
     {
       key: "description",
       header: "Description",
@@ -171,35 +186,92 @@ export function Activity() {
         .sort((a, b) => b - a)
         .map((y) => ({ value: String(y), label: String(y) })),
     ];
-    const s = data.summary as typeof data.summary & { cashed_out?: string | null; cashed_out_eur?: string | null };
-    const so = data.summary_other as typeof data.summary_other & { cashed_out?: string | null; cashed_out_eur?: string | null };
-    const cashedOutEur = toNum((data as typeof data & { cashed_out_eur?: string | null }).cashed_out_eur ?? s.cashed_out_eur);
+    const s = data.summary as typeof data.summary & {
+      cashed_out?: string | null;
+      cashed_out_eur?: string | null;
+    };
+    const so = data.summary_other as typeof data.summary_other & {
+      cashed_out?: string | null;
+      cashed_out_eur?: string | null;
+    };
+    const cashedOutEur = toNum(
+      (data as typeof data & { cashed_out_eur?: string | null }).cashed_out_eur ?? s.cashed_out_eur,
+    );
     const cashedOut = toNum(s.cashed_out);
     const showCashedOut = (cashedOutEur !== null && cashedOutEur > 0) || (cashedOut !== null && cashedOut > 0);
     const otherHint = (v: string | null | undefined) =>
       toNum(v) === null ? undefined : <Money amount={toNum(v)} currency={other} />;
+    const cell = (label: string, v: string | null | undefined, o: string | null | undefined, node?: ReactNode) => (
+      <div className="activity-phone__cell">
+        <dt className="activity-phone__label">{label}</dt>
+        <dd className="activity-phone__cell-main">{node ?? <Money amount={toNum(v)} currency={currency} />}</dd>
+        {toNum(o) !== null && (
+          <dd className="activity-phone__cell-second">
+            <Money amount={toNum(o)} currency={other} />
+          </dd>
+        )}
+      </div>
+    );
+    const items: PhoneActivityItem[] = [...data.rows]
+      .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+      .map((r) => ({
+        key: rowKey(r),
+        date: r.date,
+        title: formatDate(r.date),
+        sub: r.account,
+        amount: r.amount,
+        amountOther: r.amount_other,
+        pill: r.kind.replace("_", " "),
+        pillSub: r.rate_source ? (r.rate_source === "ecb" ? "ECB rate" : "Converted") : undefined,
+        details: [
+          ...(r.description ? [{ label: "Description", value: r.description }] : []),
+          {
+            label: "Native",
+            value: <Money amount={toNum(r.amount_native)} currency={r.currency} />,
+          },
+          ...(r.rate_source ? [{ label: "Paid from", value: paidFrom(r) }] : []),
+        ],
+      }));
     return (
       <div className="activity-page__stack">
-        <div className="activity-page__kpis">
-          <KpiTile label="Total" value={money(s.total_contrib)} secondary={otherHint(so.total_contrib)} />
-          <KpiTile label="This year" value={money(s.ytd_contrib)} secondary={otherHint(so.ytd_contrib)} />
-          <KpiTile label="This month" value={money(s.mtd_contrib)} secondary={otherHint(so.mtd_contrib)} />
-          {showCashedOut && (
-            <KpiTile
-              label="Cashed out"
-              value={cashedOut !== null ? money(s.cashed_out) : <Money amount={cashedOutEur} currency="EUR" />}
-              secondary={cashedOut !== null ? otherHint(so.cashed_out) : undefined}
-            />
-          )}
-        </div>
-        <div className="activity-page__filters">
+        {phone ? (
+          <dl className="activity-phone__summary">
+            {cell("Total", s.total_contrib, so.total_contrib)}
+            {cell("This year", s.ytd_contrib, so.ytd_contrib)}
+            {cell("This month", s.mtd_contrib, so.mtd_contrib)}
+            {showCashedOut &&
+              cell(
+                "Cashed out",
+                s.cashed_out,
+                so.cashed_out,
+                cashedOut !== null ? undefined : <Money amount={cashedOutEur} currency="EUR" />,
+              )}
+          </dl>
+        ) : (
+          <div className="activity-page__kpis">
+            <KpiTile label="Total" value={money(s.total_contrib)} secondary={otherHint(so.total_contrib)} />
+            <KpiTile label="This year" value={money(s.ytd_contrib)} secondary={otherHint(so.ytd_contrib)} />
+            <KpiTile label="This month" value={money(s.mtd_contrib)} secondary={otherHint(so.mtd_contrib)} />
+            {showCashedOut && (
+              <KpiTile
+                label="Cashed out"
+                value={cashedOut !== null ? money(s.cashed_out) : <Money amount={cashedOutEur} currency="EUR" />}
+                secondary={cashedOut !== null ? otherHint(so.cashed_out) : undefined}
+              />
+            )}
+          </div>
+        )}
+        <div className={phone ? "activity-phone__filters" : "activity-page__filters"}>
           <Select
             ariaLabel="Account"
             value={account}
             onValueChange={setAccount}
             options={[
-              { value: ALL, label: "All accounts" },
-              ...(accounts.data ?? []).map((a) => ({ value: String(a.id), label: a.account_label })),
+              { value: ALL, label: phone ? "Accounts" : "All accounts" },
+              ...(accounts.data ?? []).map((a) => ({
+                value: String(a.id),
+                label: a.account_label,
+              })),
             ]}
           />
           <Select ariaLabel="Kind" value={kind} onValueChange={setKind} options={KINDS} />
@@ -213,6 +285,16 @@ export function Activity() {
               data.years.length === 0 ? "Import a broker file to see your deposits here." : "Try different filters."
             }
             action={data.years.length === 0 ? <ImportButton /> : undefined}
+          />
+        ) : phone ? (
+          <PhoneActivityList
+            items={items}
+            currency={currency}
+            totalLabel="Net"
+            groupBy="year"
+            totals={Object.fromEntries(
+              data.by_year.map((y) => [String(y.year), { amount: y.total, other: y.total_other }]),
+            )}
           />
         ) : (
           data.by_year.map((y, i) => (
@@ -250,7 +332,13 @@ export function Activity() {
     if (d.rows.length === 0) return <EmptyState icon={<Inbox aria-hidden />} title="No dividends yet" />;
     const hint = (v: string) => <Money amount={toNum(v)} currency={other} />;
     const holdingColumns: Column<(typeof d.by_holding)[number]>[] = [
-      { key: "symbol", header: "Holding", primary: true, sortValue: (r) => r.symbol, cell: (r) => <strong>{r.symbol}</strong> },
+      {
+        key: "symbol",
+        header: "Holding",
+        primary: true,
+        sortValue: (r) => r.symbol,
+        cell: (r) => <strong>{r.symbol}</strong>,
+      },
       {
         key: "life",
         header: "Lifetime",
@@ -266,7 +354,13 @@ export function Activity() {
         sortValue: (r) => toNum(r.ttm),
         cell: (r) => money(r.ttm, r.ttm_other),
       },
-      { key: "count", header: "Payments", align: "right", sortValue: (r) => r.count, cell: (r) => r.count },
+      {
+        key: "count",
+        header: "Payments",
+        align: "right",
+        sortValue: (r) => r.count,
+        cell: (r) => r.count,
+      },
       {
         key: "last",
         header: "Last paid",
@@ -276,7 +370,13 @@ export function Activity() {
       },
     ];
     const yearColumns: Column<(typeof d.by_year)[number]>[] = [
-      { key: "year", header: "Year", primary: true, sortValue: (r) => r.year, cell: (r) => r.year },
+      {
+        key: "year",
+        header: "Year",
+        primary: true,
+        sortValue: (r) => r.year,
+        cell: (r) => r.year,
+      },
       {
         key: "div",
         header: "Dividends",
@@ -285,13 +385,39 @@ export function Activity() {
         sortValue: (r) => toNum(r.dividends),
         cell: (r) => money(r.dividends, r.dividends_other),
       },
-      { key: "int", header: "Interest", align: "right", cell: (r) => money(r.interest, r.interest_other) },
+      {
+        key: "int",
+        header: "Interest",
+        align: "right",
+        cell: (r) => money(r.interest, r.interest_other),
+      },
     ];
     const paymentColumns: Column<DividendRowDto>[] = [
-      { key: "date", header: "Date", primary: true, sortValue: (r) => r.date, cell: (r) => formatDate(r.date) },
-      { key: "symbol", header: "Holding", phone: "sub", sortValue: (r) => r.symbol, cell: (r) => r.symbol || "–" },
-      { key: "kind", header: "Type", cell: (r) => KIND_LABEL[r.kind] ?? r.kind },
-      { key: "account", header: "Account", phone: "hide", cell: (r) => r.account },
+      {
+        key: "date",
+        header: "Date",
+        primary: true,
+        sortValue: (r) => r.date,
+        cell: (r) => formatDate(r.date),
+      },
+      {
+        key: "symbol",
+        header: "Holding",
+        phone: "sub",
+        sortValue: (r) => r.symbol,
+        cell: (r) => r.symbol || "–",
+      },
+      {
+        key: "kind",
+        header: "Type",
+        cell: (r) => KIND_LABEL[r.kind] ?? r.kind,
+      },
+      {
+        key: "account",
+        header: "Account",
+        phone: "hide",
+        cell: (r) => r.account,
+      },
       {
         key: "native",
         header: "Native",
@@ -312,7 +438,11 @@ export function Activity() {
     return (
       <div className="activity-page__stack">
         <div className="activity-page__kpis">
-          <KpiTile label="Lifetime dividends" value={money(d.lifetime_total)} secondary={hint(d.lifetime_total_other)} />
+          <KpiTile
+            label="Lifetime dividends"
+            value={money(d.lifetime_total)}
+            secondary={hint(d.lifetime_total_other)}
+          />
           <KpiTile label="Last 12 months" value={money(d.ttm_total)} secondary={hint(d.ttm_total_other)} />
           <KpiTile
             label="Yield (TTM)"
@@ -338,21 +468,47 @@ export function Activity() {
             defaultSort={{ key: "year", direction: "desc" }}
           />
         </Card>
-        <Card
-          title="All payments"
-          subtitle={`${d.rows.length} payment${d.rows.length === 1 ? "" : "s"}`}
-          collapsibleId="activity.divs.all"
-          defaultOpen={false}
-          flush
-        >
-          <DataTable
-            caption="All dividend payments"
-            columns={paymentColumns}
-            rows={d.rows}
-            rowKey={(r) => String(r.id ?? `${r.date}-${r.symbol}-${r.kind}`)}
-            defaultSort={{ key: "date", direction: "desc" }}
+        {phone && (
+          <PhoneActivityList
+            totalLabel="Received"
+            currency={currency}
+            items={[...d.rows]
+              .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+              .map((r) => ({
+                key: String(r.id ?? `${r.date}-${r.symbol}-${r.kind}`),
+                date: r.date,
+                title: r.symbol || "–",
+                sub: formatDate(r.date),
+                amount: r.amount,
+                amountOther: r.amount_other,
+                pill: KIND_LABEL[r.kind] ?? r.kind,
+                details: [
+                  { label: "Account", value: r.account },
+                  {
+                    label: "Native",
+                    value: <Money amount={toNum(r.amount_native)} currency={r.currency} />,
+                  },
+                ],
+              }))}
           />
-        </Card>
+        )}
+        {!phone && (
+          <Card
+            title="All payments"
+            subtitle={`${d.rows.length} payment${d.rows.length === 1 ? "" : "s"}`}
+            collapsibleId="activity.divs.all"
+            defaultOpen={false}
+            flush
+          >
+            <DataTable
+              caption="All dividend payments"
+              columns={paymentColumns}
+              rows={d.rows}
+              rowKey={(r) => String(r.id ?? `${r.date}-${r.symbol}-${r.kind}`)}
+              defaultSort={{ key: "date", direction: "desc" }}
+            />
+          </Card>
+        )}
       </div>
     );
   })();
@@ -375,7 +531,11 @@ export function Activity() {
         }
       />
       {active.isError && !active.data ? (
-        <ErrorState title="Could not load activity" message={active.error.message} onRetry={() => void active.refetch()} />
+        <ErrorState
+          title="Could not load activity"
+          message={active.error.message}
+          onRetry={() => void active.refetch()}
+        />
       ) : active.isPending ? (
         <Skeleton height="14rem" />
       ) : tab === "contributions" ? (
