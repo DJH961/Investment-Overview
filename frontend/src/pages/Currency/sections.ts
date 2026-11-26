@@ -70,7 +70,7 @@ export const CURRENCY_SECTIONS: CurrencySectionDef[] = [
     ],
   },
   // Where your dollars are now and where the currency effect came from (7.4 journey).
-  { id: "dollars", label: "Your dollars", Component: Dollars },
+  { id: "dollars", label: "USD cash & holdings", Component: Dollars },
   // Your dollars as a position: what you hold, the rate you paid, the trend.
   { id: "exposure", label: "Exposure", Component: Dollar },
   // Today's holdings valued at other rates: slider, stress table, cushion.

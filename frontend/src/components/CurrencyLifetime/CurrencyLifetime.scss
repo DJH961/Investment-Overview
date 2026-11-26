@@ -9,16 +9,7 @@
   &__grid {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    column-gap: var(--space-8);
     margin: 0;
-
-    @container currency-lifetime (min-width: 420px) {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    @container currency-lifetime (min-width: 760px) {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
   }
 
   &__stat {
@@ -59,7 +50,8 @@
       }
     }
 
-    // The lead: the euro's effect on the return, across the full row, big.
+    // The lead: the euro's effect on the return, first, with the largest figure. Narrow
+    // (phone): stacked and left; wider: the same label-left / value-right row as the rest.
     &:nth-child(3) {
       grid-column: 1 / -1;
       grid-template-columns: minmax(0, 1fr);
@@ -75,9 +67,17 @@
         @include m.display(var(--font-size-2xl));
         font-weight: var(--font-weight-figure);
         text-align: left;
+      }
 
-        @container currency-lifetime (min-width: 420px) {
+      @container currency-lifetime (min-width: 420px) {
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas:
+          "label value"
+          "sub value";
+
+        > .currency-lifetime__value {
           font-size: var(--font-size-3xl);
+          text-align: right;
         }
       }
     }

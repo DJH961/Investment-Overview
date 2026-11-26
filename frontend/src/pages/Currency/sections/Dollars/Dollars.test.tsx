@@ -46,13 +46,13 @@ function mount(currency: "EUR" | "USD", both: JourneyBoth) {
   return render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <MemoryRouter>
-        <Dollars id="dollars" label="Your dollars" currency={currency} range="all" />
+        <Dollars id="dollars" label="USD cash & holdings" currency={currency} range="all" />
       </MemoryRouter>
     </QueryClientProvider>,
   );
 }
 
-describe("Currency › Your dollars", () => {
+describe("Currency › USD cash & holdings", () => {
   it("renders the four stats, stage bridge, back-in-euros summary, and idle callout in EUR view", async () => {
     mount("EUR", { eur: EUR_VIEW, usd: USD_VIEW });
     expect(await screen.findByText("USD account")).toBeInTheDocument();

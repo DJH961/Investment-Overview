@@ -237,7 +237,7 @@ export function Dollars({ id, label, currency }: CurrencySectionComponentProps) 
     >
       {view ? (
         <>
-          <StatStrip four label="Your dollars at a glance" items={dollarStats(view, usdView)} className="dollars__strip" />
+          <StatStrip four label="USD cash & holdings at a glance" items={dollarStats(view, usdView)} className="dollars__strip" />
           {usdView ? null : <JourneyBridgeCard view={view} />}
           <IdleCallout view={view} />
         </>

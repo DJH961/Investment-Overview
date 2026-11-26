@@ -31,6 +31,13 @@
     &:last-child {
       border-bottom: 0;
     }
+
+    // Desktop: the actions sit beside the plan, right-aligned, instead of a second row.
+    @include m.desktop {
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      column-gap: var(--space-6);
+    }
   }
 
   &__plan-main {
@@ -95,6 +102,10 @@
     flex-wrap: nowrap;
     gap: var(--space-1);
     margin-left: calc(var(--space-7) + var(--space-3));
+
+    @include m.desktop {
+      margin-left: 0;
+    }
 
     > * {
       flex: 0 1 auto;
