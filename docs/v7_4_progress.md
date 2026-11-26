@@ -56,3 +56,5 @@ plus its last `Next:` line.
 - Diagnostics _check_frozen_legs still reads frozen legs (drop at release).
 - Date inputs show the browser locale (dd.mm.yyyy) not en-US.
 - Flaky hypothesis test test_tiingo_fallback_backoff (pre-existing).
+- Add conversion dialog is EUR→USD only: USD→EUR ("Back to euros") rows come only from statement import; no manual entry (owner asked 2026-11-26).
+- Owner has NOT reviewed 7.4 shots yet (beyond antigravity dialogs): full shot review of all 7.4 views is still to do before release.
