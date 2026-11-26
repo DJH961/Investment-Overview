@@ -90,6 +90,13 @@ function duplicateOf(c: FxConversion): Partial<FormState> {
   return { ...fromConversion(c), date: "" };
 }
 
+type ConversionDirection = "to_usd" | "to_eur";
+
+const DIRECTION_OPTIONS: { value: ConversionDirection; label: string }[] = [
+  { value: "to_usd", label: "EUR \u2192 USD" },
+  { value: "to_eur", label: "USD \u2192 EUR" },
+];
+
 type EurFeeMode = "excluding" | "including";
 
 const EUR_FEE_MODE_OPTIONS: { value: EurFeeMode; label: string }[] = [
@@ -208,9 +215,13 @@ export function ConversionDialog({ open, onOpenChange, editing, prefill }: Conve
   const { toast } = useToast();
   const [form, setForm] = useState<FormState>(editing ? fromConversion(editing) : { ...EMPTY, ...prefill });
   const [feeMode, setFeeMode] = useState<EurFeeMode>("excluding");
+  const [direction, setDirection] = useState<ConversionDirection>(
+    editing?.from_ccy === "USD" && editing?.to_ccy === "EUR" ? "to_eur" : "to_usd",
+  );
+  const back = direction === "to_eur";
   const [error, setError] = useState<string | null>(null);
   const reference = useFxReference(form.date);
-  const preview = computeEurPreview(form, feeMode);
+  const preview = computeEurPreview(form, back ? "excluding" : feeMode);
   const ecb = reference.data?.published && reference.data.ecb_rate ? Number(reference.data.ecb_rate) : null;
   const usedBy = editing?.used_by.length ?? 0;
   const set = (k: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -229,12 +240,16 @@ export function ConversionDialog({ open, onOpenChange, editing, prefill }: Conve
       setError("Fees must be a number, like 2,50 or 2.50.");
       return;
     }
-    if (feeMode === "including" && fees !== null && compareDecimals(eur, fees) <= 0) {
+    if (!back && feeMode === "including" && fees !== null && compareDecimals(eur, fees) <= 0) {
       setError("Fees must be less than the total EUR paid.");
       return;
     }
-    const eurSent = feeMode === "including" && fees !== null && Number(fees) > 0 ? subtractDecimals(eur, fees) : eur;
-    const kept = form.kept.trim() === "" ? "0" : toApiDecimal(form.kept);
+    const eurSent = !back && feeMode === "including" && fees !== null && Number(fees) > 0 ? subtractDecimals(eur, fees) : eur;
+    if (back && fees !== null && compareDecimals(eur, fees) <= 0) {
+      setError("Fees must be less than the EUR received.");
+      return;
+    }
+    const kept = back || form.kept.trim() === "" ? "0" : toApiDecimal(form.kept);
     if (kept === null || Number(kept) < 0 || Number(kept) > Number(usd)) {
       setError("Kept dollars must be between 0 and the USD received.");
       return;
@@ -251,9 +266,9 @@ export function ConversionDialog({ open, onOpenChange, editing, prefill }: Conve
           kept_usd: kept,
           note: form.note || null,
           provider: form.provider || null,
-          // 7.3 matches EUR→USD only; the server rejects any other pair.
-          from_ccy: "EUR",
-          to_ccy: "USD",
+          // to_eur rows store eur_sent = euros received, usd_received = dollars sent.
+          from_ccy: back ? "USD" : "EUR",
+          to_ccy: back ? "EUR" : "USD",
         },
       },
       {
@@ -271,7 +286,11 @@ export function ConversionDialog({ open, onOpenChange, editing, prefill }: Conve
       open={open}
       onOpenChange={onOpenChange}
       title={editing ? "Edit conversion" : "Add conversion"}
-      description="Record a real EUR to USD exchange (Wise, Revolut, your bank). EUR returns use the rate you actually got."
+      description={
+        back
+          ? "Record dollars you converted back to euros (Wise, Revolut, your bank). Fees are taken out of the euros received."
+          : "Record a real EUR to USD exchange (Wise, Revolut, your bank). EUR returns use the rate you actually got."
+      }
       footer={
         <>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
@@ -284,7 +303,33 @@ export function ConversionDialog({ open, onOpenChange, editing, prefill }: Conve
       }
     >
       <form id="conversion-form" className="conversion-form" onSubmit={submit} noValidate>
+        {!editing && (
+          <div className="conversion-form__mode">
+            <span className="conversion-form__mode-label">Direction</span>
+            <SegmentedControl<ConversionDirection>
+              size="sm"
+              ariaLabel="Conversion direction"
+              options={DIRECTION_OPTIONS}
+              value={direction}
+              onChange={(next) => {
+                setDirection(next);
+                setError(null);
+              }}
+            />
+          </div>
+        )}
         <Field label="Date">{(c) => <Input {...c} type="date" value={form.date} onChange={set("date")} />}</Field>
+        {back ? (
+          <>
+            <Field label="USD sent">
+              {(c) => <Input {...c} inputMode="decimal" value={form.usd} onChange={set("usd")} />}
+            </Field>
+            <Field label="EUR received (before fees)">
+              {(c) => <Input {...c} inputMode="decimal" value={form.eur} onChange={set("eur")} />}
+            </Field>
+          </>
+        ) : (
+        <>
         <div className="conversion-form__eur-group">
           <div className="conversion-form__mode">
             <span className="conversion-form__mode-label">EUR amount is</span>
@@ -309,12 +354,16 @@ export function ConversionDialog({ open, onOpenChange, editing, prefill }: Conve
         <Field label="USD received">
           {(c) => <Input {...c} inputMode="decimal" value={form.usd} onChange={set("usd")} />}
         </Field>
+        </>
+        )}
         <Field label="Fees (EUR, optional)">
           {(c) => <Input {...c} inputMode="decimal" value={form.fees} onChange={set("fees")} />}
         </Field>
-        <Field label="Kept in your USD account (optional)" hint="Dollars you did not send on to the broker.">
-          {(c) => <Input {...c} inputMode="decimal" value={form.kept} onChange={set("kept")} />}
-        </Field>
+        {!back && (
+          <Field label="Kept in your USD account (optional)" hint="Dollars you did not send on to the broker.">
+            {(c) => <Input {...c} inputMode="decimal" value={form.kept} onChange={set("kept")} />}
+          </Field>
+        )}
         <Field label="Provider (optional)">
           {(c) => (
             <Select
@@ -327,7 +376,7 @@ export function ConversionDialog({ open, onOpenChange, editing, prefill }: Conve
           )}
         </Field>
         <Field label="Note (optional)">{(c) => <Input {...c} value={form.note} onChange={set("note")} />}</Field>
-        {feeMode === "including" && (preview.convertedEur !== null || preview.feesTooLarge) && (
+        {!back && feeMode === "including" && (preview.convertedEur !== null || preview.feesTooLarge) && (
           <p className="conversion-form__rate" data-testid="eur-breakdown">
             {preview.feesTooLarge ? (
               <>
@@ -341,12 +390,18 @@ export function ConversionDialog({ open, onOpenChange, editing, prefill }: Conve
             )}
           </p>
         )}
-        {feeMode === "excluding" && preview.hasFees && preview.totalPaidEur !== null && (
+        {!back && feeMode === "excluding" && preview.hasFees && preview.totalPaidEur !== null && (
           <p className="conversion-form__rate" data-testid="eur-breakdown">
             Total paid (incl. fees): <strong>{formatMoney(Number(preview.totalPaidEur), "EUR")}</strong>
           </p>
         )}
-        <p className="conversion-form__rate" data-testid="rate-line">
+        {back && (
+          <p className="conversion-form__rate" data-testid="rate-line">
+            Effective rate: <strong>{preview.convertedRate !== null ? formatNumber(preview.convertedRate, 4) : "\u2013"}</strong> USD
+            per EUR
+          </p>
+        )}
+        {!back && (<p className="conversion-form__rate" data-testid="rate-line">
           {preview.hasFees && preview.convertedRate !== null && preview.allInRate !== null ? (
             <>
               Converted rate: <strong>{formatNumber(preview.convertedRate, 4)}</strong> · All-in rate:{" "}
@@ -358,7 +413,7 @@ export function ConversionDialog({ open, onOpenChange, editing, prefill }: Conve
               per EUR
             </>
           )}
-        </p>
+        </p>)}
         {/^\d{4}-\d{2}-\d{2}$/.test(form.date) && reference.data && (
           <p className="conversion-form__rate" data-testid="ecb-line">
             {ecb !== null
@@ -366,7 +421,7 @@ export function ConversionDialog({ open, onOpenChange, editing, prefill }: Conve
                   reference.data.ecb_rate_date && reference.data.ecb_rate_date !== form.date
                     ? `ECB ${formatNumber(ecb, 4)} (${weekdayDate(reference.data.ecb_rate_date)}, the last fixing before this day)`
                     : `ECB on ${formatDate(form.date)}: ${formatNumber(ecb, 4)}`,
-                  offEcbText(preview.allInRate, ecb),
+                  offEcbText(back ? preview.convertedRate : preview.allInRate, ecb),
                 ]
                   .filter(Boolean)
                   .join(" · ")

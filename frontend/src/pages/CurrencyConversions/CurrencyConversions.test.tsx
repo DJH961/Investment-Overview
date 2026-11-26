@@ -48,6 +48,38 @@ describe("ConversionDialog numbers", () => {
     expect(bodies[0]).toMatchObject({ eur_sent: "1000.50", usd_received: "1200.25", date: "2026-01-05" });
   });
 
+  it("records a USD to EUR conversion with the reverse currency pair", async () => {
+    const bodies: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        if (init?.method === "POST") bodies.push(JSON.parse(String(init.body)));
+        return new Response("{}", { status: 200 });
+      }),
+    );
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ToastProvider>
+          <ConversionDialog open onOpenChange={() => undefined} editing={null} prefill={{ date: "2026-01-05" }} />
+        </ToastProvider>
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByRole("radio", { name: "USD → EUR" }));
+    fireEvent.change(screen.getByLabelText("USD sent"), { target: { value: "1100" } });
+    fireEvent.change(screen.getByLabelText("EUR received (before fees)"), { target: { value: "1000" } });
+    fireEvent.change(screen.getByLabelText("Fees (EUR, optional)"), { target: { value: "2,50" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({
+      eur_sent: "1000",
+      usd_received: "1100",
+      fees_eur: "2.50",
+      kept_usd: "0",
+      from_ccy: "USD",
+      to_ccy: "EUR",
+    });
+  });
+
   it("submits eur_sent net of fees in Including fees mode without float drift", async () => {
     const bodies: unknown[] = [];
     vi.stubGlobal(
