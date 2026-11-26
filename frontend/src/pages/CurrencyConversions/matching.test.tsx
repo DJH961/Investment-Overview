@@ -40,6 +40,7 @@ const conv = (id: number, date: string, usd = "1000"): FxConversion =>
     from_ccy: "EUR",
     is_estimate: false,
     to_ccy: "USD",
+    direction: "to_usd",
     effective_rate: "1.1111",
   }) as FxConversion;
 

@@ -38,6 +38,10 @@ class RecurringPlan(Base):
             "provider IS NULL OR provider IN ('wise', 'revolut', 'other')",
             name="ck_recurring_plans_provider",
         ),
+        CheckConstraint(
+            "currency IS NULL OR currency IN ('EUR', 'USD')",
+            name="ck_recurring_plans_currency",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -56,9 +60,10 @@ class RecurringPlan(Base):
     generated_through: Mapped[date | None] = mapped_column(Date)
     # Buy and deposit plans: the broker account (a buy plan's holdings are its legs).
     account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"))
-    #: Deposit: USD per run; conversion: EUR sent per run. Buy plans use their legs.
+    #: Deposit: USD per run; conversion: EUR sent or USD arriving per run. Buy plans use their legs.
     amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
     # Conversion plan.
+    currency: Mapped[str | None] = mapped_column(String(3))
     provider: Mapped[str | None] = mapped_column(String(16))
     expected_fee: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
     created_at: Mapped[datetime] = mapped_column(

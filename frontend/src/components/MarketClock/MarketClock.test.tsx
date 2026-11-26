@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { clockView, formatCountdown, splitCountdown, trackProgress, type ClockFreshness } from "./MarketClock";
+import { clockLabel, clockView, formatCountdown, splitCountdown, trackProgress, type ClockFreshness } from "./MarketClock";
 
 vi.mock("../../lib/timezone", () => ({ useTimeZone: () => "UTC" }));
 
@@ -51,8 +51,19 @@ describe("clockView", () => {
     expect(far).toMatch(/^opens Wed 13:30$/);
   });
 
-  it("holiday is named, never shown by color alone", () => {
+  it("holiday is named, never shown by color alone, including in the clock label", () => {
     expect(clockView({ ...closed, market_state: "holiday" }, new Date("2026-07-01T11:00:00Z"), "UTC").state).toBe("Holiday");
+    const lbl = clockLabel({
+      open: false,
+      remaining: 22.5 * 3_600_000,
+      bellRang: null,
+      phase: "holiday",
+      target: "2026-11-27T14:30:00Z",
+      now: new Date("2026-11-26T16:00:00Z"),
+      timeZone: "UTC",
+    });
+    expect(lbl.long).toBe("Holiday · opens Fri 14:30");
+    expect(lbl.short).toBe("Holiday · Fri 14:30");
   });
 
   it("a target in the past never shows a negative time", () => {

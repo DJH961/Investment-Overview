@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Button } from "../../components/Button";
 import { Field } from "../../components/Field";
 import { Input } from "../../components/Input";
+import { SegmentedControl } from "../../components/SegmentedControl";
 import { Select } from "../../components/Select";
 import { useToast } from "../../components/Toast";
 import { formatMoney } from "../../lib/format";
@@ -56,12 +57,14 @@ export interface PlanFormProps {
   depositTotal?: number;
   /** Reports the cadence as it is edited (the setup flow re-splits the buys when it changes). */
   onCadenceChange?: (c: { unit: string; every: number; anchor: number | null }) => void;
+  /** The per-run dollar amount as typed (deposit amount, or the buy legs summed). */
+  onTotalChange?: (total: number) => void;
   onSaved: (body?: RecurringPlanInput) => void;
   onSkip?: () => void;
 }
 
 /** One form for the three plan kinds (the setup flow and the edit sheet both use it). */
-export function PlanForm({ kind, id, initial, hideKind, hideActions, formId, depositTotal, onCadenceChange, saveLabel = "Save plan", skipLabel, onSaved, onSkip }: PlanFormProps) {
+export function PlanForm({ kind, id, initial, hideKind, hideActions, formId, depositTotal, onCadenceChange, onTotalChange, saveLabel = "Save plan", skipLabel, onSaved, onSkip }: PlanFormProps) {
   const accounts = useAccounts();
   const instruments = useInstruments();
   const save = useSavePlan();
@@ -82,6 +85,7 @@ export function PlanForm({ kind, id, initial, hideKind, hideActions, formId, dep
       : [{ instrumentId: "", mode: "amount", value: "" }],
   );
   const [amount, setAmount] = useState(plain(initial?.amount));
+  const [currency, setCurrency] = useState<"EUR" | "USD">(initial?.currency === "USD" ? "USD" : "EUR");
   const [provider, setProvider] = useState<string>(initial?.provider ?? "revolut");
   const [fee, setFee] = useState(plain(initial?.expected_fee));
 
@@ -91,6 +95,11 @@ export function PlanForm({ kind, id, initial, hideKind, hideActions, formId, dep
     // eslint-disable-next-line react-hooks/exhaustive-deps -- report only when the cadence itself changes
   }, [unit, every, anchorNum]);
   const legsTotal = legs.reduce((sum, l) => sum + (l.mode === "amount" ? Number(l.value) || 0 : 0), 0);
+  const typedTotal = kind === "buy" ? legsTotal : Number(amount) || 0;
+  useEffect(() => {
+    onTotalChange?.(typedTotal);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- report only when the amount changes
+  }, [typedTotal]);
   const fmtUsd = (n: number) => formatMoney(n, "USD", { digits: Number.isInteger(n) ? 0 : 2 });
 
   const accountOptions = (accounts.data ?? []).map((a) => ({ value: String(a.id), label: `${brokerName(a.broker)} ${a.account_label}` }));
@@ -116,6 +125,7 @@ export function PlanForm({ kind, id, initial, hideKind, hideActions, formId, dep
                 shares: l.mode === "shares" ? l.value : null,
               }))
           : [],
+      currency: kind === "conversion" ? currency : null,
       provider: kind === "conversion" ? (provider as RecurringPlanInput["provider"]) : null,
       expected_fee: kind === "conversion" && fee !== "" ? fee : null,
     };
@@ -146,7 +156,27 @@ export function PlanForm({ kind, id, initial, hideKind, hideActions, formId, dep
           <Field label="Provider">
             {(c) => <Select id={c.id} options={PROVIDER_OPTIONS} value={provider} onValueChange={setProvider} />}
           </Field>
-          <Field label="EUR amount per run">
+          <div className="recurring-page__conv-mode">
+            <span className="recurring-page__conv-mode-label">Amount fixed in</span>
+            <SegmentedControl<"EUR" | "USD">
+              size="sm"
+              ariaLabel="Fixed conversion amount"
+              value={currency}
+              onChange={setCurrency}
+              options={[
+                { value: "EUR", label: "EUR converted" },
+                { value: "USD", label: "USD arriving" },
+              ]}
+            />
+          </div>
+          <Field
+            label={currency === "USD" ? "USD arriving per run" : "EUR amount per run"}
+            hint={
+              currency === "USD"
+                ? "Fixed USD arriving each time; EUR converted follows the exchange rate."
+                : "Fixed EUR converted each time; USD arriving follows the exchange rate."
+            }
+          >
             {(c) => <Input id={c.id} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />}
           </Field>
           <Field label="Expected fee (EUR)" hint="Leave empty to use your last conversion's fee with this provider.">

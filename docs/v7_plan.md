@@ -15,13 +15,16 @@
 > The technical companion, with build notes per push, is
 > [`v7_implementation_notes.md`](v7_implementation_notes.md).
 >
-> **Status (2026-11-25): 7.3.1 is released.** It brings money-maths consistency on the
+> **Status (2026-11-26): 7.4.0 is released.** It brings money-maths consistency on the
 > Currency page (deposit carry counted as currency, one range meaning, EUR | USD side by
 > side, an honest "Mixed", your regular amount instead of €1,000), market open and close
 > end to end, and the dev tools (`npm run shots`, fixture URL switches incl. `?at=` and
 > `?fixtures=nice`, `tools.release`, `scripts/test_changed.py`, `market_clock`).
-> **Next: push 8 (7.4, one rate everywhere).** Owner is on a short break; loose ends to
-> pick up with 7.4:
+> **Next: push 8 (7.4, "Follow your dollars"), planned 2026-11-25 in
+> [`v7_4_plan.md`](v7_4_plan.md), which supersedes push 8 below where they differ.** It covers
+> the whole journey, from conversion to cash-out back to euros, and pulls P8 recaps and P10
+> real return forward from 7.6. 7.5 waits until after the owner's break. Loose ends that
+> came with 7.4:
 > - Transactions' EUR column and per-holding EUR cost still use ECB rates (7.4 scope).
 > - One UI sentence on how the Overview currency card relates to Impact (7.4).
 > - Market moments: no exchange holidays or half days in `?at=` yet.
@@ -1277,6 +1280,57 @@ that push. The P numbers are labels other notes refer to.
 - **Real euro return** (P10). Periods and the recaps show the EUR return after euro-area inflation, from the public HICP series.
 - **One channel for facts** (P9). Email or web push, off by default, only for facts: backup failed, price feed stalled, ledger gap found, a tranche turned long-term.
 - Instrument metadata from the price provider with sector and country allocation; the hand-written risk explanations (§4.5).
+- **The cash-out journey, end to end** (owner, 2026-11-26; moved out of 7.4). 7.4 ships manual
+  USD → EUR conversion entry with native-USD fees, but the journey back to euros is still
+  loose. Build: (a) link a broker withdrawal (already a ledger transaction, already counted
+  by the deposits read model) to the USD → EUR conversion(s) it paid for, from the
+  conversion dialog and the withdrawal row, not only via trail pins; (b) the Cash out page
+  as the home of that journey (withdrawal → USD account → conversion → euros received),
+  with the realized-in-euros result per cash-out; (c) the same view on the Deposits page,
+  so withdrawals sit next to deposits with their onward conversion; (d) recurring/planned
+  cash-outs if the owner wants them. Golden values by hand for the euros realized.
+  Owner on the 7.4 Cash out page: "super weird and odd within our journey and
+  conversions"; leave it in 7.4, but in 7.6 refine it and give it a proper place in the
+  journey (likely the last step after Conversions, not a separate island).
+- **7.4 clean-up** (owner, 2026-11-26; details in `docs/v7_4_progress.md` › open issues):
+  - Middle widths (640-767 px): Conversions, Activity and Transactions still show their old
+    layouts there; give them the approved phone list (or the desktop table) so no width
+    falls between the two.
+  - Periods sorting: the 7.4 redesign dropped column sorting and the phone list has none;
+    bring back a way to sort (e.g. a small sort control: newest/oldest, best/worst growth)
+    that works on phone too.
+  - Date inputs in en-US format, not the browser locale (dd.mm.yyyy).
+  - Realistic (`nice`) fixtures: the Holding Value chart series does not match the
+    holding (≈€313K invested vs €26.5K value, "-112.88%"); fix the fixture and confirm the
+    app is right.
+  - Check "In the pool $0" on Conversions against the cash pool maths.
+  - Tests for the opened phone conversion row with all-in ≠ rate and kept-in-USD > 0, and
+    for the Recurring setup step-3 note ("buys exceed deposits").
+  - Direction filters (to USD / to EUR) in fx_cost, recurring, currency_deposits and the
+    conversions API; drop the frozen EUR legs and diagnostics `_check_frozen_legs` together.
+  - Stabilize the flaky `test_tiingo_fallback_backoff` hypothesis test.
+  - Multi-day intraday fixtures (owner, 2026-11-26): the stress and `nice` fixture sets
+    hold intraday bars for one session only, so no 1W chart (Overview, Impact, rate,
+    holding) can be checked in shots. Generate at least 7 calendar days of synthetic
+    intraday bars with real session shapes: nights, a weekend, a US holiday, an early
+    close, pre/post-market, a feed gap, with per-instant FX next to each sample. Make
+    `npm run shots` and the overflow check cover 1W on these pages, and add e2e checks
+    that the 1W charts show session dividers and no flat closed-market stretches.
+  - Currency › Impact 1D/1W, properly (owner, 2026-11-26): 7.4 only hides closed-market
+    stretches in the client. Do it with the backend: serve the Impact intraday series
+    session-aware like the Overview value series (samples only inside trading sessions,
+    session boundaries marked, per-instant FX stored next to each sample), so the chart,
+    tooltips and the Impact figures all come from the same server-side session series.
+- **Activity links to its conversions** (owner, 2026-11-26). Each contribution row on
+  Activity links directly to every conversion that paid for it ("Paid from Conversion
+  27 Oct 2026" becomes a link): one tap opens that conversion on the Conversions page
+  (scrolled to and opened) with its edit action at hand, on desktop and phone.
+- **Conversion fees, complete** (owner, 2026-11-26). Fees can be in either currency (EUR
+  or USD, stored natively) for either direction (EUR → USD and USD → EUR); 7.4 only adds
+  native USD fees on USD → EUR. Both directions get the "amount is excluding / including
+  fees" choice for the sent total that 7.4 added for EUR → USD. Importers and all cost,
+  rate and cash-pool read models follow the fee's own currency, converted at that
+  conversion's own rate when reported in the other currency.
 
 **Already shipped:** ledger completeness checks (P7, 6.15.0 and 7.0), the market
 clock (P13, 7.0), the USD-view currency figure (P12, 7.0) and the day rule (D1,

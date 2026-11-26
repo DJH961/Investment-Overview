@@ -175,6 +175,7 @@
     "tags tags tags"
     "kept kept kept"
     "paid paid paid"
+    "trail trail trail"
     "detail detail detail";
   align-items: center;
   gap: var(--space-2) var(--space-3);
@@ -428,6 +429,56 @@
     }
   }
 
+  // 7.4: the trail (to dollars) or the cash-out result (back to euros), opened from the tags.
+  &__trail-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-height: var(--control-height-sm);
+    padding: 0 var(--space-2);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-full);
+    background: transparent;
+    color: var(--color-fg);
+    font: inherit;
+    font-size: var(--font-size-xs);
+    cursor: pointer;
+
+    &:hover {
+      border-color: var(--color-border-strong);
+    }
+
+    &:focus-visible {
+      @include m.focus-ring;
+    }
+
+    &[aria-expanded="true"] {
+      background: var(--color-surface-2);
+    }
+  }
+
+  &__paid-row {
+    display: flex;
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  &__trail-icon {
+    width: var(--font-size-sm);
+    height: var(--font-size-sm);
+    color: var(--color-muted);
+  }
+
+  &__trail {
+    grid-area: trail;
+    min-width: 0;
+    padding: var(--space-3) 0 var(--space-2);
+  }
+
   // Wide-only pieces.
   &__cell,
   &__sent--wide {
@@ -438,7 +489,8 @@
     grid-template-columns: var(--conv-cols);
     grid-template-areas:
       "id usd rate ecb off paid menu"
-      ". kept kept . . . .";
+      ". kept kept . . . ."
+      "trail trail trail trail trail trail trail";
     gap: 0 var(--space-3);
     padding: var(--space-3) var(--card-pad-x);
 
@@ -781,9 +833,28 @@
   flex-direction: column;
   gap: var(--space-3);
 
+  &__eur-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  &__mode {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+  }
+
+  &__mode-label {
+    @include m.eyebrow(var(--font-size-xs));
+  }
+
   &__rate {
     color: var(--color-muted);
     font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
   }
 
   &__warn {
@@ -832,4 +903,86 @@
   @include m.phone {
     display: none;
   }
+}
+
+// 7.4: "How each conversion back was funded" (withdrawal slices, then the USD account).
+.conversions__backs {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.conversions__back {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--card-pad-x);
+  border-top: var(--border-width) solid var(--color-border);
+
+  &:first-child {
+    border-top: 0;
+  }
+}
+
+.conversions__back-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+}
+
+.conversions__back-icon,
+.conversions__back-slice-icon {
+  flex: none;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  color: var(--color-muted);
+}
+
+.conversions__back-link {
+  color: var(--color-fg);
+  font-weight: var(--font-weight-semibold);
+  text-decoration: none;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.conversions__back-figure {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.conversions__back-slices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0 0 0 calc(var(--icon-sm) + var(--space-2));
+  list-style: none;
+}
+
+.conversions__back-slice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.conversions__back-slice-text {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.conversions__back-pin {
+  width: var(--font-size-sm);
+  height: var(--font-size-sm);
 }

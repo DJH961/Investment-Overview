@@ -2508,6 +2508,273 @@
         "title": "CalculatorInputsOut",
         "type": "object"
       },
+      "CashOutEur": {
+        "properties": {
+          "conversion_cost": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversion Cost"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "market": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Market"
+          },
+          "put_in": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Put In"
+          },
+          "realised": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Realised"
+          },
+          "realised_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Realised Pct"
+          },
+          "xirr": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Xirr"
+          }
+        },
+        "title": "CashOutEur",
+        "type": "object"
+      },
+      "CashOutOut": {
+        "properties": {
+          "conversion_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversion Id"
+          },
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "eur": {
+            "$ref": "#/components/schemas/CashOutEur"
+          },
+          "eur_received": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Eur Received",
+            "type": "string"
+          },
+          "fees_eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Fees Eur",
+            "type": "string"
+          },
+          "flagged": {
+            "default": false,
+            "title": "Flagged",
+            "type": "boolean"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "usd": {
+            "$ref": "#/components/schemas/CashOutUsd"
+          },
+          "usd_sent": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd Sent",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "usd_sent",
+          "eur_received",
+          "fees_eur",
+          "eur",
+          "usd",
+          "note"
+        ],
+        "title": "CashOutOut",
+        "type": "object"
+      },
+      "CashOutPreviewIn": {
+        "properties": {
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "eur_received": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Eur Received",
+            "type": "string"
+          },
+          "fees_eur": {
+            "default": "0",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Fees Eur",
+            "type": "string"
+          },
+          "fees_usd": {
+            "default": "0",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Fees Usd",
+            "type": "string"
+          },
+          "usd_sent": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd Sent",
+            "type": "string"
+          },
+          "withdrawal_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Withdrawal Id"
+          }
+        },
+        "required": [
+          "usd_sent",
+          "eur_received",
+          "date"
+        ],
+        "title": "CashOutPreviewIn",
+        "type": "object"
+      },
+      "CashOutUsd": {
+        "description": "Dollars only, from native USD flows (never euros times a rate).",
+        "properties": {
+          "market": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Market"
+          },
+          "put_in": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Put In"
+          },
+          "realised": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Realised"
+          },
+          "realised_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Realised Pct"
+          },
+          "xirr": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Xirr"
+          }
+        },
+        "title": "CashOutUsd",
+        "type": "object"
+      },
       "CategoryDriftRow": {
         "description": "The active target's drift summed per category (its funds' rows added up).",
         "properties": {
@@ -2911,6 +3178,15 @@
             "title": "Date",
             "type": "string"
           },
+          "direction": {
+            "default": "to_usd",
+            "enum": [
+              "to_usd",
+              "to_eur"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
           "from_ccy": {
             "title": "From Ccy",
             "type": "string"
@@ -3182,6 +3458,15 @@
           },
           "date": {
             "title": "Date",
+            "type": "string"
+          },
+          "direction": {
+            "default": "to_usd",
+            "enum": [
+              "to_usd",
+              "to_eur"
+            ],
+            "title": "Direction",
             "type": "string"
           },
           "ecb_rate": {
@@ -3534,6 +3819,17 @@
       },
       "CostsOut": {
         "properties": {
+          "back_to_eur": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CostsOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The same figures for the conversions back to EUR (7.4), in that direction: eur_sent = euros received, usd_received = dollars sent. Null without one."
+          },
           "best": {
             "anyOf": [
               {
@@ -4039,6 +4335,18 @@
             ],
             "title": "Breakeven Rate"
           },
+          "conversion_cost_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversion Cost Eur"
+          },
           "current_rate": {
             "anyOf": [
               {
@@ -4050,6 +4358,18 @@
               }
             ],
             "title": "Current Rate"
+          },
+          "ecb_avg": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ecb Avg"
           },
           "fx_pnl_eur": {
             "anyOf": [
@@ -4076,6 +4396,18 @@
             "description": "Current rate vs average invest rate (fraction, 0.01 = 1%)",
             "title": "Rate Change Pct"
           },
+          "realised_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Realised Eur"
+          },
           "repatriation_value_eur": {
             "anyOf": [
               {
@@ -4087,6 +4419,29 @@
               }
             ],
             "title": "Repatriation Value Eur"
+          },
+          "vs_impact_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vs Impact Note"
+          },
+          "your_rate": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Your Rate"
           }
         },
         "title": "CurrencyLifetime",
@@ -5233,6 +5588,12 @@
             },
             "title": "By Year",
             "type": "array"
+          },
+          "cashed_out_eur": {
+            "default": "0",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Cashed Out Eur",
+            "type": "string"
           },
           "ccy": {
             "enum": [
@@ -7699,6 +8060,23 @@
             ],
             "title": "Fees Eur"
           },
+          "fees_usd": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Native dollar fee of a conversion back (USD to EUR), paid out of the dollars sent; not together with fees_eur.",
+            "title": "Fees Usd"
+          },
           "from_ccy": {
             "default": "EUR",
             "maxLength": 3,
@@ -7816,6 +8194,16 @@
             "title": "Date",
             "type": "string"
           },
+          "direction": {
+            "default": "to_usd",
+            "description": "Derived from from_ccy/to_ccy. to_eur = a conversion back: eur_sent holds the euros received and usd_received the dollars sent; the cost figures are in that direction (positive cost = it cost you).",
+            "enum": [
+              "to_usd",
+              "to_eur"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
           "ecb_rate": {
             "anyOf": [
               {
@@ -7852,6 +8240,22 @@
             "title": "Eur Sent",
             "type": "string"
           },
+          "fee_ccy": {
+            "anyOf": [
+              {
+                "enum": [
+                  "EUR",
+                  "USD"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Currency the fee was entered in: EUR (fees_eur) or USD (the native dollar fee of a conversion back, paid out of the dollars sent); null without a fee.",
+            "title": "Fee Ccy"
+          },
           "fees_eur": {
             "anyOf": [
               {
@@ -7874,7 +8278,7 @@
                 "type": "null"
               }
             ],
-            "description": "fees_eur at that conversion's own fixing.",
+            "description": "fees_eur at that conversion's own fixing; for a conversion back with a fee in dollars (fee_ccy USD) the native fee, always present.",
             "title": "Fees Usd"
           },
           "from_ccy": {
@@ -9340,6 +9744,18 @@
               }
             ],
             "description": "Null for a NAV fund (no intraday)"
+          },
+          "your_rate": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Your Rate"
           }
         },
         "required": [
@@ -9498,6 +9914,18 @@
             "description": "Lifetime dividends of this holding (cash and reinvested)",
             "title": "Dividends"
           },
+          "ecb_buy_avg": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ecb Buy Avg"
+          },
           "expense_ratio": {
             "anyOf": [
               {
@@ -9510,6 +9938,18 @@
             ],
             "description": "Annual fee (fraction, 0.01 = 1%)",
             "title": "Expense Ratio"
+          },
+          "fx_effect_pp": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fx Effect Pp"
           },
           "instrument_id": {
             "title": "Instrument Id",
@@ -9711,6 +10151,18 @@
             ],
             "description": "Annualised return (fraction, 0.01 = 1%)",
             "title": "Xirr"
+          },
+          "your_rate": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Your Rate"
           },
           "ytd_growth": {
             "anyOf": [
@@ -10043,6 +10495,18 @@
               }
             ],
             "title": "Fx Eur Usd"
+          },
+          "fx_your_rate": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fx Your Rate"
           },
           "group_by": {
             "default": "none",
@@ -12477,6 +12941,415 @@
         "title": "JobStart",
         "type": "object"
       },
+      "JourneyBackInEuros": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "eur_received": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Eur Received",
+            "type": "string"
+          },
+          "orig_eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Orig Eur",
+            "type": "string"
+          },
+          "realised_eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Realised Eur",
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "eur_received",
+          "orig_eur",
+          "realised_eur"
+        ],
+        "title": "JourneyBackInEuros",
+        "type": "object"
+      },
+      "JourneyBoth": {
+        "properties": {
+          "eur": {
+            "$ref": "#/components/schemas/JourneyView"
+          },
+          "usd": {
+            "$ref": "#/components/schemas/JourneyView"
+          }
+        },
+        "required": [
+          "eur",
+          "usd"
+        ],
+        "title": "JourneyBoth",
+        "type": "object"
+      },
+      "JourneyBridge": {
+        "description": "Where the currency effect came from (EUR view only); the lines add up to the total.",
+        "properties": {
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/JourneyBridgeLine"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
+          "total_eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Total Eur",
+            "type": "string"
+          }
+        },
+        "required": [
+          "lines",
+          "total_eur"
+        ],
+        "title": "JourneyBridge",
+        "type": "object"
+      },
+      "JourneyBridgeLine": {
+        "properties": {
+          "eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Eur",
+            "type": "string"
+          },
+          "key": {
+            "enum": [
+              "conversion_cost",
+              "waiting",
+              "cash",
+              "holdings",
+              "realised"
+            ],
+            "title": "Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "eur"
+        ],
+        "title": "JourneyBridgeLine",
+        "type": "object"
+      },
+      "JourneyBucket": {
+        "description": "One place the dollars are now: native dollars, their EUR cost and EUR value now.",
+        "properties": {
+          "currency_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency Eur"
+          },
+          "eur_cost": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eur Cost"
+          },
+          "eur_now": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eur Now"
+          },
+          "usd": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd",
+            "type": "string"
+          },
+          "usd_cost": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usd Cost"
+          }
+        },
+        "required": [
+          "usd"
+        ],
+        "title": "JourneyBucket",
+        "type": "object"
+      },
+      "JourneyFlagged": {
+        "properties": {
+          "ecb_fallback_deposits": {
+            "default": 0,
+            "title": "Ecb Fallback Deposits",
+            "type": "integer"
+          },
+          "uncovered_buys": {
+            "default": 0,
+            "title": "Uncovered Buys",
+            "type": "integer"
+          }
+        },
+        "title": "JourneyFlagged",
+        "type": "object"
+      },
+      "JourneyIdle": {
+        "description": "Dollars a conversion delivered that no deposit took, waiting over 30 days.",
+        "properties": {
+          "conversion_id": {
+            "title": "Conversion Id",
+            "type": "integer"
+          },
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "days": {
+            "title": "Days",
+            "type": "integer"
+          },
+          "usd": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversion_id",
+          "date",
+          "usd",
+          "days"
+        ],
+        "title": "JourneyIdle",
+        "type": "object"
+      },
+      "JourneyInvested": {
+        "properties": {
+          "currency_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency Eur"
+          },
+          "eur_cost": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eur Cost"
+          },
+          "eur_now": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eur Now"
+          },
+          "market_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Market Eur"
+          },
+          "market_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Market Usd"
+          },
+          "usd": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd",
+            "type": "string"
+          },
+          "usd_cost": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usd Cost"
+          }
+        },
+        "required": [
+          "usd"
+        ],
+        "title": "JourneyInvested",
+        "type": "object"
+      },
+      "JourneyStats": {
+        "description": "Always four tiles.",
+        "properties": {
+          "broker_cash": {
+            "$ref": "#/components/schemas/JourneyBucket"
+          },
+          "invested": {
+            "$ref": "#/components/schemas/JourneyInvested"
+          },
+          "usd_account": {
+            "$ref": "#/components/schemas/JourneyBucket"
+          },
+          "your_rate": {
+            "$ref": "#/components/schemas/JourneyYourRate"
+          }
+        },
+        "required": [
+          "usd_account",
+          "broker_cash",
+          "invested",
+          "your_rate"
+        ],
+        "title": "JourneyStats",
+        "type": "object"
+      },
+      "JourneyView": {
+        "properties": {
+          "back_in_euros": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JourneyBackInEuros"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "bridge": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JourneyBridge"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cash_outs": {
+            "items": {
+              "$ref": "#/components/schemas/CashOutOut"
+            },
+            "title": "Cash Outs",
+            "type": "array"
+          },
+          "flagged": {
+            "$ref": "#/components/schemas/JourneyFlagged"
+          },
+          "idle": {
+            "items": {
+              "$ref": "#/components/schemas/JourneyIdle"
+            },
+            "title": "Idle",
+            "type": "array"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/JourneyStats"
+          }
+        },
+        "required": [
+          "stats",
+          "flagged"
+        ],
+        "title": "JourneyView",
+        "type": "object"
+      },
+      "JourneyYourRate": {
+        "properties": {
+          "ecb_avg": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ecb Avg"
+          },
+          "now": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Now"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          }
+        },
+        "title": "JourneyYourRate",
+        "type": "object"
+      },
       "LastSessionMove": {
         "description": "The day split into day (``move``) and night (``overnight_currency``).\n\nDay rule of 2026-11-16. Market shut: the day total ``day_move`` is FROZEN at the\nclose (close prices x the close rate minus the baseline); ``move`` is its\nmarket-hours part (the total minus last night's currency move); ``overnight_currency``\nis the currency's move since the close, shown beside the total and NOT part of it.\nAmounts in the response currency (each computed in it, never converted).\n\nWhile the market is open (``market_open``): ``overnight_currency`` is LAST NIGHT's\ncurrency move only (the previous-close book revalued from the previous close rate\n``fx_close`` to the rate at today's open ``fx_now``) and ``move`` the session\n(everything since the open, prices and intraday FX); ``move + overnight_currency``\nis ``day_move``. No ``*_est`` fields then.",
         "properties": {
@@ -14598,6 +15471,19 @@
       "PeriodRowOut": {
         "description": "One period in the requested reporting currency (``null`` = not available).",
         "properties": {
+          "cashed_out_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Euros back from cash-outs dated in the period (received minus fees)",
+            "title": "Cashed Out Eur"
+          },
           "closing_value": {
             "anyOf": [
               {
@@ -14703,6 +15589,31 @@
             ],
             "description": "Period XIRR (fraction, 0.01 = 1%)",
             "title": "Period Growth Xirr"
+          },
+          "real_return": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Real (inflation-adjusted) EUR growth: growth_pct deflated by euro-area HICP over the same months (fraction). EUR only; null in USD, for a running month or without an index.",
+            "title": "Real Return"
+          },
+          "real_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last HICP month (YYYY-MM) the real return covers.",
+            "title": "Real To"
           },
           "total_growth_compounded": {
             "anyOf": [
@@ -14889,7 +15800,7 @@
                 "type": "null"
               }
             ],
-            "description": "Deposit: USD per run; conversion: EUR sent.",
+            "description": "Deposit: USD per run; conversion: EUR sent or USD arriving.",
             "title": "Amount"
           },
           "anchor": {
@@ -14903,6 +15814,22 @@
             ],
             "description": "Weekday 0-6 (Monday = 0) for weeks, day of month 1-31 for months.",
             "title": "Anchor"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "enum": [
+                  "EUR",
+                  "USD"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Conversion plans: which side amount fixes ('EUR' converted or 'USD' arriving; defaults to 'EUR').",
+            "title": "Currency"
           },
           "end_date": {
             "anyOf": [
@@ -15043,6 +15970,22 @@
               }
             ],
             "title": "Anchor"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "enum": [
+                  "EUR",
+                  "USD"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Conversion plans: which side amount fixes ('EUR' converted or 'USD' arriving; defaults to 'EUR').",
+            "title": "Currency"
           },
           "end_date": {
             "anyOf": [
@@ -17150,6 +18093,325 @@
           "rows"
         ],
         "title": "RebalanceResponse",
+        "type": "object"
+      },
+      "RecapAckIn": {
+        "properties": {
+          "period": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}(-(0[1-9]|1[0-2]))?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The period dismissed (default: the current default period)",
+            "title": "Period"
+          }
+        },
+        "title": "RecapAckIn",
+        "type": "object"
+      },
+      "RecapAckOut": {
+        "properties": {
+          "last_ack": {
+            "title": "Last Ack",
+            "type": "string"
+          }
+        },
+        "required": [
+          "last_ack"
+        ],
+        "title": "RecapAckOut",
+        "type": "object"
+      },
+      "RecapDirectionCost": {
+        "description": "One direction's share of the period's conversion cost.",
+        "properties": {
+          "cost": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null when there was no conversion that way",
+            "title": "Cost"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cost",
+          "count"
+        ],
+        "title": "RecapDirectionCost",
+        "type": "object"
+      },
+      "RecapOut": {
+        "properties": {
+          "EUR": {
+            "$ref": "#/components/schemas/RecapSide"
+          },
+          "USD": {
+            "$ref": "#/components/schemas/RecapSide"
+          },
+          "default_period": {
+            "title": "Default Period",
+            "type": "string"
+          },
+          "due": {
+            "description": "Show on the Overview: a new period not yet dismissed",
+            "title": "Due",
+            "type": "boolean"
+          },
+          "end": {
+            "title": "End",
+            "type": "string"
+          },
+          "granularity": {
+            "enum": [
+              "month",
+              "year"
+            ],
+            "title": "Granularity",
+            "type": "string"
+          },
+          "has_data": {
+            "title": "Has Data",
+            "type": "boolean"
+          },
+          "is_complete": {
+            "title": "Is Complete",
+            "type": "boolean"
+          },
+          "last_ack": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Ack"
+          },
+          "period": {
+            "description": "YYYY-MM or YYYY",
+            "title": "Period",
+            "type": "string"
+          },
+          "start": {
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "period",
+          "granularity",
+          "start",
+          "end",
+          "is_complete",
+          "has_data",
+          "due",
+          "default_period",
+          "last_ack",
+          "EUR",
+          "USD"
+        ],
+        "title": "RecapOut",
+        "type": "object"
+      },
+      "RecapSide": {
+        "description": "One period in one reporting currency (``null`` = not available).",
+        "properties": {
+          "cashed_out": {
+            "description": "Received back in euros (0 until cash-outs exist)",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Cashed Out",
+            "type": "string"
+          },
+          "closing_value": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closing Value"
+          },
+          "contributed": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Periods row's contributions",
+            "title": "Contributed"
+          },
+          "conversion_cost": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Fees + spread against the ECB fixing of the period's conversions, both directions (conversions back to EUR included, 7.4)",
+            "title": "Conversion Cost"
+          },
+          "conversion_cost_by_direction": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/RecapDirectionCost"
+            },
+            "description": "conversion_cost and conversions split by direction",
+            "propertyNames": {
+              "enum": [
+                "to_usd",
+                "to_eur"
+              ]
+            },
+            "title": "Conversion Cost By Direction",
+            "type": "object"
+          },
+          "conversions": {
+            "description": "Conversions dated in the period, both directions",
+            "title": "Conversions",
+            "type": "integer"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Currency part of the bridge",
+            "title": "Currency"
+          },
+          "dividends": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dividends"
+          },
+          "interest": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interest"
+          },
+          "market": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Market part of the bridge (incl. dividends)",
+            "title": "Market"
+          },
+          "nominal_return": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Periods row's growth (fraction, 0.01 = 1%)",
+            "title": "Nominal Return"
+          },
+          "opening_value": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opening Value"
+          },
+          "real_return": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Nominal EUR return deflated by euro-area HICP (fraction, 0.01 = 1%); EUR only",
+            "title": "Real Return"
+          },
+          "real_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last HICP month (YYYY-MM) the real return covers",
+            "title": "Real To"
+          }
+        },
+        "required": [
+          "contributed",
+          "cashed_out",
+          "market",
+          "currency",
+          "dividends",
+          "interest",
+          "conversion_cost",
+          "conversions",
+          "opening_value",
+          "closing_value",
+          "nominal_return",
+          "real_return",
+          "real_to"
+        ],
+        "title": "RecapSide",
         "type": "object"
       },
       "ReconcileRequest": {
@@ -20136,6 +21398,22 @@
             ],
             "title": "Anchor"
           },
+          "currency": {
+            "anyOf": [
+              {
+                "enum": [
+                  "EUR",
+                  "USD"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Conversion plans: which side amount fixes ('EUR' converted or 'USD' arriving; defaults to 'EUR').",
+            "title": "Currency"
+          },
           "every": {
             "title": "Every",
             "type": "integer"
@@ -21168,6 +22446,246 @@
         "title": "TiingoUse",
         "type": "object"
       },
+      "TrailOut": {
+        "properties": {
+          "ecb_rate": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ecb Rate"
+          },
+          "flagged": {
+            "default": false,
+            "title": "Flagged",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "deposit",
+              "buy",
+              "sell",
+              "withdrawal",
+              "conversion"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "more_paths": {
+            "default": 0,
+            "title": "More Paths",
+            "type": "integer"
+          },
+          "paths": {
+            "items": {
+              "$ref": "#/components/schemas/TrailPath"
+            },
+            "title": "Paths",
+            "type": "array"
+          },
+          "split": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrailSplit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "your_rate": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Your Rate"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "paths"
+        ],
+        "title": "TrailOut",
+        "type": "object"
+      },
+      "TrailPath": {
+        "properties": {
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/TrailStep"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "usd_share": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usd Share"
+          }
+        },
+        "required": [
+          "steps"
+        ],
+        "title": "TrailPath",
+        "type": "object"
+      },
+      "TrailSplit": {
+        "description": "For a buy: its value now; for a cash-out: what was realised.",
+        "properties": {
+          "conversion_cost_eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Conversion Cost Eur",
+            "type": "string"
+          },
+          "currency_eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Currency Eur",
+            "type": "string"
+          },
+          "market_eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Market Eur",
+            "type": "string"
+          },
+          "total_eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Total Eur",
+            "type": "string"
+          }
+        },
+        "required": [
+          "market_eur",
+          "currency_eur",
+          "conversion_cost_eur",
+          "total_eur"
+        ],
+        "title": "TrailSplit",
+        "type": "object"
+      },
+      "TrailStep": {
+        "properties": {
+          "change": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change"
+          },
+          "date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "maxLength": 24,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "figure": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Figure"
+          },
+          "figure_ccy": {
+            "anyOf": [
+              {
+                "enum": [
+                  "EUR",
+                  "USD"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Figure Ccy"
+          },
+          "key": {
+            "enum": [
+              "sent",
+              "converted",
+              "waited",
+              "deposited",
+              "bought",
+              "sold",
+              "withdrawn",
+              "back",
+              "worth_now"
+            ],
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "link": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Link"
+          }
+        },
+        "required": [
+          "key",
+          "label"
+        ],
+        "title": "TrailStep",
+        "type": "object"
+      },
       "TrancheGroupOut": {
         "properties": {
           "account_id": {
@@ -21281,6 +22799,31 @@
             "title": "Age Days",
             "type": "integer"
           },
+          "back_in_euros": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null while still in dollars (an open tranche is always null)",
+            "title": "Back In Euros"
+          },
+          "cost_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "EUR cost (book) of the shares still held: the holding's cash-pool EUR shared out over its open tranches by native cost (FIFO view of an average-cost figure); under eur_basis buy_date, the native cost at the ECB fixing of the acquisition date. Null when not available.",
+            "title": "Cost Eur"
+          },
           "cost_native": {
             "description": "Cost of the shares still held, native",
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
@@ -21291,6 +22834,19 @@
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Cost Per Share Native",
             "type": "string"
+          },
+          "currency_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Part of gain_eur from the rate move (gain - market)",
+            "title": "Currency Eur"
           },
           "days_to_long_term": {
             "anyOf": [
@@ -21303,6 +22859,19 @@
             ],
             "description": "Null once long-term",
             "title": "Days To Long Term"
+          },
+          "gain_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Value now in EUR minus cost_eur; null without a price",
+            "title": "Gain Eur"
           },
           "gain_native": {
             "anyOf": [
@@ -21340,6 +22909,32 @@
             "title": "Long Term On",
             "type": "string"
           },
+          "market_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Part of gain_eur from the price, at today's rate",
+            "title": "Market Eur"
+          },
+          "orig_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Your original euros behind those shares (book minus market EUR)",
+            "title": "Orig Eur"
+          },
           "quantity_bought": {
             "description": "Shares bought, on today's split basis",
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
@@ -21369,6 +22964,19 @@
             ],
             "title": "Status",
             "type": "string"
+          },
+          "your_rate": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "USD per EUR your dollars cost for this holding (pool blend)",
+            "title": "Your Rate"
           }
         },
         "required": [
@@ -21441,6 +23049,16 @@
           },
           "currency": {
             "title": "Currency",
+            "type": "string"
+          },
+          "eur_basis": {
+            "default": "pool",
+            "description": "Setting fx.holding_cost_basis behind cost_eur / orig_eur",
+            "enum": [
+              "pool",
+              "buy_date"
+            ],
+            "title": "Eur Basis",
             "type": "string"
           },
           "groups": {
@@ -21639,6 +23257,24 @@
             ],
             "title": "Description"
           },
+          "eur_basis": {
+            "anyOf": [
+              {
+                "enum": [
+                  "your_rate",
+                  "pool",
+                  "ecb",
+                  "native"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "7.4: where the EUR figure comes from (null before the cash pool).",
+            "title": "Eur Basis"
+          },
           "external_id": {
             "anyOf": [
               {
@@ -21795,6 +23431,24 @@
           "symbol": {
             "title": "Symbol",
             "type": "string"
+          },
+          "trail_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "deposit",
+                  "buy",
+                  "sell",
+                  "withdrawal"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "7.4: the money trail this row opens (GET /trail/{kind}/{id}).",
+            "title": "Trail Kind"
           }
         },
         "required": [
@@ -23252,7 +24906,7 @@
   "info": {
     "summary": "v6 API: the server owns data, prices and all maths.",
     "title": "Investment Overview",
-    "version": "7.3.1"
+    "version": "7.4.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -24328,6 +25982,47 @@
         ]
       }
     },
+    "/api/cash-out/preview": {
+      "post": {
+        "operationId": "preview_cash_out_api_cash_out_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CashOutPreviewIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CashOutOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Cash Out",
+        "tags": [
+          "currency"
+        ]
+      }
+    },
     "/api/currency/both": {
       "get": {
         "operationId": "get_currency_both_api_currency_both_get",
@@ -24443,6 +26138,27 @@
           }
         },
         "summary": "Get Currency Effect Both",
+        "tags": [
+          "currency"
+        ]
+      }
+    },
+    "/api/currency/journey": {
+      "get": {
+        "operationId": "get_journey_api_currency_journey_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JourneyBoth"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Journey",
         "tags": [
           "currency"
         ]
@@ -24865,7 +26581,30 @@
     },
     "/api/fx-conversions": {
       "get": {
+        "description": "Every conversion, newest first; ``direction`` keeps one way only (default both).",
         "operationId": "list_conversions_api_fx_conversions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "direction",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "to_usd",
+                    "to_eur"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Direction"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -24880,6 +26619,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "List Conversions",
@@ -27906,6 +29655,98 @@
         ]
       }
     },
+    "/api/recap": {
+      "get": {
+        "operationId": "get_recap_api_recap_get",
+        "parameters": [
+          {
+            "description": "YYYY-MM or YYYY",
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "YYYY-MM or YYYY",
+              "title": "Period"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecapOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Recap",
+        "tags": [
+          "recap"
+        ]
+      }
+    },
+    "/api/recap/ack": {
+      "post": {
+        "operationId": "ack_recap_api_recap_ack_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecapAckIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecapAckOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ack Recap",
+        "tags": [
+          "recap"
+        ]
+      }
+    },
     "/api/recurring/estimates": {
       "get": {
         "operationId": "estimates_api_recurring_estimates_get",
@@ -28269,6 +30110,29 @@
               ],
               "description": "Step 1: EUR converted.",
               "title": "Eur Amount"
+            }
+          },
+          {
+            "description": "Step 1: USD arriving.",
+            "in": "query",
+            "name": "usd_amount",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Step 1: USD arriving.",
+              "title": "Usd Amount"
             }
           },
           {
@@ -29853,6 +31717,64 @@
         "summary": "Get System",
         "tags": [
           "system"
+        ]
+      }
+    },
+    "/api/trail/{kind}/{item_id}": {
+      "get": {
+        "operationId": "get_trail_api_trail__kind___item_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "enum": [
+                "deposit",
+                "buy",
+                "sell",
+                "withdrawal",
+                "conversion"
+              ],
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Trail",
+        "tags": [
+          "currency"
         ]
       }
     },

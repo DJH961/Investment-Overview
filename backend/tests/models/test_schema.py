@@ -44,6 +44,7 @@ EXPECTED_TABLES = {
     "auth_passkeys",
     "auth_sessions",
     "fx_conversions",
+    "hicp_index",
     "fx_conversion_pins",
     "recurring_plans",
     "recurring_plan_legs",

@@ -23,6 +23,21 @@ class PeriodRowOut(ApiModel):
         description="Cumulative compounded growth (fraction, 0.01 = 1%)"
     )
     period_growth_xirr: DecStr | None = Field(description="Period XIRR (fraction, 0.01 = 1%)")
+    real_return: DecStr | None = Field(
+        default=None,
+        description=(
+            "Real (inflation-adjusted) EUR growth: growth_pct deflated by euro-area HICP "
+            "over the same months (fraction). EUR only; null in USD, for a running month "
+            "or without an index."
+        ),
+    )
+    cashed_out_eur: DecStr | None = Field(
+        default=None,
+        description="Euros back from cash-outs dated in the period (received minus fees)",
+    )
+    real_to: str | None = Field(
+        default=None, description="Last HICP month (YYYY-MM) the real return covers."
+    )
 
 
 class PeriodsOut(ApiModel):

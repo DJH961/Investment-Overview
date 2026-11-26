@@ -1,9 +1,12 @@
-import { Banknote, Landmark, Pin, Wallet } from "lucide-react";
+import { Banknote, Landmark, Pin, Route, Wallet } from "lucide-react";
 import { Link } from "react-router";
 import { Chip } from "../../components/Chip";
 import { Money } from "../../components/Money";
+import { TrailPanel, trailTitle } from "../../components/MoneyTrail";
 import { Sheet } from "../../components/Sheet";
 import { formatDate, formatMoney, formatNumber } from "../../lib/format";
+import type { TrailKind } from "../../lib/journey-types";
+import { useTrail } from "../../lib/queries/journey";
 import type { DepositMatch, FxConversion } from "../../lib/queries/manage";
 import { providerLabel, rateChipLabel } from "../CurrencyConversions/matching";
 
@@ -36,7 +39,7 @@ export function RateSheet({
 }) {
   const byId = new Map(conversions.map((c) => [c.id, c]));
   return (
-    <Sheet open={match !== null} onOpenChange={(o) => !o && onClose()} title="How this deposit was converted">
+    <Sheet open={match !== null} onOpenChange={(o) => !o && onClose()} title="How this deposit was converted" wide>
       {match && (
         <div className="transactions-page__rate-sheet">
           <p>
@@ -72,10 +75,44 @@ export function RateSheet({
               </li>
             )}
           </ul>
+          <h3 className="transactions-page__rate-heading">Where these dollars went</h3>
+          <TrailPanel kind="deposit" id={match.transaction_id} label="Where these dollars went" />
           <Link to="/conversions" className="transactions-page__rate-link">
             Open Currency conversions
           </Link>
         </div>
+      )}
+    </Sheet>
+  );
+}
+
+/** A buy, sell or withdrawal row's way into its money trail. Buys say "Your rate" (the rate their dollars cost). */
+export function TrailChip({ kind, onOpen }: { kind: TrailKind; onOpen: () => void }) {
+  const buy = kind === "buy";
+  const label = buy ? "Your rate" : "Trail";
+  return (
+    <button type="button" className="transactions-page__rate-chip" aria-label={`${label}: ${trailTitle(kind).toLowerCase()}`} onClick={onOpen}>
+      <Chip size="sm" outline tone="neutral" icon={buy ? <Wallet aria-hidden /> : <Route aria-hidden />}>
+        {label}
+      </Chip>
+    </button>
+  );
+}
+
+/** The money trail behind one buy, sale or withdrawal, in a sheet wide enough to run across on desktop. */
+export function TrailSheet({ target, onClose }: { target: { kind: TrailKind; id: number } | null; onClose: () => void }) {
+  const title = target ? trailTitle(target.kind) : "";
+  // A sale or withdrawal still in dollars: the way into the guided cash-out (same cached trail).
+  const trail = useTrail(target?.kind ?? null, target?.id ?? null);
+  const stillInDollars =
+    target && (target.kind === "sell" || target.kind === "withdrawal") && trail.data && trail.data.paths[0]?.steps.at(-1)?.key !== "back";
+  return (
+    <Sheet open={target !== null} onOpenChange={(o) => !o && onClose()} title={title} wide>
+      {target && <TrailPanel kind={target.kind} id={target.id} label={title} />}
+      {stillInDollars && (
+        <Link to={`/cash-out?${target.kind}=${target.id}`} className="transactions-page__rate-link transactions-page__cash-out-link">
+          Cash out to euros →
+        </Link>
       )}
     </Sheet>
   );

@@ -1,7 +1,7 @@
-@use "../../../../styles/mixins" as m;
-
 .exposure-compare {
   min-width: 0;
+  // The cell grid follows the card's own width (tablets and side columns too), not the screen.
+  container: exposure-compare / inline-size;
 
   &__title {
     display: inline-flex;
@@ -18,13 +18,13 @@
     font-size: var(--font-size-xs);
   }
 
-  // One row of figures on desktop, two by two on phones; hairlines between cells.
+  // One row of figures on a wide card, two by two on a narrow one; hairlines between cells.
   &__cells {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     margin: 0;
 
-    @include m.phone {
+    @container exposure-compare (max-width: 46rem) {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
@@ -32,7 +32,7 @@
   &__cells--three {
     grid-template-columns: repeat(3, minmax(0, 1fr));
 
-    @include m.phone {
+    @container exposure-compare (max-width: 46rem) {
       grid-template-columns: minmax(0, 1fr);
     }
   }
@@ -50,7 +50,7 @@
       border-left: 0;
     }
 
-    @include m.phone {
+    @container exposure-compare (max-width: 46rem) {
       padding: var(--space-2) var(--space-3);
 
       &:nth-child(odd) {

@@ -107,6 +107,38 @@ def test_estimated_conversion_pushes_ecb_by_offset() -> None:
     )
 
 
+def test_estimated_conversion_eur_golden() -> None:
+    assert rec.estimated_conversion_eur(
+        usd_received=D("603"), ecb_rate=D("1.20"), avg_off_pct=D("0.005")
+    ) == (D("1.206"), D("500"))
+    assert rec.estimated_conversion_eur(
+        usd_received=D("600"), ecb_rate=D("1.20"), avg_off_pct=None
+    ) == (D("1.20"), D("500"))
+    with pytest.raises(ValueError, match=r"."):
+        rec.estimated_conversion_eur(usd_received=D("0"), ecb_rate=D("1.20"), avg_off_pct=None)
+    with pytest.raises(ValueError, match=r"."):
+        rec.estimated_conversion_eur(usd_received=D("100"), ecb_rate=D("0"), avg_off_pct=None)
+
+
+@settings(max_examples=100, deadline=None)
+@given(
+    st.decimals(min_value=1, max_value=100000, places=2),
+    st.decimals(min_value="0.5", max_value="2.5", places=4),
+    st.none() | st.decimals(min_value="-0.05", max_value="0.05", places=4),
+)
+def test_estimated_conversion_eur_round_trips_with_estimated_conversion(
+    eur_sent: Decimal, ecb_rate: Decimal, avg_off_pct: Decimal | None
+) -> None:
+    rate, usd_received = rec.estimated_conversion(
+        eur_sent=eur_sent, ecb_rate=ecb_rate, avg_off_pct=avg_off_pct
+    )
+    rate_back, eur_back = rec.estimated_conversion_eur(
+        usd_received=usd_received, ecb_rate=ecb_rate, avg_off_pct=avg_off_pct
+    )
+    assert rate_back == rate
+    assert abs(eur_back - eur_sent) < D("0.0000000001")
+
+
 def test_cadence_validation() -> None:
     with pytest.raises(ValueError, match=r"."):
         Cadence("fortnights", 1)
@@ -213,3 +245,17 @@ def test_per_run_amount_uses_up_the_deposit_over_a_year(
     # A year of buys uses up a year of deposits (exact in rational arithmetic; tiny Decimal rounding).
     assert abs(run * rec.runs_per_year(unit, every) - total * 12) < D("0.0001")
     assert rec.per_run_amount(total, paid=(unit, every), spent=(unit, every)) == total
+
+
+def test_independent_cadences_run_on_their_own_schedules() -> None:
+    lo, hi = date(2026, 3, 1), date(2026, 3, 31)
+    conversion = _dates(Cadence("months", 1, 2), date(2026, 1, 1), lo, hi)
+    deposit = _dates(Cadence("weeks", 2, 0), date(2026, 3, 2), lo, hi)  # Mondays, fortnightly
+    buy = _dates(Cadence("weeks", 1, 4), date(2026, 3, 2), lo, hi)  # Fridays, weekly
+    assert conversion == [date(2026, 3, 2)]
+    assert deposit == [date(2026, 3, 2), date(2026, 3, 16), date(2026, 3, 30)]
+    assert buy == [date(2026, 3, 6), date(2026, 3, 13), date(2026, 3, 20), date(2026, 3, 27)]
+    # Totals may conflict: $300 a fortnight deposited, $400 a week bought draws cash down.
+    deposited = D("300") * rec.runs_per_year("weeks", 2)
+    bought = D("400") * rec.runs_per_year("weeks", 1)
+    assert bought > deposited

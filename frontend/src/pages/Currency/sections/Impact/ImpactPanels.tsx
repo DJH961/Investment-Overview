@@ -25,7 +25,7 @@ import { toNum } from "../../../../lib/queries/portfolio";
 import type { CurrencyEffectDto, EffectBarDto, EffectRecordDto, HoldingEffectDto } from "../../../../lib/queries/currencyEffect";
 import { useTimeZone } from "../../../../lib/timezone";
 import { contextUntilMs, fractionTone, pctText, ppText, spanOf } from "../../numbers";
-import { compactSigned, gapWords, monthShort, periodLabel, ppDirection, ppFlat, ppSize, RETURNS_TIP } from "./impactFormat";
+import { compactSigned, gapWords, monthShort, periodLabel, ppDirection, ppFlat, ppSize, RETURNS_TIP, sessionsFromTimes } from "./impactFormat";
 import { CurrencyBar, InvestingHeadline } from "./ImpactInvesting";
 
 type Kind = "tailwind" | "headwind" | "neutral";
@@ -239,6 +239,9 @@ export function ImpactHero({ data, range, figures = [] }: { data: CurrencyEffect
   const tooltipTimeFormat = (t: number) =>
     !intraday ? formatDate(new Date(t), "medium") : range === "1d" ? formatTime(new Date(t), timeZone) : formatDayTime(t, timeZone);
 
+  // 1W: the Overview's session axis, so nights and the weekend do not show as flat stretches.
+  const sessions = useMemo(() => (intraday && range === "1w" ? sessionsFromTimes(pts.map((p) => Date.parse(p.t))) : []), [intraday, range, pts]);
+
   const gapLead = isGapLead(data);
   // The chart only says something when the rate moved this side's book.
   const showChart = pts.length > 1 && !gapLead && (!inv || inv.deposit_count > 0);
@@ -259,7 +262,8 @@ export function ImpactHero({ data, range, figures = [] }: { data: CurrencyEffect
             return c === undefined || c === null ? null : `Currency ${formatMoney(c, ccy, { signed: true, digits: 0 })}`;
           }}
           valueFormat={chartMoneyFormat(ccy, "axis")}
-          xMode={intraday && range === "1d" ? "time" : "date"}
+          xMode={intraday && range === "1d" ? "time" : sessions.length ? "session" : "date"}
+          sessions={sessions}
           shade={before ? [before] : undefined}
           timeFormat={timeFormat}
           tooltipTimeFormat={tooltipTimeFormat}
@@ -297,22 +301,31 @@ export function ImpactHero({ data, range, figures = [] }: { data: CurrencyEffect
 
 // ---- bridge -------------------------------------------------------------------------------
 
+type BridgeWithCashOut = NonNullable<CurrencyEffectDto["bridge"]> & {
+  cashed_out?: string | null;
+  cashed_out_eur?: string | null;
+};
+
 /**
- * Start + deposits + market + currency = end (exact on the server), as a horizontal
- * waterfall on one scale. The start and end bars are levels; the three steps float
+ * Start + deposits - cash-outs + market + currency = end (exact on the server), as a
+ * horizontal waterfall on one scale. The start and end bars are levels; the steps float
  * from where the previous one ended. Color names the part (currency is the gold hatch
  * of the chart above); the direction, the arrow and the sign carry gain or loss.
  */
 export function BridgeCard({ data }: { data: CurrencyEffectDto }) {
-  const b = data.bridge;
+  const b = data.bridge as BridgeWithCashOut | null | undefined;
   if (!b) return null;
   const ccy = data.ccy;
   const start = toNum(b.start) ?? 0;
   const dep = toNum(b.deposits) ?? 0;
+  const cashOutRaw = toNum(b.cashed_out ?? (ccy === "EUR" ? b.cashed_out_eur : null));
+  const showCashOut = cashOutRaw !== null && Math.round(cashOutRaw) !== 0;
+  const cashOut = showCashOut ? -Math.abs(cashOutRaw) : 0;
   const mkt = toNum(b.market) ?? 0;
   const cur = toNum(b.currency) ?? 0;
-  const end = toNum(b.end) ?? start + dep + mkt + cur;
-  const levels = [start, start + dep, start + dep + mkt, end];
+  const end = toNum(b.end) ?? start + dep + cashOut + mkt + cur;
+  const afterFlow = start + dep + cashOut;
+  const levels = [start, start + dep, afterFlow, afterFlow + mkt, end];
   const hi = Math.max(...levels);
   const minL = Math.min(...levels);
   // A level far above zero would leave the steps as slivers: start the axis near the lowest level.
@@ -340,11 +353,24 @@ export function BridgeCard({ data }: { data: CurrencyEffectDto }) {
       part: "deposits",
       signed: true,
     },
+    ...(showCashOut
+      ? [
+          {
+            id: "cashed_out",
+            label: "Cashed out",
+            from: start + dep,
+            to: afterFlow,
+            amount: <Money amount={cashOut} currency={ccy} signed digits={0} />,
+            part: "cashed_out",
+            signed: true,
+          },
+        ]
+      : []),
     {
       id: "market",
       label: "Market",
-      from: start + dep,
-      to: start + dep + mkt,
+      from: afterFlow,
+      to: afterFlow + mkt,
       amount: <Money amount={mkt} currency={ccy} signed colored digits={0} />,
       part: "market",
       signed: true,
@@ -352,7 +378,7 @@ export function BridgeCard({ data }: { data: CurrencyEffectDto }) {
     {
       id: "currency",
       label: "Currency",
-      from: start + dep + mkt,
+      from: afterFlow + mkt,
       to: end,
       amount: <Money amount={cur} currency={ccy} signed colored digits={0} />,
       part: "currency",
@@ -368,6 +394,16 @@ export function BridgeCard({ data }: { data: CurrencyEffectDto }) {
     },
   ];
   const rows = showCurrency ? allRows : allRows.filter((r) => r.id !== "currency");
+  const bridgeLabel = [
+    "Start",
+    "deposits",
+    showCashOut ? "cashed out" : null,
+    "market",
+    showCurrency ? "currency" : null,
+    "end",
+  ]
+    .filter(Boolean)
+    .join(", ");
   return (
     <Card
       className="impact__bridge"
@@ -378,14 +414,14 @@ export function BridgeCard({ data }: { data: CurrencyEffectDto }) {
             label="From start to end"
             content={
               showCurrency
-                ? "Start value, plus what you paid in, plus what the markets did, plus what the exchange rate did, equals the end value. Each part is valued at its own day's rate."
-                : `Start value, plus what you paid in, plus what the markets did, equals the end value. Your holdings are all in ${ccyWords(ccy)}, so the exchange rate adds nothing here.`
+                ? `Start value, plus what you paid in${showCashOut ? ", less what you cashed out" : ""}, plus what the markets did, plus what the exchange rate did, equals the end value. Each part is valued at its own day's rate.`
+                : `Start value, plus what you paid in${showCashOut ? ", less what you cashed out" : ""}, plus what the markets did, equals the end value. Your holdings are all in ${ccyWords(ccy)}, so the exchange rate adds nothing here.`
             }
           />
         </span>
       }
     >
-      <ul className="bridge" aria-label={showCurrency ? "Start, deposits, market, currency, end" : "Start, deposits, market, end"}>
+      <ul className="bridge" aria-label={bridgeLabel}>
         {rows.map((r) => {
           const a = pos(Math.min(r.from, r.to));
           const w = Math.max(0.6, Math.abs(pos(r.to) - pos(r.from)));

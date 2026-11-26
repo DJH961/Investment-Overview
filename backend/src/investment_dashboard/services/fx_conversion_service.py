@@ -7,16 +7,16 @@ XIRR/metrics: :func:`effective_eur_overrides` is the hook for that.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from sqlalchemy.orm import Session
 
 from investment_dashboard.activity_log import activity
-from investment_dashboard.domain import fx_pool
+from investment_dashboard.domain import cash_pool, fx_pool
 from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.repositories import fx_conversion_repository as repo
 from investment_dashboard.services import fx_service
@@ -56,9 +56,50 @@ def _validate(
 PROVIDERS = frozenset({"wise", "revolut", "other"})
 
 
-def _validate_pair(*, from_ccy: str, to_ccy: str, provider: str | None) -> None:
-    if (from_ccy, to_ccy) != ("EUR", "USD"):
-        raise ValueError("only EUR to USD conversions are supported")
+#: The pairs a conversion row may hold (7.4): EUR -> USD, and back to EUR.
+PAIRS: frozenset[tuple[str, str]] = frozenset({("EUR", "USD"), ("USD", "EUR")})
+
+Direction = Literal["to_usd", "to_eur"]
+
+
+def direction_of(from_ccy: str, to_ccy: str) -> Direction:
+    """``"to_eur"`` for a conversion back to euros, else ``"to_usd"``.
+
+    A row keeps its EUR amount in ``eur_sent`` and its USD amount in
+    ``usd_received`` in both directions (no migration): for a conversion back,
+    ``eur_sent`` is the euros received and ``usd_received`` the dollars sent;
+    ``fees_eur`` stays in euros.
+    """
+    return "to_eur" if (from_ccy.upper(), to_ccy.upper()) == ("USD", "EUR") else "to_usd"
+
+
+def direction(row: FxConversion) -> Direction:
+    return direction_of(row.from_ccy, row.to_ccy)
+
+
+def _validate_pair(
+    *,
+    from_ccy: str,
+    to_ccy: str,
+    provider: str | None,
+    kept_usd: Decimal = Decimal(0),
+    fees_eur: Decimal | None = None,
+    fees_usd: Decimal | None = None,
+    usd_received: Decimal = Decimal(0),
+) -> None:
+    if (from_ccy, to_ccy) not in PAIRS:
+        raise ValueError("only EUR to USD conversions and USD back to EUR are supported")
+    if fees_usd is not None:
+        if fees_usd < 0:
+            raise ValueError("fees_usd must not be negative")
+        if direction_of(from_ccy, to_ccy) != "to_eur":
+            raise ValueError("a fee in dollars applies only to a conversion back to euros")
+        if fees_eur is not None:
+            raise ValueError("give the fee in euros or in dollars, not both")
+        if fees_usd >= usd_received:
+            raise ValueError("fees_usd must be below the dollars sent")
+    if direction_of(from_ccy, to_ccy) == "to_eur" and kept_usd != 0:
+        raise ValueError("kept_usd applies only to EUR to USD conversions")
     if provider is not None and provider not in PROVIDERS:
         raise ValueError("provider must be wise, revolut or other")
 
@@ -70,8 +111,14 @@ def _note_change(action: str, conversion_id: int, on: date) -> None:
     )
 
 
-def list_conversions(session: Session) -> Sequence[FxConversion]:
-    return repo.list_all(session)
+def list_conversions(
+    session: Session, *, direction: Direction | None = None
+) -> Sequence[FxConversion]:
+    """Every conversion row (date, id order), or only those in ``direction``."""
+    rows = repo.list_all(session)
+    if direction is None:
+        return rows
+    return [r for r in rows if direction_of(r.from_ccy, r.to_ccy) == direction]
 
 
 def get_conversion(session: Session, conversion_id: int) -> FxConversion | None:
@@ -85,6 +132,7 @@ def create_conversion(
     eur_sent: Decimal,
     usd_received: Decimal,
     fees_eur: Decimal | None = None,
+    fees_usd: Decimal | None = None,
     note: str | None = None,
     provider: str | None = None,
     from_ccy: str = "EUR",
@@ -95,7 +143,15 @@ def create_conversion(
     _validate(
         on=on, eur_sent=eur_sent, usd_received=usd_received, fees_eur=fees_eur, kept_usd=kept_usd
     )
-    _validate_pair(from_ccy=from_ccy, to_ccy=to_ccy, provider=provider)
+    _validate_pair(
+        from_ccy=from_ccy,
+        to_ccy=to_ccy,
+        provider=provider,
+        kept_usd=kept_usd,
+        fees_eur=fees_eur,
+        fees_usd=fees_usd,
+        usd_received=usd_received,
+    )
     row = repo.add(
         session,
         kept_usd=kept_usd,
@@ -104,6 +160,7 @@ def create_conversion(
         eur_sent=eur_sent,
         usd_received=usd_received,
         fees_eur=fees_eur,
+        fees_usd=fees_usd,
         note=note,
         provider=provider,
         from_ccy=from_ccy,
@@ -121,6 +178,7 @@ def update_conversion(
     eur_sent: Decimal,
     usd_received: Decimal,
     fees_eur: Decimal | None = None,
+    fees_usd: Decimal | None = None,
     note: str | None = None,
     provider: str | None = None,
     from_ccy: str = "EUR",
@@ -131,7 +189,15 @@ def update_conversion(
     _validate(
         on=on, eur_sent=eur_sent, usd_received=usd_received, fees_eur=fees_eur, kept_usd=kept_usd
     )
-    _validate_pair(from_ccy=from_ccy, to_ccy=to_ccy, provider=provider)
+    _validate_pair(
+        from_ccy=from_ccy,
+        to_ccy=to_ccy,
+        provider=provider,
+        kept_usd=kept_usd,
+        fees_eur=fees_eur,
+        fees_usd=fees_usd,
+        usd_received=usd_received,
+    )
     row = repo.get(session, conversion_id)
     if row is None:
         return None
@@ -142,6 +208,7 @@ def update_conversion(
         eur_sent=eur_sent,
         usd_received=usd_received,
         fees_eur=fees_eur,
+        fees_usd=fees_usd,
         note=note,
         provider=provider,
         from_ccy=from_ccy,
@@ -163,6 +230,7 @@ def delete_conversion(session: Session, conversion_id: int) -> bool:
 
 
 def _batches(rows: Sequence[FxConversion]) -> list[fx_pool.Batch]:
+    """EUR -> USD rows only: a conversion back never fills the deposit pool."""
     return [
         fx_pool.Batch(
             id=r.id,
@@ -173,7 +241,52 @@ def _batches(rows: Sequence[FxConversion]) -> list[fx_pool.Batch]:
             kept_usd=r.kept_usd,
         )
         for r in rows
+        if direction(r) == "to_usd"
     ]
+
+
+def batches(session: Session) -> list[fx_pool.Batch]:
+    """Every EUR -> USD conversion as a pool batch (date, id order)."""
+    return _batches(repo.list_all(session))
+
+
+def conversions_back(session: Session) -> list[cash_pool.ConversionBack]:
+    """Every USD -> EUR conversion as a cash-pool event (date, id order)."""
+    return [
+        cash_pool.ConversionBack(
+            id=r.id,
+            date=r.date,
+            from_ccy=r.from_ccy.upper(),
+            sent=r.usd_received,
+            eur_received=r.eur_sent,
+            fees_eur=r.fees_eur if r.fees_eur is not None else Decimal(0),
+            fees_usd=r.fees_usd if r.fees_usd is not None else Decimal(0),
+        )
+        for r in repo.list_all(session)
+        if direction(r) == "to_eur"
+    ]
+
+
+def _split_pins(
+    session: Session,
+) -> tuple[list[fx_pool.Pin], list[fx_pool.Pin]]:
+    """``(deposit pins, withdrawal pins)``: a pin on a conversion back is a withdrawal pin.
+
+    The 7.3 pins table is reused both ways: for a conversion back,
+    ``deposit_txn_id`` holds the withdrawal's transaction id.
+    """
+    back_ids = {r.id for r in repo.list_all(session) if direction(r) == "to_eur"}
+    deposit: list[fx_pool.Pin] = []
+    withdrawal: list[fx_pool.Pin] = []
+    for p in repo.list_pins(session):
+        pin = fx_pool.Pin(p.deposit_txn_id, p.conversion_id, p.usd)
+        (withdrawal if p.conversion_id in back_ids else deposit).append(pin)
+    return deposit, withdrawal
+
+
+def withdrawal_pins(session: Session) -> list[fx_pool.Pin]:
+    """Pins from a conversion back to a withdrawal (``deposit_id`` = the withdrawal id)."""
+    return _split_pins(session)[1]
 
 
 def _ecb_lookup(session: Session) -> Callable[[date], Decimal | None]:
@@ -221,9 +334,11 @@ def ecb_fixing_for(session: Session, on: date) -> tuple[Decimal, date] | None:
 
 
 def compute_pool(session: Session) -> PoolReport:
-    rows = tuple(repo.list_all(session))
+    # The deposit pool only knows EUR -> USD conversions (a conversion back is the cash
+    # pool's, ``conversions_back``).
+    rows = tuple(r for r in repo.list_all(session) if direction(r) == "to_usd")
     deposits = repo.list_usd_contribution_deposits(session)
-    pins = [fx_pool.Pin(p.deposit_txn_id, p.conversion_id, p.usd) for p in repo.list_pins(session)]
+    pins, _withdrawal_pins = _split_pins(session)
     marked = repo.list_usd_received_marks(session)
     result = fx_pool.match_deposits(
         _batches(rows),
@@ -266,6 +381,18 @@ def unconverted_deposits(report: PoolReport) -> list[fx_pool.DepositMatch]:
     ]
 
 
+def _pinnable(rows: Mapping[int, FxConversion], cid: int, want: Direction) -> FxConversion:
+    """The conversion a pin names, in the direction the pin needs (else ValueError)."""
+    conv = rows.get(cid)
+    if conv is None:
+        raise ValueError(f"conversion {cid} not found")
+    if direction(conv) != want:
+        if want == "to_usd":
+            raise ValueError(f"conversion {cid} goes back to euros; pin it to a withdrawal")
+        raise ValueError(f"conversion {cid} is not a conversion back to euros")
+    return conv
+
+
 def set_pins(
     session: Session, deposit_txn_id: int, pins: Sequence[tuple[int, Decimal]]
 ) -> fx_pool.DepositMatch:
@@ -280,9 +407,7 @@ def set_pins(
     seen: set[int] = set()
     total = Decimal(0)
     for cid, usd in pins:
-        conv = rows.get(cid)
-        if conv is None:
-            raise ValueError(f"conversion {cid} not found")
+        conv = _pinnable(rows, cid, "to_usd")
         if cid in seen:
             raise ValueError("a conversion can be pinned only once per deposit")
         seen.add(cid)
@@ -305,6 +430,50 @@ def set_pins(
         "conversion pins set: deposit=%s pins=%d kind=fx_conversion_pin", deposit_txn_id, len(pins)
     )
     return deposit_match(session, deposit_txn_id)
+
+
+def set_withdrawal_pins(
+    session: Session, withdrawal_txn_id: int, pins: Sequence[tuple[int, Decimal]]
+) -> None:
+    """Replace a withdrawal's pins to conversions back (``(conversion_id, usd)`` pairs).
+
+    Reuses the 7.3 pins table with ``deposit_txn_id`` = the withdrawal id. A pin
+    names a conversion back dated on or after the withdrawal, for at most the
+    withdrawal's dollars; a conversion back is never pinned for more than it sent.
+    ValueError (422) when they are not valid.
+    """
+    withdrawals = {w.id: w for w in repo.list_usd_withdrawals(session)}
+    wd = withdrawals.get(withdrawal_txn_id)
+    if wd is None:
+        raise ValueError("transaction is not a USD withdrawal")
+    rows = {r.id: r for r in repo.list_all(session)}
+    seen: set[int] = set()
+    total = Decimal(0)
+    for cid, usd in pins:
+        conv = _pinnable(rows, cid, "to_eur")
+        if cid in seen:
+            raise ValueError("a conversion can be pinned only once per withdrawal")
+        seen.add(cid)
+        if usd <= 0:
+            raise ValueError("pin amount must be positive")
+        if conv.date < wd.date:
+            raise ValueError("the conversion back is dated before the withdrawal")
+        total += usd
+    if total > wd.usd:
+        raise ValueError("withdrawal is pinned for more than its amount")
+    others: dict[int, Decimal] = {}
+    for p in repo.list_pins(session):
+        if p.deposit_txn_id != withdrawal_txn_id:
+            others[p.conversion_id] = others.get(p.conversion_id, Decimal(0)) + p.usd
+    for cid, usd in pins:
+        if others.get(cid, Decimal(0)) + usd > rows[cid].usd_received:
+            raise ValueError("conversion is pinned for more than it sent")
+    repo.replace_pins(session, withdrawal_txn_id, list(pins))
+    activity("changes").info(
+        "conversion pins set: withdrawal=%s pins=%d kind=fx_conversion_pin",
+        withdrawal_txn_id,
+        len(pins),
+    )
 
 
 def clear_pins(session: Session, deposit_txn_id: int) -> None:
@@ -335,7 +504,7 @@ def effective_eur_overrides(session: Session) -> dict[int, Decimal]:
     Empty when there are no conversions (today's behaviour is preserved).
     Deposits whose fallback had no ECB rate are left out (frozen leg stays).
     """
-    if not repo.list_all(session):
+    if not _batches(repo.list_all(session)):
         return {}
     report = compute_pool(session)
     return {m.deposit_id: m.eur_total for m in report.result.deposits if not m.rate_missing}

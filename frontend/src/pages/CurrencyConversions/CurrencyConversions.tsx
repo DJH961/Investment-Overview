@@ -1,4 +1,4 @@
-import { Coins, Copy, FileUp, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
+import { Coins, Copy, FileUp, MoreHorizontal, Pencil, Plus, Trash2, Undo2 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router";
 import { Button, LinkButton } from "../../components/Button";
@@ -12,13 +12,14 @@ import { Input } from "../../components/Input";
 import { Menu } from "../../components/Menu";
 import { Money } from "../../components/Money";
 import { PageHeader } from "../../components/PageHeader";
+import { SegmentedControl } from "../../components/SegmentedControl";
 import { Select } from "../../components/Select";
 import { Skeleton } from "../../components/Skeleton";
 import { StatStrip } from "../../components/StatStrip";
 import { useToast } from "../../components/Toast";
 import { ApiError } from "../../lib/api";
-import { formatDate, formatNumber, getFormatPrefs, todayIn } from "../../lib/format";
-import { parseDecimal, toApiDecimal } from "../../lib/parseDecimal";
+import { formatDate, formatMoney, formatNumber, getFormatPrefs, todayIn } from "../../lib/format";
+import { toApiDecimal } from "../../lib/parseDecimal";
 import { usePersistentState } from "../../lib/usePersistentState";
 import {
   useDeleteConversion,
@@ -32,11 +33,13 @@ import {
 } from "../../lib/queries/manage";
 import { offEcbText, trimDecimal, weekdayDate } from "./matching";
 import { costStatItems, PeriodRate, useCostsAll } from "./CostBits";
-import { ConversionHead, ConversionRow } from "./ConversionRow";
+import { ConversionHead, ConversionRow, directionOf } from "./ConversionRow";
+import { BackFundingRow, backStatItems } from "./BackToEuros";
+import { useJourney } from "../../lib/queries/journey";
 import { SettleSheet } from "../../components/SettleSheet";
 import { useEstimateQueue } from "../Transactions/EstChip";
 import { DepositRow } from "./DepositRow";
-import { activeCount, FilterBar, NO_FILTERS, PROVIDER_FILTER_OPTIONS, ToggleChip, type ConversionFilters } from "./Filters";
+import { activeCount, DIRECTION_FILTER_OPTIONS, FilterBar, NO_FILTERS, PROVIDER_FILTER_OPTIONS, ToggleChip, type ConversionFilters, type DirectionFilter } from "./Filters";
 import { Fold } from "./Fold";
 import {
   groupByYear,
@@ -46,6 +49,8 @@ import {
   validPeriod,
 } from "./grouping";
 import { PinDialog } from "./PinDialog";
+import { PhoneConversionList, PhoneFold } from "./PhoneConversions";
+import { useIsPhone } from "../../lib/useMediaQuery";
 import "./CurrencyConversions.scss";
 
 interface FormState {
@@ -75,7 +80,7 @@ function fromConversion(c: FxConversion): FormState {
     date: c.date,
     eur: trimDecimal(c.eur_sent),
     usd: trimDecimal(c.usd_received),
-    fees: trimDecimal(c.fees_eur),
+    fees: trimDecimal(c.fee_ccy === "USD" ? c.fees_usd : c.fees_eur),
     kept: Number(c.kept_usd) > 0 ? trimDecimal(c.kept_usd) : "",
     note: c.note ?? "",
     provider: c.provider ?? "",
@@ -87,11 +92,128 @@ function duplicateOf(c: FxConversion): Partial<FormState> {
   return { ...fromConversion(c), date: "" };
 }
 
-/** Display-only readout of the typed numbers; the server stores the real rate. */
-function previewRate(eur: string, usd: string): string {
-  const e = parseDecimal(eur);
-  const u = parseDecimal(usd);
-  return e !== null && u !== null && e > 0 && u > 0 ? formatNumber(u / e, 4) : "–";
+type ConversionDirection = "to_usd" | "to_eur";
+
+const DIRECTION_OPTIONS: { value: ConversionDirection; label: string }[] = [
+  { value: "to_usd", label: "EUR \u2192 USD" },
+  { value: "to_eur", label: "USD \u2192 EUR" },
+];
+
+type EurFeeMode = "excluding" | "including";
+
+const EUR_FEE_MODE_OPTIONS: { value: EurFeeMode; label: string }[] = [
+  { value: "excluding", label: "Excluding fees" },
+  { value: "including", label: "Including fees" },
+];
+
+function decimalScale(a: string, b: string): number {
+  const fracLen = (s: string) => (s.includes(".") ? s.split(".")[1].length : 0);
+  return Math.max(2, fracLen(a), fracLen(b));
+}
+
+function parseScaledDecimal(canonical: string, scale: number): bigint {
+  const [wholeRaw, fracRaw = ""] = canonical.split(".");
+  const whole = wholeRaw || "0";
+  const frac = fracRaw.padEnd(scale, "0").slice(0, scale);
+  return BigInt(`${whole}${frac}`);
+}
+
+function formatScaledDecimal(units: bigint, scale: number): string {
+  const sign = units < 0n ? "-" : "";
+  const abs = units < 0n ? -units : units;
+  const digits = abs.toString().padStart(scale + 1, "0");
+  return `${sign}${digits.slice(0, -scale)}.${digits.slice(-scale)}`;
+}
+
+/** Exact decimal addition `a + b` via scaled BigInt (at least 2 fractional digits). */
+function addDecimals(a: string, b: string): string {
+  const scale = decimalScale(a, b);
+  return formatScaledDecimal(parseScaledDecimal(a, scale) + parseScaledDecimal(b, scale), scale);
+}
+
+/** Exact decimal subtraction `a - b` via scaled BigInt (at least 2 fractional digits). */
+function subtractDecimals(a: string, b: string): string {
+  const scale = decimalScale(a, b);
+  return formatScaledDecimal(parseScaledDecimal(a, scale) - parseScaledDecimal(b, scale), scale);
+}
+
+/** Compare two canonical non-negative decimal strings: >0 if a > b, 0 if equal, <0 if a < b. */
+function compareDecimals(a: string, b: string): number {
+  const scale = decimalScale(a, b);
+  const da = parseScaledDecimal(a, scale);
+  const db = parseScaledDecimal(b, scale);
+  return da > db ? 1 : da < db ? -1 : 0;
+}
+
+interface EurPreview {
+  convertedEur: string | null;
+  totalPaidEur: string | null;
+  hasFees: boolean;
+  feesTooLarge: boolean;
+  convertedRate: number | null;
+  allInRate: number | null;
+}
+
+function computeEurPreview(form: FormState, feeMode: EurFeeMode): EurPreview {
+  const eurDec = toApiDecimal(form.eur);
+  const usdDec = toApiDecimal(form.usd);
+  const feesDec = form.fees.trim() === "" ? "0" : toApiDecimal(form.fees);
+
+  const eurValid = eurDec !== null && !eurDec.startsWith("-") && Number(eurDec) > 0;
+  const usdValid = usdDec !== null && !usdDec.startsWith("-") && Number(usdDec) > 0;
+  const feesValid = feesDec !== null && !feesDec.startsWith("-") && Number(feesDec) >= 0;
+  const hasFees = feesValid && Number(feesDec) > 0;
+
+  if (!eurValid || !feesValid) {
+    return {
+      convertedEur: null,
+      totalPaidEur: null,
+      hasFees,
+      feesTooLarge: false,
+      convertedRate: null,
+      allInRate: null,
+    };
+  }
+
+  let convertedEur: string | null;
+  let totalPaidEur: string;
+  let feesTooLarge = false;
+
+  if (feeMode === "excluding") {
+    convertedEur = eurDec;
+    totalPaidEur = hasFees ? addDecimals(eurDec, feesDec) : eurDec;
+  } else {
+    feesTooLarge = compareDecimals(eurDec, feesDec) <= 0;
+    convertedEur = feesTooLarge ? null : subtractDecimals(eurDec, feesDec);
+    totalPaidEur = eurDec;
+  }
+
+  const usdNum = usdValid ? Number(usdDec) : null;
+  const convertedNum = convertedEur !== null ? Number(convertedEur) : null;
+  const totalNum = Number(totalPaidEur);
+  const convertedRate = usdNum !== null && convertedNum !== null && convertedNum > 0 ? usdNum / convertedNum : null;
+  const allInRate = usdNum !== null && convertedEur !== null && totalNum > 0 ? usdNum / totalNum : null;
+
+  return {
+    convertedEur,
+    totalPaidEur,
+    hasFees,
+    feesTooLarge,
+    convertedRate,
+    allInRate,
+  };
+}
+
+function backRatesOf(form: FormState): { hasFee: boolean; converted: number | null; allIn: number | null } {
+  const usd = toApiDecimal(form.usd);
+  const eur = toApiDecimal(form.eur);
+  const fee = form.fees.trim() === "" ? "0" : toApiDecimal(form.fees);
+  const ok = (v: string | null) => v !== null && !v.startsWith("-") && Number(v) > 0;
+  if (!ok(usd) || !ok(eur)) return { hasFee: false, converted: null, allIn: null };
+  const feeNum = fee !== null && !fee.startsWith("-") ? Number(fee) : 0;
+  const allIn = Number(usd) / Number(eur);
+  const converted = feeNum < Number(usd) ? (Number(usd) - feeNum) / Number(eur) : null;
+  return { hasFee: feeNum > 0, converted, allIn };
 }
 
 export interface ConversionDialogProps {
@@ -106,16 +228,20 @@ export function ConversionDialog({ open, onOpenChange, editing, prefill }: Conve
   const save = useSaveConversion();
   const { toast } = useToast();
   const [form, setForm] = useState<FormState>(editing ? fromConversion(editing) : { ...EMPTY, ...prefill });
+  const [feeMode, setFeeMode] = useState<EurFeeMode>("excluding");
+  const [direction, setDirection] = useState<ConversionDirection>(
+    editing?.from_ccy === "USD" && editing?.to_ccy === "EUR" ? "to_eur" : "to_usd",
+  );
+  const back = direction === "to_eur";
   const [error, setError] = useState<string | null>(null);
   const reference = useFxReference(form.date);
-  const typedRate = (() => {
-    const e = parseDecimal(form.eur);
-    const u = parseDecimal(form.usd);
-    return e !== null && u !== null && e > 0 && u > 0 ? u / e : null;
-  })();
+  const preview = computeEurPreview(form, back ? "excluding" : feeMode);
+  // USD -> EUR: the dollar fee is part of the dollars sent. Converted rate = (USD sent - fee) / EUR
+  // received; all-in rate = USD sent / EUR received (linear display maths on the typed amounts).
+  const backRates = backRatesOf(form);
   const ecb = reference.data?.published && reference.data.ecb_rate ? Number(reference.data.ecb_rate) : null;
   const usedBy = editing?.used_by.length ?? 0;
-  const set =(k: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement>) =>
+  const set = (k: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const submit = (e: React.FormEvent) => {
@@ -127,11 +253,20 @@ export function ConversionDialog({ open, onOpenChange, editing, prefill }: Conve
       setError("Enter a date and positive EUR and USD amounts, like 1000,50 or 1000.50.");
       return;
     }
-    if (form.fees.trim() !== "" && (fees === null || Number(fees) < 0)) {
+    if (form.fees.trim() !== "" && (fees === null || fees.startsWith("-") || Number(fees) < 0)) {
       setError("Fees must be a number, like 2,50 or 2.50.");
       return;
     }
-    const kept = form.kept.trim() === "" ? "0" : toApiDecimal(form.kept);
+    if (!back && feeMode === "including" && fees !== null && compareDecimals(eur, fees) <= 0) {
+      setError("Fees must be less than the total EUR paid.");
+      return;
+    }
+    const eurSent = !back && feeMode === "including" && fees !== null && Number(fees) > 0 ? subtractDecimals(eur, fees) : eur;
+    if (back && fees !== null && compareDecimals(usd, fees) <= 0) {
+      setError("Fees must be less than the USD sent.");
+      return;
+    }
+    const kept = back || form.kept.trim() === "" ? "0" : toApiDecimal(form.kept);
     if (kept === null || Number(kept) < 0 || Number(kept) > Number(usd)) {
       setError("Kept dollars must be between 0 and the USD received.");
       return;
@@ -142,15 +277,16 @@ export function ConversionDialog({ open, onOpenChange, editing, prefill }: Conve
         id: editing?.id,
         body: {
           date: form.date,
-          eur_sent: eur,
+          eur_sent: eurSent,
           usd_received: usd,
-          fees_eur: fees,
+          fees_eur: back ? null : fees,
+          fees_usd: back ? fees : null,
           kept_usd: kept,
           note: form.note || null,
           provider: form.provider || null,
-          // 7.3 matches EUR→USD only; the server rejects any other pair.
-          from_ccy: "EUR",
-          to_ccy: "USD",
+          // to_eur rows store eur_sent = euros received, usd_received = dollars sent.
+          from_ccy: back ? "USD" : "EUR",
+          to_ccy: back ? "EUR" : "USD",
         },
       },
       {
@@ -168,7 +304,11 @@ export function ConversionDialog({ open, onOpenChange, editing, prefill }: Conve
       open={open}
       onOpenChange={onOpenChange}
       title={editing ? "Edit conversion" : "Add conversion"}
-      description="Record a real EUR to USD exchange (Wise, Revolut, your bank). EUR returns use the rate you actually got."
+      description={
+        back
+          ? "Record dollars you converted back to euros (Wise, Revolut, your bank). Fees are taken out of the euros received."
+          : "Record a real EUR to USD exchange (Wise, Revolut, your bank). EUR returns use the rate you actually got."
+      }
       footer={
         <>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
@@ -181,19 +321,70 @@ export function ConversionDialog({ open, onOpenChange, editing, prefill }: Conve
       }
     >
       <form id="conversion-form" className="conversion-form" onSubmit={submit} noValidate>
+        {!editing && (
+          <div className="conversion-form__mode">
+            <span className="conversion-form__mode-label">Direction</span>
+            <SegmentedControl<ConversionDirection>
+              size="sm"
+              ariaLabel="Conversion direction"
+              options={DIRECTION_OPTIONS}
+              value={direction}
+              onChange={(next) => {
+                setDirection(next);
+                setError(null);
+              }}
+            />
+          </div>
+        )}
         <Field label="Date">{(c) => <Input {...c} type="date" value={form.date} onChange={set("date")} />}</Field>
-        <Field label="EUR sent">
-          {(c) => <Input {...c} inputMode="decimal" value={form.eur} onChange={set("eur")} />}
-        </Field>
+        {back ? (
+          <>
+            <Field label="USD sent">
+              {(c) => <Input {...c} inputMode="decimal" value={form.usd} onChange={set("usd")} />}
+            </Field>
+            <Field label="EUR received">
+              {(c) => <Input {...c} inputMode="decimal" value={form.eur} onChange={set("eur")} />}
+            </Field>
+          </>
+        ) : (
+        <>
+        <div className="conversion-form__eur-group">
+          <div className="conversion-form__mode">
+            <span className="conversion-form__mode-label">EUR amount is</span>
+            <SegmentedControl<EurFeeMode>
+              size="sm"
+              ariaLabel="EUR amount mode"
+              options={EUR_FEE_MODE_OPTIONS}
+              value={feeMode}
+              onChange={(next) => {
+                setFeeMode(next);
+                setError(null);
+              }}
+            />
+          </div>
+          <Field
+            label={feeMode === "excluding" ? "EUR sent" : "Total EUR paid (incl. fees)"}
+            hint={feeMode === "including" ? "Fees are subtracted to store the EUR converted." : undefined}
+          >
+            {(c) => <Input {...c} inputMode="decimal" value={form.eur} onChange={set("eur")} />}
+          </Field>
+        </div>
         <Field label="USD received">
           {(c) => <Input {...c} inputMode="decimal" value={form.usd} onChange={set("usd")} />}
         </Field>
-        <Field label="Fees (EUR, optional)">
+        </>
+        )}
+        <Field
+          label={back ? "Fees (USD, optional)" : "Fees (EUR, optional)"}
+          hint={back ? "Fees come out of the dollars you sent." : undefined}
+        >
           {(c) => <Input {...c} inputMode="decimal" value={form.fees} onChange={set("fees")} />}
         </Field>
-        <Field label="Kept in your USD account (optional)" hint="Dollars you did not send on to the broker.">
-          {(c) => <Input {...c} inputMode="decimal" value={form.kept} onChange={set("kept")} />}
-        </Field>
+        {!back && (
+          <Field label="Kept in your USD account (optional)" hint="Dollars you did not send on to the broker.">
+            {(c) => <Input {...c} inputMode="decimal" value={form.kept} onChange={set("kept")} />}
+          </Field>
+        )}
         <Field label="Provider (optional)">
           {(c) => (
             <Select
@@ -206,9 +397,53 @@ export function ConversionDialog({ open, onOpenChange, editing, prefill }: Conve
           )}
         </Field>
         <Field label="Note (optional)">{(c) => <Input {...c} value={form.note} onChange={set("note")} />}</Field>
-        <p className="conversion-form__rate">
-          Effective rate: <strong>{previewRate(form.eur, form.usd)}</strong> USD per EUR
-        </p>
+        {!back && feeMode === "including" && (preview.convertedEur !== null || preview.feesTooLarge) && (
+          <p className="conversion-form__rate" data-testid="eur-breakdown">
+            {preview.feesTooLarge ? (
+              <>
+                Converted EUR: <strong>–</strong> (fees must be less than total paid)
+              </>
+            ) : (
+              <>
+                Converted EUR: <strong>{formatMoney(Number(preview.convertedEur), "EUR")}</strong>
+                {preview.hasFees ? " (excl. fees)" : ""}
+              </>
+            )}
+          </p>
+        )}
+        {!back && feeMode === "excluding" && preview.hasFees && preview.totalPaidEur !== null && (
+          <p className="conversion-form__rate" data-testid="eur-breakdown">
+            Total paid (incl. fees): <strong>{formatMoney(Number(preview.totalPaidEur), "EUR")}</strong>
+          </p>
+        )}
+        {back && (
+          <p className="conversion-form__rate" data-testid="rate-line">
+            {backRates.hasFee && backRates.converted !== null && backRates.allIn !== null ? (
+              <>
+                Converted rate: <strong>{formatNumber(backRates.converted, 4)}</strong> \u00b7 All-in rate:{" "}
+                <strong>{formatNumber(backRates.allIn, 4)}</strong> USD per EUR
+              </>
+            ) : (
+              <>
+                Effective rate: <strong>{backRates.allIn !== null ? formatNumber(backRates.allIn, 4) : "\u2013"}</strong> USD
+                per EUR
+              </>
+            )}
+          </p>
+        )}
+        {!back && (<p className="conversion-form__rate" data-testid="rate-line">
+          {preview.hasFees && preview.convertedRate !== null && preview.allInRate !== null ? (
+            <>
+              Converted rate: <strong>{formatNumber(preview.convertedRate, 4)}</strong> · All-in rate:{" "}
+              <strong>{formatNumber(preview.allInRate, 4)}</strong> USD per EUR
+            </>
+          ) : (
+            <>
+              Effective rate: <strong>{preview.convertedRate !== null ? formatNumber(preview.convertedRate, 4) : "–"}</strong> USD
+              per EUR
+            </>
+          )}
+        </p>)}
         {/^\d{4}-\d{2}-\d{2}$/.test(form.date) && reference.data && (
           <p className="conversion-form__rate" data-testid="ecb-line">
             {ecb !== null
@@ -216,7 +451,7 @@ export function ConversionDialog({ open, onOpenChange, editing, prefill }: Conve
                   reference.data.ecb_rate_date && reference.data.ecb_rate_date !== form.date
                     ? `ECB ${formatNumber(ecb, 4)} (${weekdayDate(reference.data.ecb_rate_date)}, the last fixing before this day)`
                     : `ECB on ${formatDate(form.date)}: ${formatNumber(ecb, 4)}`,
-                  offEcbText(typedRate, ecb),
+                  offEcbText(back ? backRates.allIn : preview.allInRate, ecb),
                 ]
                   .filter(Boolean)
                   .join(" · ")
@@ -258,9 +493,12 @@ function FoldedList<T>({
   folds,
   setFolds,
   meta,
+  figure,
   children,
 }: {
   prefix: string;
+  /** Phones: the group's main figure, shown right in the header (with its label). */
+  figure?: { label: string; value: (items: readonly T[]) => ReactNode };
   items: readonly T[];
   dateOf: (item: T) => string;
   thisYear: string;
@@ -272,11 +510,27 @@ function FoldedList<T>({
   children: (items: readonly T[]) => ReactNode;
 }) {
   const blocks = groupByYear(items, dateOf);
+  const phone = useIsPhone();
   return (
     <div className="conversions__folds">
       {blocks.map((b) => {
         const key = `${prefix}:y${b.year}`;
         const open = folds[key] ?? (filtered ? true : b.year >= thisYear);
+        if (phone && figure) {
+          return (
+            <PhoneFold
+              key={key}
+              open={open}
+              onToggle={() => setFolds((prev) => ({ ...prev, [key]: !open }))}
+              title={b.year}
+              meta={meta(b.items)}
+              figureLabel={figure.label}
+              figure={figure.value(b.items)}
+            >
+              {children(b.items)}
+            </PhoneFold>
+          );
+        }
         return (
           <Fold
             key={key}
@@ -300,6 +554,9 @@ export function CurrencyConversions() {
   const list = useFxConversions();
   const pool = useFxPool();
   const costs = useCostsAll();
+  // 7.4: cash-outs (conversions back to euros) and their results, from the journey (euro view).
+  const journey = useJourney("EUR");
+  const cashOuts = new Map((journey.data?.cash_outs ?? []).map((o) => [o.conversion_id, o]));
   const est = useEstimateQueue("fx_conversion");
   const del = useDeleteConversion();
   const { toast } = useToast();
@@ -312,6 +569,7 @@ export function CurrencyConversions() {
   const [folds, setFolds] = usePersistentState<Folds>(FOLDS_KEY, {}, isFolds);
   const [openDeposits, setOpenDeposits] = useState<ReadonlySet<number>>(new Set());
   const [pending, setPending] = useState<string | null>(null);
+  const phone = useIsPhone();
 
   const today = todayIn(getFormatPrefs().timeZone);
   const conversions = list.data ?? [];
@@ -325,6 +583,7 @@ export function CurrencyConversions() {
     period: validPeriod(params.get("period"), periods),
     provider: PROVIDER_FILTER_OPTIONS.some((o) => o.value === providerParam) ? (providerParam as string) : "all",
     pool: params.get("pool") === "1",
+    direction: DIRECTION_FILTER_OPTIONS.some((o) => o.value === params.get("direction")) ? (params.get("direction") as DirectionFilter) : "all",
   };
   const needs = params.get("needs") === "1";
   const writeParams = (next: ConversionFilters, nextNeeds: boolean) => {
@@ -332,6 +591,7 @@ export function CurrencyConversions() {
     if (next.period !== PERIOD_ALL) out.set("period", next.period);
     if (next.provider !== "all") out.set("provider", next.provider);
     if (next.pool) out.set("pool", "1");
+    if (next.direction !== "all") out.set("direction", next.direction);
     if (nextNeeds) out.set("needs", "1");
     setParams(out, { replace: true });
   };
@@ -340,8 +600,11 @@ export function CurrencyConversions() {
     (c) =>
       inPeriod(c.date, filters.period, today) &&
       (filters.provider === "all" || c.provider === filters.provider) &&
-      (!filters.pool || Number(c.remaining_usd) > 0.005),
+      (!filters.pool || Number(c.remaining_usd) > 0.005) &&
+      (filters.direction === "all" || directionOf(c) === filters.direction),
   );
+  const toUsd = conversions.filter((c) => directionOf(c) === "to_usd");
+  const backs = conversions.filter((c) => directionOf(c) === "to_eur");
   const shownDeposits = deposits.filter(
     (d) => inPeriod(d.date, filters.period, today) && (!needs || (d.status !== "matched" && d.status !== "received_usd")),
   );
@@ -427,8 +690,15 @@ export function CurrencyConversions() {
       <span className="conversions__label--short">Import</span>
     </LinkButton>
   );
+  const cashOutButton = (
+    <LinkButton variant="secondary" leftIcon={<Undo2 aria-hidden />} to="/cash-out" aria-label="Cash out to euros">
+      <span className="conversions__label--long">Cash out</span>
+      <span className="conversions__label--short">Cash out</span>
+    </LinkButton>
+  );
   const actions = (
     <div className="conversions__actions">
+      {cashOutButton}
       {importButton}
       {addButton}
     </div>
@@ -440,7 +710,7 @@ export function CurrencyConversions() {
       <SettleSheet rows={est.queue} onClose={est.close} />
       <PageHeader
         title="Currency conversions"
-        subtitle="What your EUR to USD conversions really cost, and which one paid for each deposit."
+        subtitle="What your conversions really cost, both ways, and which one paid for each deposit."
         actions={actions}
       />
 
@@ -460,6 +730,7 @@ export function CurrencyConversions() {
           <StatStrip
             label="Conversions at a glance"
             six
+            eight
             items={[
               {
                 key: "pool",
@@ -475,10 +746,10 @@ export function CurrencyConversions() {
               {
                 key: "count",
                 label: "Conversions",
-                value: conversions.length,
+                value: toUsd.length,
                 note: (
                   <>
-                    <Money amount={sumOf(conversions, (c) => c.eur_sent)} currency="EUR" digits={0} /> sent
+                    <Money amount={sumOf(toUsd, (c) => c.eur_sent)} currency="EUR" digits={0} /> sent
                   </>
                 ),
               },
@@ -490,6 +761,7 @@ export function CurrencyConversions() {
                 note: pool.data ? `of ${deposits.length} deposits` : undefined,
               },
               ...costStatItems(costs),
+              ...backStatItems(journey.data?.back_in_euros ?? null),
             ]}
           />
           <Card title="Conversions" flush>
@@ -498,6 +770,7 @@ export function CurrencyConversions() {
                 value={filters}
                 onChange={(next) => writeParams(next, needs)}
                 periods={periods}
+                directions={backs.length > 0}
                 shown={shownConversions.length}
                 total={conversions.length}
               />
@@ -516,6 +789,10 @@ export function CurrencyConversions() {
                   filtered={conversionsFiltered}
                   folds={folds}
                   setFolds={setFolds}
+                  figure={{
+                    label: "Received",
+                    value: (rows) => <Money amount={sumOf(rows, (c) => c.usd_received)} currency="USD" digits={0} />,
+                  }}
                   meta={(rows) => (
                     <>
                       {plural(rows.length, "conversion", "conversions")} ·{" "}
@@ -525,12 +802,20 @@ export function CurrencyConversions() {
                     </>
                   )}
                 >
-                  {(rows) => (
+                  {(rows) => phone ? (
+                    <PhoneConversionList
+                      rows={rows}
+                      menuFor={menuFor}
+                      onSettle={(id) => est.open(id)}
+                      cashOuts={cashOuts}
+                      trailId={params.get("trail")}
+                    />
+                  ) : (
                     <>
                       <ConversionHead />
                       <ul className="conversions__list" aria-label="Currency conversions">
                         {rows.map((c) => (
-                          <ConversionRow key={c.id} c={c} menu={menuFor(c)} onSettle={() => est.open(c.id)} />
+                          <ConversionRow key={c.id} c={c} menu={menuFor(c)} onSettle={() => est.open(c.id)} cashOut={cashOuts.get(c.id) ?? null} initialTrail={params.get("trail") === String(c.id)} />
                         ))}
                       </ul>
                     </>
@@ -617,6 +902,19 @@ export function CurrencyConversions() {
                 </ul>
               )}
             </FoldedList>
+          )}
+          {backs.length > 0 && (
+            <Card
+              title="How each conversion back was funded"
+              subtitle="Withdrawals pinned to a conversion first, then the oldest withdrawals, then the rest of the USD account at what it cost."
+              flush
+            >
+              <ul className="conversions__backs" aria-label="Conversions back to euros">
+                {backs.map((c) => (
+                  <BackFundingRow key={c.id} c={c} />
+                ))}
+              </ul>
+            </Card>
           )}
         </>
       )}

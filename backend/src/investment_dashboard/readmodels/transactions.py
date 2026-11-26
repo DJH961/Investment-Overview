@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from investment_dashboard.readmodels._context import ReadModelContext, build_context
 from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.readmodels.queries.ledger_query import (
+    EurAmount,
     LedgerFilters,
     LedgerRecord,
     get_ledger_record,
@@ -16,6 +17,23 @@ from investment_dashboard.readmodels.queries.ledger_query import (
     month_totals,
     summarize_records,
 )
+from investment_dashboard.services import cash_pool_service
+
+
+def _deposit_eur_amount(session: Session) -> EurAmount | None:
+    """EUR resolver from the cash pool (7.4): deposits at your rate, buys at their pool cost.
+
+    A matched deposit gives the FX pool's effective EUR; a buy (when
+    ``fx.holding_cost_basis = pool``) minus the euros that bought its dollars.
+    Every other row returns ``None`` and takes the derived ECB path. ``None``
+    (no resolver) when there is nothing to resolve.
+    """
+    snapshot = cash_pool_service.build_pool_snapshot(session)
+    if not cash_pool_service.deposit_eur(snapshot) and not cash_pool_service.buy_eur_costs(
+        snapshot
+    ):
+        return None
+    return cash_pool_service.pool_eur_amount(snapshot)
 
 
 def _record_dict(r: LedgerRecord) -> dict[str, Any]:
@@ -33,6 +51,8 @@ def _record_dict(r: LedgerRecord) -> dict[str, Any]:
         "net_eur": dec(r.net_eur),
         "net_usd": dec(r.net_usd),
         "source": r.source,
+        "eur_basis": r.eur_basis,
+        "trail_kind": r.trail_kind,
     }
 
 
@@ -44,7 +64,9 @@ def build(
 ) -> dict[str, Any]:
     """Return the JSON-serializable transactions read-model."""
     ctx = context or build_context(session)
-    rows = list_ledger_records(session, filters, fx_rate=ctx.fx_rate_eur_usd)
+    rows = list_ledger_records(
+        session, filters, fx_rate=ctx.fx_rate_eur_usd, eur_amount=_deposit_eur_amount(session)
+    )
     return {"rows": [_record_dict(r) for r in rows]}
 
 
@@ -75,6 +97,8 @@ def _detail_dict(r: LedgerRecord) -> dict[str, Any]:
         "cash_eur": dec(r.cash_eur),
         "cash_usd": dec(r.cash_usd),
         "is_estimate": r.is_estimate,
+        "eur_basis": r.eur_basis,
+        "trail_kind": r.trail_kind,
     }
 
 
@@ -96,16 +120,20 @@ def build_page(
     only the rows on the page).
     """
     ctx = context or build_context(session)
+    eur_amount = _deposit_eur_amount(session)
     rows = list_ledger_records(
         session,
         filters,
         fx_rate=ctx.fx_rate_eur_usd,
+        eur_amount=eur_amount,
         limit=limit,
         offset=offset,
         sort=sort,
         order=order,
     )
-    every = list_ledger_records(session, filters, fx_rate=ctx.fx_rate_eur_usd)
+    every = list_ledger_records(
+        session, filters, fx_rate=ctx.fx_rate_eur_usd, eur_amount=eur_amount
+    )
     summary = summarize_records(every)
     totals = month_totals(every)
     page_months = list(dict.fromkeys(r.date.strftime("%Y-%m") for r in rows))
@@ -143,6 +171,7 @@ def build_all(session: Session, *, context: ReadModelContext | None = None) -> d
         session,
         LedgerFilters(hide_settlement_sweeps=False),
         fx_rate=ctx.fx_rate_eur_usd,
+        eur_amount=_deposit_eur_amount(session),
         sort="date",
         order="desc",
     )
@@ -152,5 +181,7 @@ def build_all(session: Session, *, context: ReadModelContext | None = None) -> d
 def build_one(session: Session, txn_id: int) -> dict[str, Any] | None:
     """One transaction in the detail shape, or ``None`` if it doesn't exist."""
     ctx = build_context(session)
-    record = get_ledger_record(session, txn_id, fx_rate=ctx.fx_rate_eur_usd)
+    record = get_ledger_record(
+        session, txn_id, fx_rate=ctx.fx_rate_eur_usd, eur_amount=_deposit_eur_amount(session)
+    )
     return None if record is None else _detail_dict(record)

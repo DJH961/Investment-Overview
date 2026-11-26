@@ -44,7 +44,6 @@ from investment_dashboard.services import (
     manual_entry,
     prices_service,
     transaction_edit_service,
-    transaction_fx_service,
 )
 
 if TYPE_CHECKING:
@@ -94,9 +93,10 @@ class PlanInput:
     anchor: int | None = None
     end_date: date | None = None
     account_id: int | None = None
-    #: Deposit: USD per run; conversion: EUR sent per run (buy plans use ``legs``).
+    #: Deposit: USD per run; conversion: EUR sent or USD arriving per run (buy plans use ``legs``).
     amount: Decimal | None = None
     legs: tuple[LegInput, ...] = ()
+    currency: str | None = None
     provider: str | None = None
     expected_fee: Decimal | None = None
 
@@ -174,9 +174,11 @@ def _validate(session: Session, data: PlanInput) -> None:  # noqa: PLR0912 - one
             raise RecurringError("a deposit plan needs a USD amount")
     else:
         if data.amount is None:
-            raise RecurringError("a conversion plan needs an EUR amount")
+            raise RecurringError("a conversion plan needs an amount")
         if data.provider is not None and data.provider not in PROVIDERS:
             raise RecurringError("provider must be wise, revolut or other")
+        if data.currency is not None and data.currency not in {"EUR", "USD"}:
+            raise RecurringError("currency must be EUR or USD")
 
 
 def _fields(data: PlanInput) -> dict[str, object]:
@@ -191,6 +193,7 @@ def _fields(data: PlanInput) -> dict[str, object]:
         "end_date": data.end_date,
         "account_id": None if conv else data.account_id,
         "amount": None if buy else data.amount,
+        "currency": (data.currency or "EUR") if conv else None,
         "provider": (data.provider or DEFAULT_PROVIDER) if conv else None,
         "expected_fee": data.expected_fee if conv else None,
     }
@@ -380,12 +383,6 @@ def _write_settlement_leg(session: Session, parent: Transaction) -> Transaction 
     if parent.external_id is None:
         parent.external_id = f"manual:{parent.id}"
         session.flush()
-    legs = transaction_fx_service.compute_legs(
-        session,
-        native_currency=account.native_currency,
-        net_native=values.net_native,
-        on=parent.date,
-    )
     txn = transactions_repo.new_transaction(
         account_id=parent.account_id,
         date=parent.date,
@@ -394,9 +391,6 @@ def _write_settlement_leg(session: Session, parent: Transaction) -> Transaction 
         quantity=values.quantity,
         price_native=values.price,
         net_native=values.net_native,
-        fx_rate_to_eur=legs.fx_rate_to_eur,
-        net_eur=legs.net_eur,
-        net_usd=legs.net_usd,
         description=f"{MANUAL_SETTLEMENT_DESCRIPTION_PREFIX} · {fund.symbol}",
         external_id=settlement_external_id_for(parent.external_id),
         source=TransactionSource.MANUAL,
@@ -466,12 +460,23 @@ def _generate_conversion(
     fee = plan.expected_fee
     if fee is None:
         fee = last_fee_for_provider(session, plan.provider)
-    _, usd = recurrence.estimated_conversion(eur_sent=plan.amount, ecb_rate=ecb, avg_off_pct=avg)
+    if (plan.currency or "EUR") == "USD":
+        _, eur = recurrence.estimated_conversion_eur(
+            usd_received=plan.amount, ecb_rate=ecb, avg_off_pct=avg
+        )
+        eur_sent = eur.quantize(Decimal("0.000001"))
+        usd_received = plan.amount.quantize(Decimal("0.000001"))
+    else:
+        _, usd = recurrence.estimated_conversion(
+            eur_sent=plan.amount, ecb_rate=ecb, avg_off_pct=avg
+        )
+        eur_sent = plan.amount
+        usd_received = usd.quantize(Decimal("0.000001"))
     row = fx_conversion_service.create_conversion(
         session,
         on=due,
-        eur_sent=plan.amount,
-        usd_received=usd.quantize(Decimal("0.000001")),
+        eur_sent=eur_sent,
+        usd_received=usd_received,
         fees_eur=fee,
         provider=plan.provider,
     )
@@ -766,6 +771,7 @@ class Suggestion:
     cadence: recurrence_suggest.CadenceSuggestion
     account_id: int | None = None
     account: str | None = None
+    currency: str | None = None
     provider: str | None = None
     #: Buy plans: the holdings bought together (same account and cadence).
     legs: tuple[SuggestedLeg, ...] = ()
@@ -837,7 +843,7 @@ def suggest_routine(  # noqa: PLR0912 - three independent collectors, narrated i
         )
     # A recurring conversion repeats its amount: group by provider and amount (25 EUR wide).
     by_provider: dict[tuple[str, int], list[recurrence_suggest.Observation]] = {}
-    for c in fx_conversion_service.list_conversions(session):
+    for c in fx_conversion_service.list_conversions(session, direction="to_usd"):
         if not c.is_estimate and since <= c.date <= day:
             bucket = int((c.eur_sent / 25).to_integral_value(rounding="ROUND_HALF_UP"))
             by_provider.setdefault((c.provider or DEFAULT_PROVIDER, bucket), []).append(
@@ -846,7 +852,7 @@ def suggest_routine(  # noqa: PLR0912 - three independent collectors, narrated i
     for (provider, _bucket), obs in by_provider.items():
         s = recurrence_suggest.suggest_cadence(obs)
         if s is not None:
-            out.append(Suggestion("conversion", s, provider=provider))
+            out.append(Suggestion("conversion", s, currency="EUR", provider=provider))
     return out
 
 
@@ -973,7 +979,9 @@ def _eur_fields(found: tuple[Decimal, str, date] | None) -> dict[str, object]:
 def estimate_views(session: Session) -> list[EstimateView]:
     """Every est. row to settle, newest first (buys and conversions together)."""
     txns, convs = list_estimates(session)
-    all_conversions = fx_conversion_service.list_conversions(session) if txns else ()
+    all_conversions = (
+        fx_conversion_service.list_conversions(session, direction="to_usd") if txns else ()
+    )
     out: list[EstimateView] = []
     for t in txns:
         account = accounts_repo.get_account(session, t.account_id)

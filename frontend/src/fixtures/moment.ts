@@ -53,9 +53,65 @@ export function nyDay(at: number): number {
   return dayOf(at + guess * HOUR);
 }
 
-const isTrading = (day: number): boolean => weekday(day) >= 1 && weekday(day) <= 5;
+function nthWeekday(year: number, month: number, wd: number, nth: number): number {
+  const first = dayOf(Date.UTC(year, month, 1));
+  return first + ((wd - weekday(first) + 7) % 7) + (nth - 1) * 7;
+}
+function lastWeekday(year: number, month: number, wd: number): number {
+  const next = dayOf(Date.UTC(year + (month === 11 ? 1 : 0), (month + 1) % 12, 1)) - 1;
+  return next - ((weekday(next) - wd + 7) % 7);
+}
+function observedHoliday(year: number, month: number, mday: number): number {
+  const d = dayOf(Date.UTC(year, month, mday));
+  const w = weekday(d);
+  return w === 6 ? d - 1 : w === 0 ? d + 1 : d;
+}
+function easterSunday(year: number): number {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31);
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+  return dayOf(Date.UTC(year, month - 1, day));
+}
+function isUsHoliday(day: number): boolean {
+  const year = new Date(day * DAY).getUTCFullYear();
+  const holidays = [
+    observedHoliday(year, 0, 1), // New Year's Day
+    nthWeekday(year, 0, 1, 3), // MLK Day
+    nthWeekday(year, 1, 1, 3), // Presidents' Day
+    easterSunday(year) - 2, // Good Friday
+    lastWeekday(year, 4, 1), // Memorial Day
+    observedHoliday(year, 6, 4), // Independence Day
+    nthWeekday(year, 8, 1, 1), // Labor Day
+    nthWeekday(year, 10, 4, 4), // Thanksgiving (4th Thu of Nov)
+    observedHoliday(year, 11, 25), // Christmas Day
+  ];
+  if (year >= 2022) holidays.push(observedHoliday(year, 5, 19)); // Juneteenth
+  const nextNY = observedHoliday(year + 1, 0, 1);
+  if (new Date(nextNY * DAY).getUTCFullYear() === year) holidays.push(nextNY);
+  return holidays.includes(day);
+}
+const isTrading = (day: number): boolean => weekday(day) >= 1 && weekday(day) <= 5 && !isUsHoliday(day);
 const openOf = (day: number): number => nyTime(day, 9, 30);
-const closeOf = (day: number): number => nyTime(day, 16);
+const isHalfDay = (day: number): boolean => {
+  const dt = new Date(day * DAY);
+  const y = dt.getUTCFullYear();
+  const m = dt.getUTCMonth();
+  const d = dt.getUTCDate();
+  // Day after Thanksgiving (Fri after 4th Thu Nov) closes at 13:00 ET.
+  return m === 10 && weekday(day) === 5 && day === nthWeekday(y, 10, 4, 4) + 1 || (m === 11 && d === 24 && weekday(day) >= 1 && weekday(day) <= 5);
+};
+const closeOf = (day: number): number => nyTime(day, isHalfDay(day) ? 13 : 16);
 
 function prevTrading(from: number): number {
   let d = from;
@@ -144,7 +200,7 @@ export interface Moment {
   /** The day the 1D graph shows. */
   graphDay: number;
   fresh: {
-    market_state: "open" | "closed";
+    market_state: "open" | "closed" | "holiday";
     last_close_at: string;
     next_open_at: string;
     next_close_at: string;
@@ -211,7 +267,7 @@ export function marketAt(at: number): Moment {
     dataDay,
     graphDay,
     fresh: {
-      market_state: payloadOpen ? "open" : "closed",
+      market_state: payloadOpen ? "open" : isUsHoliday(today) ? "holiday" : "closed",
       last_close_at: isoAt(payloadOpen ? closeOf(prevTrading(today - 1)) : lastClose),
       next_open_at: isoAt(openOf(payloadOpen ? nextTrading(today + 1) : nextOpenDay)),
       next_close_at: isoAt(closeOf(payloadOpen ? today : nextOpenDay)),

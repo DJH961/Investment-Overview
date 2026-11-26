@@ -33,6 +33,8 @@ import { currencyDollarFixture, currencyScenariosFixture } from "./currencyDolla
 import { currencyEffectFixture, effectScale } from "./currencyEffect";
 import { clockOffset, installClock, marketAt, parseMoment, patchForMoment, sessionEvents, nyDay, type Moment } from "./moment";
 import { rateHistoryFixture } from "./rateHistory";
+import { journeyAnswer, journeyExtend } from "./journey";
+import { recapFixture } from "./recap";
 import { v71Answer, v71Extend } from "./v71";
 
 type Fixtures = Record<string, unknown>;
@@ -68,6 +70,19 @@ function pickAt(): string | null {
     return window.sessionStorage.getItem(AT_KEY);
   } catch {
     return null;
+  }
+}
+
+const RECAP_KEY = "iv.fixtures.recap";
+
+/** The `?recap=on|off` switch (Overview card due or not), remembered for the tab. */
+function pickRecapDue(): boolean {
+  try {
+    const asked = new URLSearchParams(window.location.search).get("recap");
+    if (asked === "on" || asked === "off") window.sessionStorage.setItem(RECAP_KEY, asked);
+    return window.sessionStorage.getItem(RECAP_KEY) !== "off";
+  } catch {
+    return true;
   }
 }
 
@@ -406,6 +421,7 @@ export async function installFixtures(): Promise<void> {
   const version = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "";
   const realFetch = window.fetch.bind(window);
   let briefMode = pickBrief();
+  let recapDue = pickRecapDue();
   const view = pickView();
 
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -423,6 +439,22 @@ export async function installFixtures(): Promise<void> {
       return json({ last_ack_at: new Date().toISOString() });
     }
     if (url.pathname === "/api/brief" && method === "GET") return respond(briefFor(briefMode, data, data["GET /api/brief"]));
+    // 7.4 recap (./recap): synthesised from the recorded Periods rows; `?recap=off` or a
+    // dismiss hides the Overview card for the tab.
+    if (url.pathname === "/api/recap/ack" && method === "POST") {
+      recapDue = false;
+      try {
+        window.sessionStorage.setItem(RECAP_KEY, "off");
+      } catch {
+        /* private mode: the ack lasts for this page only */
+      }
+      const sent = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as { period?: string };
+      return json({ last_ack: sent.period ?? "" });
+    }
+    if (url.pathname === "/api/recap" && method === "GET") {
+      if (dataset === "empty") return json(recapFixture({}, null, false, null));
+      return respond(recapFixture(data, url.searchParams.get("period"), recapDue, null));
+    }
     if (url.pathname === "/api/settings/values") {
       if (method === "PATCH") {
         // An in-app toggle: remember it, so the next read does not switch it back.
@@ -441,6 +473,12 @@ export async function installFixtures(): Promise<void> {
         }
       }
       if (method === "GET") return respond(withView(data["GET /api/settings/values"], view));
+    }
+    // 7.4 currency journey (see ./journey): its own reads, the cash-out preview.
+    const journey = journeyAnswer(url, method, data, typeof init?.body === "string" ? init.body : undefined);
+    if (journey !== undefined) {
+      const status = (journey as { __status?: number }).__status;
+      return status ? json({ detail: "Fixture answer" }, status) : respond(journey);
     }
     if (method !== "GET") {
       const body = findBody(data, method, url.pathname + url.search);
@@ -469,10 +507,10 @@ export async function installFixtures(): Promise<void> {
     const made = v71Answer(url, data);
     if (made !== undefined) {
       const status = (made as { __status?: number }).__status;
-      return status ? json({ detail: "Fixture answer" }, status) : respond(made);
+      return status ? json({ detail: "Fixture answer" }, status) : respond(journeyExtend(url.pathname, made, data));
     }
     const recorded = findBody(data, "GET", url.pathname + url.search);
-    const extended = recorded === undefined ? undefined : v71Extend(url.pathname, recorded, data);
+    const extended = recorded === undefined ? undefined : journeyExtend(url.pathname, v71Extend(url.pathname, recorded, data), data);
     const body = url.pathname === "/api/currency/both" && dataset !== "empty" ? withStripTiles(extended, data) : extended;
     if (body === undefined || (typeof body === "object" && body !== null && "__status" in body)) {
       return json({ detail: "No fixture for this endpoint." }, 404);

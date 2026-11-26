@@ -46,6 +46,7 @@ def add(
     eur_sent: Decimal,
     usd_received: Decimal,
     fees_eur: Decimal | None,
+    fees_usd: Decimal | None = None,
     note: str | None,
     provider: str | None = None,
     from_ccy: str = "EUR",
@@ -60,6 +61,7 @@ def add(
         eur_sent=eur_sent,
         usd_received=usd_received,
         fees_eur=fees_eur,
+        fees_usd=fees_usd,
         note=note,
         provider=provider,
         from_ccy=from_ccy,
@@ -79,6 +81,7 @@ def update(
     eur_sent: Decimal,
     usd_received: Decimal,
     fees_eur: Decimal | None,
+    fees_usd: Decimal | None = None,
     note: str | None,
     provider: str | None = None,
     from_ccy: str = "EUR",
@@ -93,6 +96,7 @@ def update(
     row.eur_sent = eur_sent
     row.usd_received = usd_received
     row.fees_eur = fees_eur
+    row.fees_usd = fees_usd
     row.note = note
     session.flush()
     session.refresh(row)
@@ -155,6 +159,22 @@ def get_by_external_ids(session: Session, external_ids: Sequence[str]) -> dict[s
         return {}
     stmt = select(FxConversion).where(FxConversion.external_id.in_(list(external_ids)))
     return {r.external_id: r for r in session.scalars(stmt).all() if r.external_id is not None}
+
+
+def list_usd_withdrawals(session: Session) -> list[DepositRow]:
+    """Withdrawal/transfer_out transactions on USD-native accounts (``usd`` positive)."""
+    stmt = (
+        select(Transaction.id, Transaction.date, Transaction.net_native)
+        .join(Account, Account.id == Transaction.account_id)
+        .where(
+            Account.native_currency == "USD",
+            Transaction.kind.in_(sorted(kinds.WITHDRAWAL_KINDS)),
+            Transaction.net_native.is_not(None),
+            Transaction.net_native < 0,
+        )
+        .order_by(Transaction.date, Transaction.id)
+    )
+    return [DepositRow(i, d, -n) for i, d, n in session.execute(stmt).all() if n is not None]
 
 
 def list_usd_received_marks(session: Session) -> set[int]:

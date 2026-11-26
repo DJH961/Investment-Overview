@@ -8,6 +8,7 @@ unit-test without spinning up NiceGUI.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -26,6 +27,12 @@ from investment_dashboard.services import cashflows, fx_service
 
 if TYPE_CHECKING:
     from investment_dashboard.models import Account, Instrument, Transaction
+
+#: Resolver hook for a row's EUR cash leg (contract 7.4 §2). It returns the EUR
+#: the row really cost (for example a deposit's FX-pool rate), or ``None`` for
+#: "no opinion", in which case the derived ECB path is used. The hook itself
+#: being ``None`` means the derived path for every row.
+EurAmount = Callable[["Transaction"], Decimal | None]
 
 
 @dataclass(frozen=True)
@@ -71,7 +78,7 @@ class LedgerRecord:
     external_id: str | None = None
     #: ``True`` for an auto-generated settlement-sweep leg (``:vmfxx``).
     is_settlement_leg: bool = False
-    #: ``True`` when a frozen EUR/USD leg is NULL on the stored row (FX gap).
+    #: ``True`` when a derived EUR/USD cash leg is missing (no rate on file).
     fx_incomplete: bool = False
     #: Cash leg in EUR / USD derived from ``net_native`` at the row's own date
     #: rate (currency rule); never the frozen legs. ``None`` when no rate.
@@ -79,6 +86,11 @@ class LedgerRecord:
     cash_usd: Decimal | None = None
     #: ``True`` for a recurring-plan estimate not yet settled (7.3, P14).
     is_estimate: bool = False
+    #: 7.4: where the EUR figure comes from (``your_rate`` | ``pool`` | ``ecb`` |
+    #: ``native``); ``None`` before the cash pool exists.
+    eur_basis: str | None = None
+    #: 7.4: the money trail this row opens (``GET /trail/{kind}/{id}``), or ``None``.
+    trail_kind: str | None = None
 
 
 def _fmt_money(value: Decimal | None, currency: str, places: int = 2) -> str:
@@ -112,20 +124,55 @@ def list_ledger_records(
     offset: int = 0,
     sort: str = "date",
     order: str = "desc",
+    eur_amount: EurAmount | None = None,
+    with_journey: bool = True,
 ) -> list[LedgerRecord]:
     """Return raw ledger records in newest-first order.
 
-    Both ``net_eur`` and ``net_usd`` are derived from the EUR→USD rate that
-    was in force **on each transaction's own date** (forward-filled), so the
-    non-native side reflects the exchange rate of the day the trade happened
-    rather than today's spot. ``fx_rate`` (current EUR→USD) is only used as a
-    fallback when a row predates the available FX history.
+    Both ``net_eur`` and ``net_usd`` are derived from ``net_native`` and the
+    EUR→USD rate in force **on each transaction's own date** (forward-filled),
+    never from the frozen legs; a USD account's USD is its native amount.
+    ``fx_rate`` (current EUR→USD) only fills the USD side of a EUR-native row
+    older than the FX history. ``eur_amount`` (see :data:`EurAmount`) can
+    replace a row's EUR leg, for example with a deposit's own conversion rate.
     """
     txns = transactions_repo.list_ledger(
         session, **_filter_kwargs(filters), limit=limit, offset=offset, sort=sort, order=order
     )
     eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
-    return [_to_record(t, eur_to_usd=eur_to_usd, fallback_rate=fx_rate) for t in txns]
+    journey = _journey(session) if with_journey and txns else None
+    return [
+        _with_journey(
+            _to_record(t, eur_to_usd=eur_to_usd, fallback_rate=fx_rate, eur_amount=eur_amount),
+            journey,
+        )
+        for t in txns
+    ]
+
+
+def _journey(session: Session) -> Any:
+    from investment_dashboard.readmodels import journey_fields  # noqa: PLC0415
+
+    return journey_fields.inputs_for(session)
+
+
+def _with_journey(r: LedgerRecord, journey: Any) -> LedgerRecord:
+    """7.4 ``eur_basis`` / ``trail_kind`` (unchanged without a cash pool)."""
+    if journey is None:
+        return r
+    from dataclasses import replace  # noqa: PLC0415
+
+    from investment_dashboard.readmodels import journey_fields  # noqa: PLC0415
+
+    fields = journey_fields.record_fields(
+        journey,
+        txn_id=r.id,
+        on=r.date,
+        kind=r.kind,
+        account_id=r.account_id,
+        ccy=r.native_currency,
+    )
+    return replace(r, **fields)
 
 
 def count_ledger_records(session: Session, filters: LedgerFilters | None = None) -> int:
@@ -134,14 +181,19 @@ def count_ledger_records(session: Session, filters: LedgerFilters | None = None)
 
 
 def get_ledger_record(
-    session: Session, txn_id: int, *, fx_rate: Decimal | None = None
+    session: Session,
+    txn_id: int,
+    *,
+    fx_rate: Decimal | None = None,
+    eur_amount: EurAmount | None = None,
 ) -> LedgerRecord | None:
     """Return one ledger record by id (settlement legs included), or ``None``."""
     txn = transactions_repo.get_with_relations(session, txn_id)
     if txn is None:
         return None
     eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
-    return _to_record(txn, eur_to_usd=eur_to_usd, fallback_rate=fx_rate)
+    record = _to_record(txn, eur_to_usd=eur_to_usd, fallback_rate=fx_rate, eur_amount=eur_amount)
+    return _with_journey(record, _journey(session))
 
 
 def list_ledger_rows(
@@ -149,6 +201,7 @@ def list_ledger_rows(
     filters: LedgerFilters | None = None,
     *,
     fx_rate: Decimal | None = None,
+    eur_amount: EurAmount | None = None,
 ) -> list[dict[str, Any]]:
     """Return ledger rows in newest-first order, ready to hand to AG-Grid.
 
@@ -156,7 +209,12 @@ def list_ledger_rows(
     (see :func:`list_ledger_records`); ``fx_rate`` is the current EUR→USD spot
     used only as a fallback for rows older than the FX history.
     """
-    return [_format_record(r) for r in list_ledger_records(session, filters, fx_rate=fx_rate)]
+    return [
+        _format_record(r)
+        for r in list_ledger_records(
+            session, filters, fx_rate=fx_rate, eur_amount=eur_amount, with_journey=False
+        )
+    ]
 
 
 @dataclass(frozen=True)
@@ -181,9 +239,14 @@ def summarize_ledger(
     filters: LedgerFilters | None = None,
     *,
     fx_rate: Decimal | None = None,
+    eur_amount: EurAmount | None = None,
 ) -> LedgerSummary:
     """Aggregate KPI figures for the (optionally filtered) ledger."""
-    return summarize_records(list_ledger_records(session, filters, fx_rate=fx_rate))
+    return summarize_records(
+        list_ledger_records(
+            session, filters, fx_rate=fx_rate, eur_amount=eur_amount, with_journey=False
+        )
+    )
 
 
 def summarize_records(records: list[LedgerRecord]) -> LedgerSummary:
@@ -268,15 +331,18 @@ def _to_record(
     *,
     eur_to_usd: dict[date, Decimal] | None = None,
     fallback_rate: Decimal | None = None,
+    eur_amount: EurAmount | None = None,
 ) -> LedgerRecord:
     account: Account | None = t.account  # type: ignore[assignment]
     instrument: Instrument | None = t.instrument  # type: ignore[assignment]
 
-    # Derive both currency legs from the FX rate on the transaction's own
-    # date. The native side is the booked amount; the other side is converted
-    # at the trade-date rate so e.g. a USD buy shows the EUR it actually cost
-    # that day rather than today's spot. ``fallback_rate`` (current spot) only
-    # kicks in for rows older than the available FX history.
+    # Derive both currency legs from ``net_native`` and the FX rate on the
+    # transaction's own date; the frozen ``net_eur`` / ``net_usd`` legs are
+    # never read (P19). The native side is the booked amount; the other side
+    # is converted at the trade-date rate so e.g. a USD buy shows the EUR it
+    # actually cost that day rather than today's spot. ``fallback_rate``
+    # (current spot) only fills the USD side of an old EUR-native row.
+    # ``eur_amount`` may replace the EUR leg (a deposit's own conversion rate).
     native_ccy = (account.native_currency if account else "").upper()
     reinvested_value = _reinvested_dividend_value(t)
     display_net_native = reinvested_value if reinvested_value is not None else t.net_native
@@ -295,14 +361,17 @@ def _to_record(
         net_eur, net_usd = dual_currency_amounts(
             native_currency=native_ccy,
             net_native=t.net_native,
-            net_eur=t.net_eur,
-            net_usd=t.net_usd,
+            net_eur=None,
+            net_usd=None,
             on=t.date,
             eur_to_usd=eur_to_usd or {},
             fallback_rate=fallback_rate,
         )
         cash_eur = cashflows.derived_eur(t, eur_to_usd)
         cash_usd = cashflows.derived_usd(t, eur_to_usd)
+        resolved = eur_amount(t) if eur_amount is not None else None
+        if resolved is not None:
+            net_eur = cash_eur = resolved
     is_non_cash = t.kind == kinds.SPLIT or display_net_native is None
     return LedgerRecord(
         id=t.id,

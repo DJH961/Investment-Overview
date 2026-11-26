@@ -49,4 +49,24 @@ describe("conversionMarks", () => {
     expect(m).toHaveLength(2);
     expect(m[1].r).toBeGreaterThan(m[0].r ?? 0);
   });
+
+  it("labels USD-to-EUR conversions as Back to euros", () => {
+    const [m] = conversionMarks(
+      history([
+        marker({
+          from_ccy: "USD",
+          to_ccy: "EUR",
+          amount_from: "2400",
+          amount_to: "2201",
+          rate: "1.0903",
+          kind: "below_reference",
+          off_pct: "-0.0038",
+        }),
+      ]),
+      "dollar",
+    );
+    expect(m.label).toContain("Back to euros");
+    expect(m.label).toContain("$2,400 → €2,201");
+    expect(m.shape).toBe("below");
+  });
 });

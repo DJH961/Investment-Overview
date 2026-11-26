@@ -331,7 +331,7 @@ export function Conversions({ id, label, currency, range }: CurrencySectionCompo
       explainer={
         currency === "USD"
           ? "The dollars you did not get when you converted, versus the ECB daily reference."
-          : "What your EUR to USD conversions cost, versus the ECB daily reference: fees plus the rate you were given."
+          : "What your currency conversions cost, versus the ECB daily reference: fees plus the rate you were given."
       }
       meta={d ? (windowText(d.window, range) ?? undefined) : undefined}
       stats={d ? stats(d) : undefined}

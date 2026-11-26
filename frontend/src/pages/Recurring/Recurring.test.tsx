@@ -6,7 +6,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { SettleSheet } from "../../components/SettleSheet";
 import { ToastProvider } from "../../components/Toast";
 import type { EstimateRow } from "../../lib/queries/recurring";
+import { PlanForm } from "./PlanForm";
 import { Recurring } from "./Recurring";
+import { SetupFlow } from "./SetupFlow";
 
 const plan = (over: Record<string, unknown>) => ({
   id: 1,
@@ -24,6 +26,7 @@ const plan = (over: Record<string, unknown>) => ({
   symbol: "FAKEL",
   amount: "200.000000",
   shares: null,
+  currency: null,
   provider: null,
   expected_fee: null,
   next_due: "2026-07-27",
@@ -49,7 +52,8 @@ describe("Recurring", () => {
   it("shows short titles, proper provider and account names, and no needless .00", async () => {
     const plans = [
       plan({ legs: [{ id: 1, instrument_id: 2, symbol: "FAKEL", amount: "200.000000", shares: null }] }),
-      plan({ id: 2, kind: "conversion", amount: "1000.000000", provider: "wise", account: null, legs: [], anchor: 28 }),
+      plan({ id: 2, kind: "conversion", amount: "1000.000000", currency: "EUR", provider: "wise", account: null, legs: [], anchor: 28 }),
+      plan({ id: 4, kind: "conversion", amount: "1000.000000", currency: "USD", provider: "wise", account: null, legs: [], anchor: 28 }),
       plan({
         id: 3,
         unit: "weeks",
@@ -73,8 +77,43 @@ describe("Recurring", () => {
     expect(screen.getByText(/^Every month on the 25th/)).toBeInTheDocument();
     expect(screen.getByText(/^Every week on Monday/)).toBeInTheDocument();
     expect(screen.getByText("€1,000 via Wise")).toBeInTheDocument();
+    expect(screen.getByText("$1,000 via Wise")).toBeInTheDocument();
     expect(screen.getByText("$12.50 FAKEL + 1.5 sh FAKEB")).toBeInTheDocument();
     expect(screen.getAllByText(/^Fidelity Main Brokerage/)[0]).toBeInTheDocument();
+  });
+
+  it("switches conversion PlanForm between EUR converted and USD arriving and submits currency", async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        return new Response(JSON.stringify(plan({ kind: "conversion", currency: "USD", amount: "1200" })), { status: 201 });
+      }
+      if (String(url).startsWith("/api/accounts") || String(url).startsWith("/api/instruments")) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const onSaved = vi.fn();
+    wrap(<PlanForm kind="conversion" onSaved={onSaved} />);
+
+    expect(screen.getByLabelText("EUR amount per run")).toBeInTheDocument();
+    expect(screen.getByText("Fixed EUR converted each time; USD arriving follows the exchange rate.")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("radio", { name: "USD arriving" }));
+    const usdInput = screen.getByLabelText("USD arriving per run");
+    expect(usdInput).toBeInTheDocument();
+    expect(screen.getByText("Fixed USD arriving each time; EUR converted follows the exchange rate.")).toBeInTheDocument();
+
+    await userEvent.type(usdInput, "1200");
+    await userEvent.click(screen.getByRole("button", { name: "Save plan" }));
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    const post = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
+    expect(JSON.parse(String(post?.[1]?.body))).toMatchObject({
+      kind: "conversion",
+      currency: "USD",
+      amount: "1200",
+    });
   });
 });
 
@@ -130,5 +169,36 @@ describe("SettleSheet", () => {
     await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init?.method === "POST")).toBe(true));
     const post = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
     expect(JSON.parse(String(post?.[1]?.body)).rows[0]).toMatchObject({ price: "259.9035", quantity: "0.7695", total: "200.00" });
+  });
+});
+
+describe("SetupFlow totals", () => {
+  it("notes (never blocks) deposits above the conversion", async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      const u = String(url);
+      if (init?.method === "POST") {
+        return new Response(JSON.stringify(plan({ kind: "conversion", currency: "USD", amount: "2400" })), { status: 201 });
+      }
+      if (u.startsWith("/api/recurring/setup-plan")) {
+        return new Response(JSON.stringify({ conversion: { usd: "2400", deposit_usd: "2400", eur: "2200", fee_eur: "0", ecb_rate: "1.09", off_pct: null, rate: "1.09" }, split: null }), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    wrap(<SetupFlow open onClose={() => undefined} />);
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => String(u).includes("suggestions"))).toBe(true));
+    await new Promise((r) => setTimeout(r, 50));
+    await userEvent.click(await screen.findByRole("radio", { name: "USD arriving" }));
+    await userEvent.type(await screen.findByLabelText("USD arriving per run"), "2400");
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+
+    await screen.findByText(/Starts from your conversion/);
+    const dep = await screen.findByLabelText("USD amount per deposit");
+    expect(dep).toHaveValue("2400");
+    await userEvent.clear(dep);
+    await userEvent.type(dep, "3000");
+    expect(await screen.findByText(/Deposits exceed your conversion by ≈ \$600\/month/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next" })).toBeEnabled();
   });
 });

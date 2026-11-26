@@ -176,3 +176,16 @@ def estimated_conversion(
         raise ValueError("eur_sent and ecb_rate must be positive")
     rate = ecb_rate * (1 + (avg_off_pct or Decimal(0)))
     return rate, eur_sent * rate
+
+
+def estimated_conversion_eur(
+    *, usd_received: Decimal, ecb_rate: Decimal, avg_off_pct: Decimal | None
+) -> tuple[Decimal, Decimal]:
+    """``(rate, eur_sent)`` of an estimated conversion targeting ``usd_received``.
+
+    ``rate = ecb * (1 + avg_off_pct)``; plain ECB when the provider has no history.
+    """
+    if usd_received <= 0 or ecb_rate <= 0:
+        raise ValueError("usd_received and ecb_rate must be positive")
+    rate = ecb_rate * (1 + (avg_off_pct or Decimal(0)))
+    return rate, usd_received / rate

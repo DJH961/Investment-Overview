@@ -14,6 +14,7 @@ from investment_dashboard.db import ledger_session_scope
 from investment_dashboard.models import Account, Transaction, TransactionKind
 from investment_dashboard.readmodels import deposits as deposits_rm
 from investment_dashboard.readmodels.queries.deposits_query import DepositRecord
+from investment_dashboard.repositories import fx_repo
 
 
 def test_deposits_per_ccy(api_client: TestClient, api_db) -> None:  # type: ignore[no-untyped-def]
@@ -34,6 +35,8 @@ def test_deposits_per_ccy(api_client: TestClient, api_db) -> None:  # type: igno
                 source="manual",
             )
         )
+        # P19: EUR is derived from net_native at this rate, never the frozen leg.
+        fx_repo.upsert_rates(s, {date(2024, 1, 1): Decimal("1.25")})
     eur = get_one(api_client, "/api/deposits?ccy=EUR")
     usd = get_one(api_client, "/api/deposits?ccy=USD")
     assert Decimal(eur["summary"]["total_contrib"]) == Decimal(800)
@@ -140,6 +143,7 @@ def _ledger() -> int:
                 _txn(b.id, date(2025, 4, 1), "transfer_in", "300", "240"),
             ]
         )
+        fx_repo.upsert_rates(s, {date(2024, 1, 1): Decimal("1.25")})  # EUR = native / 1.25
         return int(a.id)
 
 

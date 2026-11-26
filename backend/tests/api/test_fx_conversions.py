@@ -145,6 +145,32 @@ def test_conversion_provider_and_pair_validation(api_client: TestClient) -> None
     assert bad_provider.status_code == 422
 
 
+def test_usd_fee_on_a_conversion_back(api_client: TestClient) -> None:
+    """Golden: 1,100 USD sent, fee $5, 945 EUR received (fees come out of the dollars)."""
+    back = {
+        "date": "2024-01-15",
+        "from_ccy": "USD",
+        "to_ccy": "EUR",
+        "eur_sent": "945",
+        "usd_received": "1100",
+        "fees_usd": "5",
+    }
+    ok = api_client.post("/api/fx-conversions", json=back)
+    assert ok.status_code == 201, ok.text
+    row = ok.json()
+    assert row["fee_ccy"] == "USD" and Decimal(row["fees_usd"]) == 5 and row["fees_eur"] is None
+    assert Decimal(row["all_in_rate"]).quantize(Decimal("0.000001")) == Decimal("1.164021")
+    assert Decimal(row["rate"]).quantize(Decimal("0.000001")) == Decimal("1.158730")
+    both = api_client.post("/api/fx-conversions", json={**back, "fees_eur": "1"})
+    assert both.status_code == 422
+    forward = api_client.post(
+        "/api/fx-conversions", json={**BODY, "fees_eur": None, "fees_usd": "5"}
+    )
+    assert forward.status_code == 422
+    too_big = api_client.post("/api/fx-conversions", json={**back, "fees_usd": "1100"})
+    assert too_big.status_code == 422
+
+
 def test_reference_published_and_not(api_client: TestClient) -> None:
     with ledger_session_scope() as s:
         s.add(FxHistory(date=date(2024, 1, 15), base="EUR", quote="USD", rate=Decimal("1.0950")))

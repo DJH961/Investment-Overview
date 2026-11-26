@@ -77,14 +77,43 @@
     }
   }
 
-  // Room check: the hero head row (label, "≈ est." chip, this chip). "Open for 2h 10m"
-  // shows when it fits; a tight row says the state in one word ("Open", "Closing…").
+  // Room check: the hero head row (label, optional "≈ est." chip, this chip).
+  // Tier 1: full ("Closed until Fri 3:30 PM") when there is ample room.
+  // Tier 2: compact ("Closed until Fri" / "Holiday until Fri") on mid-phones.
+  // Tier 3: one word ("Closed" / "Holiday" / "Open") on tight 360px rows with "≈ est.".
+  &__short,
   &__word {
     display: none;
   }
 
-  @container hero-head (max-width: 17rem) {
+  @container hero-head (max-width: 22.5rem) {
     &__text {
+      display: none;
+    }
+
+    &__short {
+      display: inline;
+    }
+  }
+
+  @container hero-head (max-width: 26.5rem) {
+    .overview-hero__head--est & {
+      gap: var(--space-1);
+      padding: 0 var(--space-2);
+    }
+
+    .overview-hero__head--est &__text {
+      display: none;
+    }
+
+    .overview-hero__head--est &__short {
+      display: inline;
+    }
+  }
+
+  @container hero-head (max-width: 17.5rem) {
+    &__text,
+    &__short {
       display: none;
     }
 
@@ -94,7 +123,8 @@
   }
 
   @container hero-head (max-width: 19.5rem) {
-    .overview-hero__head--est &__text {
+    .overview-hero__head--est &__text,
+    .overview-hero__head--est &__short {
       display: none;
     }
 

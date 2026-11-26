@@ -29,6 +29,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
+from typing import Literal
 
 ZERO = Decimal(0)
 ONE = Decimal(1)
@@ -38,6 +39,7 @@ FIXING_LOOKBACK_DAYS = 7
 
 Day = date
 PROVIDERS = ("wise", "revolut", "other", "none")
+Direction = Literal["to_usd", "to_eur"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +57,13 @@ class Conversion:
     month_avg: Decimal | None = None
     #: The month is still running: the mean is of the fixings so far.
     month_so_far: bool = False
+    #: ``"to_eur"``: a conversion back. ``eur_sent`` then holds the euros *received*
+    #: and ``usd_received`` the dollars *sent* (the row's EUR and USD sides), see
+    #: :func:`conversion_cost`.
+    direction: Direction = "to_usd"
+    #: Native USD fee of a conversion back (7.4): paid out of the dollars sent, so
+    #: ``usd_received`` (dollars sent) includes it. Never set together with ``fees_eur``.
+    fees_usd: Decimal = ZERO
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +91,12 @@ class ConversionCost:
     #: ``rate / month_avg - 1`` (rate = usd / eur_sent, fees left out): positive = you
     #: converted at a better rate (more dollars per euro) than the month's average.
     timing_pct: Decimal | None = None
+    #: ``"to_eur"``: a conversion back (``eur_sent`` = euros received, ``usd_received``
+    #: = dollars sent; see :func:`_back_cost`).
+    direction: Direction = "to_usd"
+    #: The native USD fee of a conversion back (inside the dollars sent). ``fees_eur`` then
+    #: holds its value at the conversion's own fixing, ``fees_usd`` the native amount.
+    fees_usd_native: Decimal = ZERO
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,6 +176,8 @@ def fixing_for(
 
 def conversion_cost(c: Conversion) -> ConversionCost:
     """One conversion against its fixing; the figures are ``None`` without one."""
+    if c.direction == "to_eur":
+        return _back_cost(c)
     all_in = c.usd_received / (c.eur_sent + c.fees_eur)
     provider = (
         "none" if c.provider is None else (c.provider if c.provider in PROVIDERS else "other")
@@ -202,6 +219,93 @@ def conversion_cost(c: Conversion) -> ConversionCost:
             if c.month_avg is not None and c.month_avg > 0
             else None
         ),
+    )
+
+
+def _back_cost(c: Conversion) -> ConversionCost:
+    """A conversion back to EUR (``usd_received`` = dollars sent, ``eur_sent`` = euros got).
+
+    Same meaning as the EUR -> USD figures, in this direction (positive cost = it cost
+    you; a negative ``off_pct`` / ``timing_pct`` = worse than the reference):
+
+    * ``ecb_eur = usd / ecb``: what the dollars were worth at the fixing;
+    * ``spread_eur = ecb_eur - eur_received``, ``cost_eur = spread_eur + fees_eur``
+      (equals ``-domain.cash_out.CashOut.conversion_cost_eur``);
+    * ``all_in_rate = usd / (eur_received - fees)`` (dollars per euro that came back),
+      ``off_pct = ecb / all_in_rate - 1``, ``spread_off_pct = ecb / rate - 1``;
+    * dollars: ``spread_usd = usd - eur_received x ecb``, ``fees_usd = fees x ecb``;
+    * ``timing_pct = month_avg / rate - 1`` (positive = more euros per dollar than the
+      month's average).
+
+    A fee in dollars (``c.fees_usd``, 7.4) comes out of the dollars sent, so ``usd``
+    includes it and ``eur`` is already net. Then the dollars actually converted are
+    ``usd_net = usd - fee`` and:
+
+    * ``rate = usd_net / eur`` (fees left out), ``all_in_rate = usd / eur`` (every dollar
+      sent per euro received);
+    * the fee's euro value is ``fee / ecb`` at this conversion's own fixing (``fee / rate``
+      without one), ``ecb_eur = usd_net / ecb``, ``cost_eur = spread_eur + fees_eur =
+      usd / ecb - eur_received``; the native fee is also the row's ``fees_usd``.
+
+    Worked example: 1,100.00 sent, fee $5.00, 945.00 EUR received, fixing 1.16 gives
+    ``rate = 1095 / 945 = 1.158730``, ``all_in = 1100 / 945 = 1.164021``,
+    ``fees_eur = 5 / 1.16 = 4.310345``, ``spread_eur = 1095 / 1.16 - 945 = -1.034483``,
+    ``cost_eur = 1100 / 1.16 - 945 = 3.275862``.
+    """
+    usd, eur = c.usd_received, c.eur_sent
+    fee_usd = c.fees_usd
+    usd_net = usd - fee_usd
+    if fee_usd > 0:
+        all_in = usd / eur
+        rate = usd_net / eur
+        fees_eur = fee_usd / rate if rate > 0 else ZERO
+    else:
+        net = eur - c.fees_eur
+        all_in = usd / net if net > 0 else usd / eur
+        rate = usd / eur
+        fees_eur = c.fees_eur
+    provider = (
+        "none" if c.provider is None else (c.provider if c.provider in PROVIDERS else "other")
+    )
+    ecb = c.ecb_rate
+    ecb_eur = spread = cost = off = spread_off = None
+    spread_usd = fees_usd = cost_usd = None
+    if ecb is not None and ecb > 0:
+        if fee_usd > 0:
+            fees_eur = fee_usd / ecb
+        ecb_eur = usd_net / ecb
+        spread = ecb_eur - eur
+        cost = spread + fees_eur
+        off = ecb / all_in - ONE
+        spread_off = ecb / rate - ONE
+        spread_usd = usd_net - eur * ecb
+        fees_usd = fee_usd if fee_usd > 0 else c.fees_eur * ecb
+        cost_usd = spread_usd + fees_usd
+    return ConversionCost(
+        id=c.id,
+        date=c.date,
+        provider=provider,
+        eur_sent=eur,
+        usd_received=usd,
+        fees_eur=fees_eur,
+        all_in_rate=all_in,
+        ecb_rate=ecb,
+        ecb_rate_date=c.ecb_rate_date,
+        ecb_eur=ecb_eur,
+        spread_eur=spread,
+        cost_eur=cost,
+        off_pct=off,
+        spread_off_pct=spread_off,
+        spread_usd=spread_usd,
+        fees_usd=fees_usd,
+        cost_usd=cost_usd,
+        month_avg=c.month_avg,
+        month_so_far=c.month_so_far,
+        timing_pct=(
+            c.month_avg / rate - ONE if c.month_avg is not None and c.month_avg > 0 else None
+        ),
+        direction="to_eur",
+        fees_usd_native=fee_usd,
     )
 
 
@@ -279,13 +383,29 @@ def summarise(rows: Sequence[ConversionCost]) -> CostSummary:
         cost_usd=cost_usd,
         cost_pct_usd=cost_usd / conv_usd if conv_usd > 0 else None,
         avg_off_pct=weighted / converted if converted > 0 else None,
-        all_in_rate=(
-            sum((r.usd_received for r in rows), ZERO)
-            / sum((r.eur_sent + r.fees_eur for r in rows), ZERO)
-            if rows
-            else None
-        ),
+        all_in_rate=_all_in(rows),
     )
+
+
+def _all_in(rows: Sequence[ConversionCost]) -> Decimal | None:
+    """``sum(usd) / sum(euros net of fees)``: fees add to the euros sent, or come off the
+    euros received for a conversion back (the per-row rule). A native USD fee on a
+    conversion back is already inside the dollars sent and the euros received are net,
+    so it changes neither side."""
+    eur = sum(
+        (
+            r.eur_sent
+            if r.direction == "to_eur" and r.fees_usd_native > 0
+            else r.eur_sent - r.fees_eur
+            if r.direction == "to_eur"
+            else r.eur_sent + r.fees_eur
+            for r in rows
+        ),
+        ZERO,
+    )
+    if not rows or eur <= 0:
+        return None
+    return sum((r.usd_received for r in rows), ZERO) / eur
 
 
 def provider_avg_off_pct(rows: Sequence[ConversionCost], provider: str | None) -> Decimal | None:

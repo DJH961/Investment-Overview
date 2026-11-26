@@ -1403,7 +1403,7 @@ def _reconstruct_session(
     # stretch keeps its denser real points.
     with cache_read_session(session) as cache:
         live_rows = [
-            (r.captured_at, r.market_value_eur)
+            (r.captured_at, _row_eur(r))
             for r in intraday_repo.list_in_range(
                 cache, _session_start_utc(session_date), bar_times[-1]
             )

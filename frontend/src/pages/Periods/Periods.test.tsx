@@ -101,11 +101,11 @@ describe("Periods by year", () => {
     stubPeriods();
     wrap(<Periods />);
     // Month names also label the growth chart's axis: look inside the year tables.
-    const y2026 = await screen.findByRole("table", { name: "2026 months" });
+    const y2026 = await screen.findByRole("table", { name: "Periods by year" });
     expect(within(y2026).getByText("Feb 2026")).toBeInTheDocument();
-    expect(screen.queryByRole("table", { name: "2025 months" })).not.toBeInTheDocument();
+    expect(within(y2026).queryByText("Dec 2025")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /2025/ }));
-    const y2025 = await screen.findByRole("table", { name: "2025 months" });
+    const y2025 = await screen.findByRole("table", { name: "Periods by year" });
     expect(within(y2025).getByText("Dec 2025")).toBeInTheDocument();
     expect(window.localStorage.getItem("iv.fold.periods.year.2025")).toBe("true");
   });
@@ -113,7 +113,7 @@ describe("Periods by year", () => {
   it("requests padded months and shows Total growth and XIRR on the yearly view", async () => {
     stubPeriods();
     wrap(<Periods />);
-    await screen.findByRole("table", { name: "2026 months" });
+    await screen.findByRole("table", { name: "Periods by year" });
     const urls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
     expect(urls.some((u) => u.includes("/monthly") && u.includes("fill_gaps=true"))).toBe(true);
     fireEvent.click(screen.getByRole("radio", { name: "Yearly" }));
@@ -121,5 +121,27 @@ describe("Periods by year", () => {
     expect(screen.getAllByText("XIRR (period)").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Growth (TWR)").length).toBeGreaterThan(0);
     expect(window.localStorage.getItem("iv.periods.view")).toBe('"yearly"');
+  });
+
+  it("shows a Cashed out column and year summary stat only when non-zero", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const monthly = String(url).includes("/monthly");
+        return json({
+          as_of: "2026-10-31",
+          ccy: "EUR",
+          granularity: monthly ? "monthly" : "yearly",
+          rows: monthly
+            ? [row("2025-12", { cashed_out_eur: "0.00" }), row("2026-03", { is_current: true, cashed_out_eur: "2201.30", cashed_out: "2201.30" })]
+            : [row("2025", { cashed_out_eur: "0.00" }), row("2026", { is_current: true, cashed_out_eur: "2201.30", cashed_out: "2201.30" })],
+        });
+      }),
+    );
+    wrap(<Periods />);
+    const y2026 = await screen.findByRole("table", { name: "Periods by year" });
+    expect(within(y2026).getByRole("columnheader", { name: "Cashed out" })).toBeInTheDocument();
+    expect(within(y2026).getAllByText(/2,201/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Cashed out").length).toBeGreaterThanOrEqual(1);
   });
 });

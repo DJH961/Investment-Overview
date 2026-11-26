@@ -20,6 +20,14 @@ class FxConversionIn(ApiModel):
     eur_sent: Decimal = Field(gt=0)
     usd_received: Decimal = Field(gt=0)
     fees_eur: Decimal | None = Field(default=None, ge=0)
+    fees_usd: Decimal | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Native dollar fee of a conversion back (USD to EUR), paid out of the dollars "
+            "sent; not together with fees_eur."
+        ),
+    )
     note: str | None = Field(default=None, max_length=512)
     provider: Provider | None = None
     kept_usd: Decimal = Field(
@@ -56,6 +64,14 @@ class FxConversionOut(ApiModel):
     effective_rate: DecStr = Field(description="USD received per EUR sent (derived).")
     from_ccy: str
     to_ccy: str
+    direction: Literal["to_usd", "to_eur"] = Field(
+        default="to_usd",
+        description=(
+            "Derived from from_ccy/to_ccy. to_eur = a conversion back: eur_sent holds the "
+            "euros received and usd_received the dollars sent; the cost figures are in "
+            "that direction (positive cost = it cost you)."
+        ),
+    )
     provider: Provider | None
     kept_usd: DecStr = Field(description="Dollars kept outside investing (not in the pool).")
     rate: DecStr = Field(description="usd_received / eur_sent (same as effective_rate).")
@@ -85,7 +101,18 @@ class FxConversionOut(ApiModel):
         default=None, description="spread_eur + fees_eur; positive = paid more than the ECB."
     )
     fees_usd: DecStr | None = Field(
-        default=None, description="fees_eur at that conversion's own fixing."
+        default=None,
+        description=(
+            "fees_eur at that conversion's own fixing; for a conversion back with a fee "
+            "in dollars (fee_ccy USD) the native fee, always present."
+        ),
+    )
+    fee_ccy: Literal["EUR", "USD"] | None = Field(
+        default=None,
+        description=(
+            "Currency the fee was entered in: EUR (fees_eur) or USD (the native dollar fee "
+            "of a conversion back, paid out of the dollars sent); null without a fee."
+        ),
     )
     cost_usd: DecStr | None = Field(
         default=None,
@@ -146,6 +173,7 @@ class CostRowOut(ApiModel):
     timing_pct: DecStr | None = Field(
         description="rate / month_avg - 1: positive = better than the month's average."
     )
+    direction: Literal["to_usd", "to_eur"] = "to_usd"
 
 
 class CostTimingOut(ApiModel):
@@ -182,6 +210,13 @@ class CostsOut(ApiModel):
     rows: list[CostRowOut]
     #: The range as dates (one meaning for the whole page, 7.3.1).
     window: RangeWindow | None = None
+    back_to_eur: CostsOut | None = Field(
+        default=None,
+        description=(
+            "The same figures for the conversions back to EUR (7.4), in that direction: "
+            "eur_sent = euros received, usd_received = dollars sent. Null without one."
+        ),
+    )
 
 
 class SliceOut(ApiModel):

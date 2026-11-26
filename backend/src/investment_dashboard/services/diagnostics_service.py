@@ -228,7 +228,11 @@ def _check_fx_live(session: Session, *, now: datetime | None = None) -> HealthIt
 
 
 def _check_fx_legs(session: Session) -> HealthItem:
-    """Transactions whose frozen EUR/USD legs are incomplete (an FX gap)."""
+    """Transactions whose derived EUR/USD legs are incomplete (an FX gap).
+
+    The legs come from ``net_native`` and that date's rate (P19); a gap means
+    no EUR→USD rate on or before the trade date (or a third currency).
+    """
     dates: list[date] = transaction_fx_service.missing_fx_dates(session)
     count = len(dates)
     if count == 0:
@@ -248,8 +252,8 @@ def _check_fx_legs(session: Session) -> HealthItem:
             f"{count} trade date(s) have transactions missing a EUR or USD leg "
             "because the FX rate for that day wasn't available. Returns in the "
             "missing currency fall back to a blank rather than a wrong number. "
-            "Use Settings → Data refresh → Refresh FX rates, which backfills the "
-            "frozen legs once the rate is cached."
+            "Use Settings → Data refresh → Refresh FX rates; the legs fill in "
+            "by themselves once the rate is cached."
         ),
         examples=_examples([d.isoformat() for d in dates]),
     )
@@ -624,6 +628,100 @@ def _check_import_age(session: Session, *, today: date | None = None) -> HealthI
             else "Every imported brokerage account was imported recently."
         ),
         examples=_examples(lines),
+    )
+
+
+#: Backup age (7.4): a warning after this many days without a snapshot ...
+_BACKUP_WARN_DAYS = 2
+#: ... and an error after this many.
+_BACKUP_ERROR_DAYS = 7
+
+
+def check_backup_age(*, now: datetime | None = None) -> HealthItem:
+    """Days since the newest backup snapshot (7.4, lane E)."""
+    from investment_dashboard.services import backup_service  # noqa: PLC0415
+
+    title = "Backup age"
+    if not backup_service.is_configured():
+        return HealthItem(
+            key="backup_age",
+            title=title,
+            severity="ok",
+            count=0,
+            detail="Backups are not set up on this machine.",
+        )
+    last = backup_service.last_snapshot_time()
+    moment = now or datetime.now(UTC)
+    if last is None:
+        return HealthItem(
+            key="backup_age",
+            title=title,
+            severity="error",
+            count=1,
+            detail="No backup snapshot exists yet. Run a backup from Settings.",
+        )
+    age = moment - last
+    days = age.days
+    when = f"{last.day} {last.strftime('%b %Y')}, {_hhmm(last)}"
+    if age > timedelta(days=_BACKUP_ERROR_DAYS):
+        severity = "error"
+    elif age > timedelta(days=_BACKUP_WARN_DAYS):
+        severity = "warning"
+    else:
+        severity = "ok"
+    hours = int(age.total_seconds() // 3600)
+    ago = f"{days} day(s)" if days >= 1 else f"{hours} hour(s)"
+    detail = (
+        f"The last backup is {ago} old ({when})."
+        if severity == "ok"
+        else f"The last backup is {ago} old ({when}). Backups should run every night: "
+        "check the backup job on this page."
+    )
+    return HealthItem(
+        key="backup_age",
+        title=title,
+        severity=severity,
+        count=0 if severity == "ok" else 1,
+        detail=detail,
+    )
+
+
+def check_eod_steps(session: Session) -> HealthItem:
+    """Which steps of the last end-of-day job failed (7.4, lane E)."""
+    from investment_dashboard.db import config_read_session  # noqa: PLC0415
+    from investment_dashboard.services import scheduler  # noqa: PLC0415
+
+    with config_read_session(session) as cfg:
+        at, steps = scheduler.load_eod_result(cfg)
+    title = "End-of-day job"
+    if at is None:
+        return HealthItem(
+            key="eod_steps",
+            title=title,
+            severity="ok",
+            count=0,
+            detail="The end-of-day job has not run on this server yet.",
+        )
+    when = f"{at.day} {at.strftime('%b %Y')}, {_hhmm(at)}"
+    if not steps:
+        return HealthItem(
+            key="eod_steps",
+            title=title,
+            severity="ok",
+            count=0,
+            detail=f"Every step of the last end-of-day job ({when}) finished.",
+        )
+    names = [s.removeprefix("_").replace("_", " ") for s in steps]
+    return HealthItem(
+        key="eod_steps",
+        title=title,
+        severity="warning",
+        count=len(steps),
+        detail=(
+            f"{len(steps)} step(s) of the last end-of-day job ({when}) failed. "
+            "The activity log (market data) has the details; the next run tries again."
+        ),
+        examples=_examples(names),
     )
 
 
@@ -1078,6 +1176,15 @@ def check_health(session: Session) -> HealthReport:
         _check_holding_intraday(session),
         _check_price_feed(session),
         _check_providers(),
+        # 7.4 journey checks (withdrawals_not_converted is info: shown by the read model).
+        *(
+            check(session)
+            for check in JOURNEY_CHECKS
+            if check is not check_withdrawals_not_converted
+        ),
+        # 7.4 lane E: backup age and the end-of-day job's steps.
+        check_backup_age(),
+        check_eod_steps(session),
     ]
     memory = _check_memory()
     if memory is not None:
@@ -1100,3 +1207,213 @@ def quick_status(session: Session) -> tuple[str, int]:
     ]
     report = HealthReport(items=tuple(items))
     return report.worst_severity, report.problem_count
+
+
+# ----------------------------------------------------------------- 7.4 journey (lane C)
+#
+# Each check has a pure ``journey_*`` form over the journey inputs (tests feed it a
+# synthetic pool) and a session form ``check_*``. Without the cash pool service every
+# session form reports ok. Fix links live in ``readmodels/diagnostics.py`` ``_LINKS``.
+
+
+def _journey_inputs(session: Session) -> object | None:
+    from investment_dashboard.readmodels import journey_fields  # noqa: PLC0415
+
+    return journey_fields.inputs_for(session)
+
+
+def journey_idle_dollars(inputs: object) -> HealthItem:
+    """Converted dollars no deposit took for over 30 days (warning)."""
+    from investment_dashboard.readmodels import currency_journey as cj  # noqa: PLC0415
+
+    assert isinstance(inputs, cj.JourneyInputs)
+    idle = cj.build_journey(inputs).idle
+    key, title = "idle_dollars", "Idle dollars"
+    if not idle:
+        return HealthItem(key, title, "ok", 0, "No converted dollars have waited over 30 days.")
+    days = cj.IDLE_DAYS
+    return HealthItem(
+        key,
+        title,
+        "warning",
+        len(idle),
+        f"{len(idle)} conversion(s) left dollars in your USD account for over {days} days. "
+        "Record the deposit that took them, or mark them as kept on the Conversions page.",
+        _examples([f"{r.date.isoformat()} ({r.undeposited_usd:,.2f} USD)" for r in idle]),
+    )
+
+
+def journey_uncovered_buys(inputs: object) -> HealthItem:
+    """Buys the cash pool could not pay from converted dollars (ECB fallback)."""
+    from investment_dashboard.domain import kinds  # noqa: PLC0415
+    from investment_dashboard.readmodels import currency_journey as cj  # noqa: PLC0415
+
+    assert isinstance(inputs, cj.JourneyInputs)
+    ids = [
+        t
+        for t in inputs.snapshot.state.uncovered
+        if (info := inputs.txns.get(t)) is not None and info.kind == kinds.BUY
+    ]
+    key, title = "uncovered_buys", "Buys valued at the ECB rate"
+    if not ids:
+        return HealthItem(key, title, "ok", 0, "Every buy is paid from dollars with a known cost.")
+    examples = []
+    for t in ids:
+        info = inputs.txns[t]
+        examples.append(f"{info.date.isoformat()} {info.symbol or ''} ({info.amount:,.2f} USD)")
+    return HealthItem(
+        key,
+        title,
+        "warning",
+        len(ids),
+        f"{len(ids)} buy(s) used more dollars than the broker cash held, so the rest is "
+        "valued at the ECB rate of the buy date. A deposit or conversion is probably "
+        "missing from the ledger.",
+        _examples(examples),
+    )
+
+
+def journey_negative_broker_cash(balances: dict[str, Decimal]) -> HealthItem:
+    """Brokerage accounts whose ledger cash is below zero (counted as 0 in the total)."""
+    key, title = "negative_broker_cash", "Negative broker cash"
+    flagged = [f"{name}: {bal:+,.2f}" for name, bal in balances.items() if bal <= -_CASH_DUST]
+    if not flagged:
+        return HealthItem(key, title, "ok", 0, "No brokerage account has negative cash.")
+    return HealthItem(
+        key,
+        title,
+        "warning",
+        len(flagged),
+        f"{len(flagged)} brokerage account(s) spent more cash than the ledger brought in. "
+        "The total counts that cash as zero; a deposit or a sale is probably missing.",
+        _examples(flagged),
+    )
+
+
+def journey_withdrawals_not_converted(inputs: object) -> HealthItem:
+    """Withdrawn dollars still in the USD account (info: a cash-out not recorded yet)."""
+    from investment_dashboard.readmodels import currency_journey as cj  # noqa: PLC0415
+
+    assert isinstance(inputs, cj.JourneyInputs)
+    ids = sorted(
+        {
+            lot.source_txn_id
+            for lot in inputs.snapshot.state.lots
+            if lot.account_key == cj.OUTSIDE_ACCOUNT
+            and lot.source_kind == "withdrawal"
+            and lot.amount > _CASH_DUST
+            and lot.source_txn_id is not None
+        }
+    )
+    key, title = "withdrawals_not_converted", "Withdrawals not converted back"
+    if not ids:
+        return HealthItem(key, title, "ok", 0, "Every withdrawal has gone back to euros.")
+    examples = []
+    for t in ids:
+        info = inputs.txns.get(t)
+        if info is not None:
+            examples.append(f"{info.date.isoformat()} ({info.amount:,.2f} USD)")
+    return HealthItem(
+        key,
+        title,
+        "info",
+        len(ids),
+        f"{len(ids)} withdrawal(s) are still dollars in your USD account. When you convert "
+        "them to euros, record it as a conversion back to see the realised result.",
+        _examples(examples),
+    )
+
+
+def journey_conversion_back_uncovered(inputs: object) -> HealthItem:
+    """Conversions back with more dollars than the USD account held (ECB fallback)."""
+    from investment_dashboard.readmodels import currency_journey as cj  # noqa: PLC0415
+
+    assert isinstance(inputs, cj.JourneyInputs)
+    bad = [
+        (cid, sum((d.amount for d in draws if d.lot_id.startswith("uncovered:")), Decimal(0)))
+        for cid, draws in inputs.snapshot.state.conversions_back.items()
+    ]
+    bad = [(cid, usd) for cid, usd in bad if usd > 0]
+    key, title = "conversion_back_uncovered", "Conversions back without dollars"
+    if not bad:
+        return HealthItem(key, title, "ok", 0, "Every conversion back is covered by dollars.")
+    dates = {c.conversion_id: c.date for c in inputs.snapshot.cash_outs}
+    return HealthItem(
+        key,
+        title,
+        "warning",
+        len(bad),
+        f"{len(bad)} conversion(s) back to euros sent more dollars than the USD account "
+        "held, so the rest is valued at the ECB rate. Record the withdrawal that brought "
+        "those dollars out of the broker.",
+        _examples(
+            [f"{dates.get(cid, '?')} ({usd:,.2f} USD not covered)" for cid, usd in sorted(bad)]
+        ),
+    )
+
+
+def _journey_check(session: Session, fn: object, key: str, title: str) -> HealthItem:
+    inputs = _journey_inputs(session)
+    if inputs is None:
+        return HealthItem(key, title, "ok", 0, "The cash pool is not available yet.")
+    assert callable(fn)
+    item = fn(inputs)
+    assert isinstance(item, HealthItem)
+    return item
+
+
+def check_idle_dollars(session: Session) -> HealthItem:
+    return _journey_check(session, journey_idle_dollars, "idle_dollars", "Idle dollars")
+
+
+def check_uncovered_buys(session: Session) -> HealthItem:
+    return _journey_check(
+        session, journey_uncovered_buys, "uncovered_buys", "Buys valued at the ECB rate"
+    )
+
+
+def check_negative_broker_cash(session: Session) -> HealthItem:
+    """Reads the P18 ledger-cash rule (``positions_service.broker_cash_shortfalls``).
+
+    The rule holds a brokerage account's cash at zero on a day it would end below
+    zero; each account's balance here is minus the cash it went short in total (the
+    deposits probably missing), so an account that ever went negative is flagged.
+    """
+    short: dict[int, Decimal] = {}
+    for s in positions_service.broker_cash_shortfalls(session):
+        short[s.account_id] = short.get(s.account_id, Decimal(0)) + s.native
+    balances: dict[str, Decimal] = {}
+    for account in accounts_repo.list_accounts(session):
+        if account.account_type in positions_service.CASH_ACCOUNT_TYPES:
+            continue
+        name = f"{account.broker} {account.account_label} ({account.native_currency.upper()})"
+        balances[name] = -short.get(account.id, Decimal(0))
+    return journey_negative_broker_cash(balances)
+
+
+def check_withdrawals_not_converted(session: Session) -> HealthItem:
+    return _journey_check(
+        session,
+        journey_withdrawals_not_converted,
+        "withdrawals_not_converted",
+        "Withdrawals not converted back",
+    )
+
+
+def check_conversion_back_uncovered(session: Session) -> HealthItem:
+    return _journey_check(
+        session,
+        journey_conversion_back_uncovered,
+        "conversion_back_uncovered",
+        "Conversions back without dollars",
+    )
+
+
+#: Lane C's checks, for the orchestrator to register in :func:`check_health`.
+JOURNEY_CHECKS = (
+    check_idle_dollars,
+    check_uncovered_buys,
+    check_negative_broker_cash,
+    check_withdrawals_not_converted,
+    check_conversion_back_uncovered,
+)

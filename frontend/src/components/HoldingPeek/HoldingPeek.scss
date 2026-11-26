@@ -82,6 +82,11 @@
     gap: var(--space-3) var(--space-6);
   }
 
+  // An odd count: the last fact takes the row, so no cell stands empty.
+  &--panel &__fact:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+
   // Phone: one line each, the label in a fixed column.
   &__fact {
     display: grid;

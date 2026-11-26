@@ -45,7 +45,7 @@ const PROVIDER_NAME: Record<string, string> = { wise: "Wise", revolut: "Revolut"
 
 /** The title: what is bought, converted or deposited (the cadence is the muted line below). */
 function titleText(p: RecurringPlan): string {
-  if (p.kind === "conversion") return `${shortMoney(p.amount, "EUR")} via ${PROVIDER_NAME[p.provider ?? "revolut"]}`;
+  if (p.kind === "conversion") return `${shortMoney(p.amount, p.currency === "USD" ? "USD" : "EUR")} via ${PROVIDER_NAME[p.provider ?? "revolut"]}`;
   if (p.kind === "deposit") return `${shortMoney(p.amount, "USD")} deposit`;
   const parts = p.legs.map((l) => `${l.shares ? `${Number(l.shares)} sh` : shortMoney(l.amount, "USD")} ${l.symbol}`);
   return parts.length <= 2 ? parts.join(" + ") : `${parts.length} holdings`;
@@ -240,6 +240,7 @@ export function Recurring() {
               account_id: editing.account_id,
               amount: editing.amount,
               legs: editing.legs.map((l) => ({ instrument_id: l.instrument_id, amount: l.amount, shares: l.shares })),
+              currency: editing.currency,
               provider: editing.provider,
               expected_fee: editing.expected_fee,
             }}

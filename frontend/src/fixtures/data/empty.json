@@ -3588,10 +3588,15 @@
    "lifetime": {
     "avg_invest_rate": null,
     "breakeven_rate": null,
+    "conversion_cost_eur": null,
     "current_rate": null,
+    "ecb_avg": null,
     "fx_pnl_eur": null,
     "rate_change_pct": null,
-    "repatriation_value_eur": null
+    "realised_eur": null,
+    "repatriation_value_eur": null,
+    "vs_impact_note": "This card follows every dollar at your own conversion rates since your first conversion; Impact measures day-by-day moves at the ECB rate over the range you pick, so the two differ by the conversion costs and the waiting.",
+    "your_rate": null
    },
    "one_cent": null,
    "rate_range": null,
@@ -3640,10 +3645,15 @@
    "lifetime": {
     "avg_invest_rate": null,
     "breakeven_rate": null,
+    "conversion_cost_eur": null,
     "current_rate": null,
+    "ecb_avg": null,
     "fx_pnl_eur": null,
     "rate_change_pct": null,
-    "repatriation_value_eur": null
+    "realised_eur": null,
+    "repatriation_value_eur": null,
+    "vs_impact_note": "This card follows every dollar at your own conversion rates since your first conversion; Impact measures day-by-day moves at the ECB rate over the range you pick, so the two differ by the conversion costs and the waiting.",
+    "your_rate": null
    },
    "one_cent": null,
    "rate_range": null,
@@ -50778,6 +50788,7 @@
   "EUR": {
    "as_of": "2026-06-30",
    "by_year": [],
+   "cashed_out_eur": "0",
    "ccy": "EUR",
    "other_ccy": "USD",
    "rows": [],
@@ -50796,6 +50807,7 @@
   "USD": {
    "as_of": "2026-06-30",
    "by_year": [],
+   "cashed_out_eur": "0",
    "ccy": "USD",
    "other_ccy": "EUR",
    "rows": [],
@@ -51012,11 +51024,74 @@
    {
     "actions": [],
     "count": 0,
+    "detail": "No converted dollars have waited over 30 days.",
+    "examples": [],
+    "id": "idle_dollars",
+    "severity": "ok",
+    "title": "Idle dollars"
+   },
+   {
+    "actions": [],
+    "count": 0,
+    "detail": "Every buy is paid from dollars with a known cost.",
+    "examples": [],
+    "id": "uncovered_buys",
+    "severity": "ok",
+    "title": "Buys valued at the ECB rate"
+   },
+   {
+    "actions": [],
+    "count": 0,
+    "detail": "No brokerage account has negative cash.",
+    "examples": [],
+    "id": "negative_broker_cash",
+    "severity": "ok",
+    "title": "Negative broker cash"
+   },
+   {
+    "actions": [],
+    "count": 0,
+    "detail": "Every conversion back is covered by dollars.",
+    "examples": [],
+    "id": "conversion_back_uncovered",
+    "severity": "ok",
+    "title": "Conversions back without dollars"
+   },
+   {
+    "actions": [],
+    "count": 0,
+    "detail": "Backups are not set up on this machine.",
+    "examples": [],
+    "id": "backup_age",
+    "severity": "ok",
+    "title": "Backup age"
+   },
+   {
+    "actions": [],
+    "count": 0,
+    "detail": "The end-of-day job has not run on this server yet.",
+    "examples": [],
+    "id": "eod_steps",
+    "severity": "ok",
+    "title": "End-of-day job"
+   },
+   {
+    "actions": [],
+    "count": 0,
     "detail": "No currency conversions recorded, so deposits use their trade-date rate.",
     "examples": [],
     "id": "ecb_fallback_deposits",
     "severity": "ok",
     "title": "Deposits valued at the ECB rate"
+   },
+   {
+    "actions": [],
+    "count": 0,
+    "detail": "Every withdrawal has gone back to euros.",
+    "examples": [],
+    "id": "withdrawals_not_converted",
+    "severity": "ok",
+    "title": "Withdrawals not converted back"
    }
   ],
   "count": 1,
@@ -51090,6 +51165,7 @@
  "GET /api/fx-conversions": [],
  "GET /api/fx-conversions/costs?range=10y": {
   "EUR": {
+   "back_to_eur": null,
    "best": null,
    "by_month": [],
    "by_provider": [],
@@ -51131,6 +51207,7 @@
    "worst": null
   },
   "USD": {
+   "back_to_eur": null,
    "best": null,
    "by_month": [],
    "by_provider": [],
@@ -51175,6 +51252,7 @@
  },
  "GET /api/fx-conversions/costs?range=1d": {
   "EUR": {
+   "back_to_eur": null,
    "best": null,
    "by_month": [],
    "by_provider": [],
@@ -51216,6 +51294,7 @@
    "worst": null
   },
   "USD": {
+   "back_to_eur": null,
    "best": null,
    "by_month": [],
    "by_provider": [],
@@ -51260,6 +51339,7 @@
  },
  "GET /api/fx-conversions/costs?range=1m": {
   "EUR": {
+   "back_to_eur": null,
    "best": null,
    "by_month": [],
    "by_provider": [],
@@ -51301,6 +51381,7 @@
    "worst": null
   },
   "USD": {
+   "back_to_eur": null,
    "best": null,
    "by_month": [],
    "by_provider": [],
@@ -51345,6 +51426,7 @@
  },
  "GET /api/fx-conversions/costs?range=1w": {
   "EUR": {
+   "back_to_eur": null,
    "best": null,
    "by_month": [],
    "by_provider": [],
@@ -51386,6 +51468,7 @@
    "worst": null
   },
   "USD": {
+   "back_to_eur": null,
    "best": null,
    "by_month": [],
    "by_provider": [],
@@ -51430,6 +51513,7 @@
  },
  "GET /api/fx-conversions/costs?range=1y": {
   "EUR": {
+   "back_to_eur": null,
    "best": null,
    "by_month": [],
    "by_provider": [],
@@ -51471,6 +51555,7 @@
    "worst": null
   },
   "USD": {
+   "back_to_eur": null,
    "best": null,
    "by_month": [],
    "by_provider": [],
@@ -51515,6 +51600,7 @@
  },
  "GET /api/fx-conversions/costs?range=3m": {
   "EUR": {
+   "back_to_eur": null,
    "best": null,
    "by_month": [],
    "by_provider": [],
@@ -51556,6 +51642,7 @@
    "worst": null
   },
   "USD": {
+   "back_to_eur": null,
    "best": null,
    "by_month": [],
    "by_provider": [],
@@ -51600,6 +51687,7 @@
  },
  "GET /api/fx-conversions/costs?range=5y": {
   "EUR": {
+   "back_to_eur": null,
    "best": null,
    "by_month": [],
    "by_provider": [],
@@ -51641,6 +51729,7 @@
    "worst": null
   },
   "USD": {
+   "back_to_eur": null,
    "best": null,
    "by_month": [],
    "by_provider": [],
@@ -51685,6 +51774,7 @@
  },
  "GET /api/fx-conversions/costs?range=all": {
   "EUR": {
+   "back_to_eur": null,
    "best": null,
    "by_month": [],
    "by_provider": [],
@@ -51726,6 +51816,7 @@
    "worst": null
   },
   "USD": {
+   "back_to_eur": null,
    "best": null,
    "by_month": [],
    "by_provider": [],
@@ -51770,6 +51861,7 @@
  },
  "GET /api/fx-conversions/costs?range=max": {
   "EUR": {
+   "back_to_eur": null,
    "best": null,
    "by_month": [],
    "by_provider": [],
@@ -51811,6 +51903,7 @@
    "worst": null
   },
   "USD": {
+   "back_to_eur": null,
    "best": null,
    "by_month": [],
    "by_provider": [],
@@ -51855,6 +51948,7 @@
  },
  "GET /api/fx-conversions/costs?range=ytd": {
   "EUR": {
+   "back_to_eur": null,
    "best": null,
    "by_month": [],
    "by_provider": [],
@@ -51896,6 +51990,7 @@
    "worst": null
   },
   "USD": {
+   "back_to_eur": null,
    "best": null,
    "by_month": [],
    "by_provider": [],
@@ -59819,6 +59914,7 @@
    "dividends_ttm": "0",
    "fx": null,
    "fx_eur_usd": null,
+   "fx_your_rate": null,
    "group_by": "none",
    "groups": [],
    "holdings": [],
@@ -59855,6 +59951,7 @@
    "dividends_ttm": "0",
    "fx": null,
    "fx_eur_usd": null,
+   "fx_your_rate": null,
    "group_by": "none",
    "groups": [],
    "holdings": [],
@@ -59894,6 +59991,7 @@
    "dividends_ttm": "0",
    "fx": null,
    "fx_eur_usd": null,
+   "fx_your_rate": null,
    "group_by": "account",
    "groups": [],
    "holdings": [],
@@ -59930,6 +60028,7 @@
    "dividends_ttm": "0",
    "fx": null,
    "fx_eur_usd": null,
+   "fx_your_rate": null,
    "group_by": "account",
    "groups": [],
    "holdings": [],
@@ -59969,6 +60068,7 @@
    "dividends_ttm": "0",
    "fx": null,
    "fx_eur_usd": null,
+   "fx_your_rate": null,
    "group_by": "asset_class",
    "groups": [],
    "holdings": [],
@@ -60005,6 +60105,7 @@
    "dividends_ttm": "0",
    "fx": null,
    "fx_eur_usd": null,
+   "fx_your_rate": null,
    "group_by": "asset_class",
    "groups": [],
    "holdings": [],
@@ -60044,6 +60145,7 @@
    "dividends_ttm": "0",
    "fx": null,
    "fx_eur_usd": null,
+   "fx_your_rate": null,
    "group_by": "category",
    "groups": [],
    "holdings": [],
@@ -60080,6 +60182,7 @@
    "dividends_ttm": "0",
    "fx": null,
    "fx_eur_usd": null,
+   "fx_your_rate": null,
    "group_by": "category",
    "groups": [],
    "holdings": [],
@@ -60119,6 +60222,7 @@
    "dividends_ttm": "0",
    "fx": null,
    "fx_eur_usd": null,
+   "fx_your_rate": null,
    "group_by": "currency",
    "groups": [],
    "holdings": [],
@@ -60155,6 +60259,7 @@
    "dividends_ttm": "0",
    "fx": null,
    "fx_eur_usd": null,
+   "fx_your_rate": null,
    "group_by": "currency",
    "groups": [],
    "holdings": [],
@@ -60194,6 +60299,7 @@
    "dividends_ttm": "0",
    "fx": null,
    "fx_eur_usd": null,
+   "fx_your_rate": null,
    "group_by": "none",
    "groups": [],
    "holdings": [],
@@ -60230,6 +60336,7 @@
    "dividends_ttm": "0",
    "fx": null,
    "fx_eur_usd": null,
+   "fx_your_rate": null,
    "group_by": "none",
    "groups": [],
    "holdings": [],
@@ -60828,10 +60935,15 @@
     "lifetime": {
      "avg_invest_rate": null,
      "breakeven_rate": null,
+     "conversion_cost_eur": null,
      "current_rate": null,
+     "ecb_avg": null,
      "fx_pnl_eur": null,
      "rate_change_pct": null,
-     "repatriation_value_eur": null
+     "realised_eur": null,
+     "repatriation_value_eur": null,
+     "vs_impact_note": "This card follows every dollar at your own conversion rates since your first conversion; Impact measures day-by-day moves at the ECB rate over the range you pick, so the two differ by the conversion costs and the waiting.",
+     "your_rate": null
     },
     "return_split": {
      "currency_effect_pp": null,
@@ -60972,10 +61084,15 @@
     "lifetime": {
      "avg_invest_rate": null,
      "breakeven_rate": null,
+     "conversion_cost_eur": null,
      "current_rate": null,
+     "ecb_avg": null,
      "fx_pnl_eur": null,
      "rate_change_pct": null,
-     "repatriation_value_eur": null
+     "realised_eur": null,
+     "repatriation_value_eur": null,
+     "vs_impact_note": "This card follows every dollar at your own conversion rates since your first conversion; Impact measures day-by-day moves at the ECB rate over the range you pick, so the two differ by the conversion costs and the waiting.",
+     "your_rate": null
     },
     "return_split": {
      "currency_effect_pp": null,
@@ -62934,6 +63051,29 @@
     "unit": "s"
    },
    {
+    "choices": [
+     "pool",
+     "buy_date"
+    ],
+    "danger": null,
+    "default": "pool",
+    "env_bound": null,
+    "env_var": null,
+    "help": "Your rate (pool): a buy costs the euros that really bought its dollars, oldest dollars first, from your conversions. ECB on the buy date: the official rate of the day you bought (the figures before 7.4). Only the EUR cost, gain and return per holding change; dollar figures never do.",
+    "key": "fx.holding_cost_basis",
+    "label": "EUR cost of a holding",
+    "level": "user",
+    "max": null,
+    "min": null,
+    "nullable": false,
+    "restart_required": false,
+    "secret": false,
+    "section": "currency",
+    "since": "6.0",
+    "type": "enum",
+    "unit": null
+   },
+   {
     "choices": [],
     "danger": null,
     "default": 900,
@@ -62948,7 +63088,7 @@
     "nullable": false,
     "restart_required": false,
     "secret": false,
-    "section": "data_refresh",
+    "section": "currency",
     "since": "6.0",
     "type": "duration_s",
     "unit": "s"
@@ -63064,13 +63204,13 @@
     "help": "Currencies whose EUR rate history is kept (ISO codes).",
     "key": "fx.tracked_quotes",
     "label": "Tracked FX currencies",
-    "level": "advanced",
+    "level": "user",
     "max": null,
     "min": null,
     "nullable": false,
     "restart_required": false,
     "secret": false,
-    "section": "data_refresh",
+    "section": "currency",
     "since": "6.0",
     "type": "symbol_list",
     "unit": null
@@ -63490,6 +63630,10 @@
     "label": "Portfolio & analytics"
    },
    {
+    "id": "currency",
+    "label": "Currency"
+   },
+   {
     "id": "projection",
     "label": "Projection"
    },
@@ -63780,6 +63924,15 @@
     "source": "default",
     "stored_invalid": false,
     "value": 600
+   },
+   "fx.holding_cost_basis": {
+    "default": "pool",
+    "env_value_present": false,
+    "is_set": true,
+    "modified_at": null,
+    "source": "default",
+    "stored_invalid": false,
+    "value": "pool"
    },
    "fx.stale_after_seconds": {
     "default": 900,

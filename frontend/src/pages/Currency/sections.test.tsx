@@ -15,8 +15,8 @@ vi.mock("../../lib/queries/currency", () => ({
 }));
 
 describe("section registry", () => {
-  it("lists Impact, Exposure and Scenarios, in that order, with unique ids", () => {
-    expect(CURRENCY_SECTIONS.slice(0, 3).map((s) => s.label)).toEqual(["Impact", "Exposure", "Scenarios"]);
+  it("lists Impact, USD cash & holdings, Exposure and Scenarios, in that order, with unique ids", () => {
+    expect(CURRENCY_SECTIONS.slice(0, 4).map((s) => s.label)).toEqual(["Impact", "USD cash & holdings", "Exposure", "Scenarios"]);
     const ids = CURRENCY_SECTIONS.map((s) => s.id);
     expect(new Set(ids).size).toBe(ids.length);
   });

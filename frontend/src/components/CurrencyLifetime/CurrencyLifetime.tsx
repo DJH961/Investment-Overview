@@ -1,4 +1,7 @@
 import clsx from "clsx";
+import { Undo2 } from "lucide-react";
+import { Link } from "react-router";
+import type { LifetimeJourneyFields } from "../../lib/journey-types";
 import { FxState } from "../FxState";
 import { useFxMoment } from "../../lib/fxWeekend";
 import { Card } from "../Card";
@@ -37,7 +40,11 @@ export interface CurrencyLifetimeProps {
 export function CurrencyLifetime({ data, rateLine }: CurrencyLifetimeProps) {
   const { hide } = useHideAmounts();
   const { moment: fx } = useFxMoment();
-  const life = data.currency.lifetime ?? {};
+  const life = (data.currency.lifetime ?? {}) as NonNullable<OverviewDto["currency"]["lifetime"]> & LifetimeJourneyFields;
+  // 7.4: your rate (the pool blend) is the break-even; the ECB over the same days beside it.
+  const yourRate = toNum(life.your_rate ?? null);
+  const convCost = toNum(life.conversion_cost_eur ?? null);
+  const realised = toNum(life.realised_eur ?? null);
   // Hide mode: the FX gain/loss as a share of what cashing out now would bring home.
   const fxPnl = toNum(life.fx_pnl_eur);
   const repat = toNum(life.repatriation_value_eur);
@@ -126,6 +133,11 @@ export function CurrencyLifetime({ data, rateLine }: CurrencyLifetimeProps) {
               <Money amount={fxPnl} currency="EUR" signed colored digits={0} />
             )}
           </dd>
+          {convCost !== null && (
+            <dd className="currency-lifetime__sub">
+              conversions cost <Money amount={convCost} currency="EUR" signed digits={0} />
+            </dd>
+          )}
         </div>
         <div className="currency-lifetime__stat">
           <dt className="currency-lifetime__label">If cashed out now</dt>
@@ -134,10 +146,32 @@ export function CurrencyLifetime({ data, rateLine }: CurrencyLifetimeProps) {
           </dd>
         </div>
         <div className="currency-lifetime__stat">
-          <dt className="currency-lifetime__label">Break-even rate</dt>
-          <dd className="currency-lifetime__value">{formatNumber(toNum(life.breakeven_rate), 4)}</dd>
+          <dt className="currency-lifetime__label">{yourRate !== null ? "Your rate" : "Break-even rate"}</dt>
+          <dd className="currency-lifetime__value">{formatNumber(yourRate ?? toNum(life.breakeven_rate), 4)}</dd>
+          {yourRate !== null && (
+            <dd className="currency-lifetime__sub">
+              ECB {formatNumber(toNum(life.ecb_avg ?? null), 4)} · your break-even
+            </dd>
+          )}
         </div>
       </dl>
+      {realised !== null && (
+        <p className="currency-lifetime__realised">
+          <span className="currency-lifetime__realised-label">
+            <Undo2 aria-hidden className="currency-lifetime__realised-icon" />
+            Realized in euros
+          </span>
+          <Money amount={realised} currency="EUR" signed colored digits={0} />
+        </p>
+      )}
+      {life.vs_impact_note ? (
+        <p className="currency-lifetime__note">
+          {life.vs_impact_note}{" "}
+          <Link to="/currency#dollars" className="currency-lifetime__link">
+            More on the Currency page →
+          </Link>
+        </p>
+      ) : null}
     </Card>
   );
 }

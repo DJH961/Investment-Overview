@@ -1,3 +1,5 @@
+@use "../../styles/mixins" as m;
+
 .recurring-page {
   display: grid;
   gap: var(--page-gap);
@@ -29,12 +31,23 @@
     &:last-child {
       border-bottom: 0;
     }
+
+    // Desktop: the actions sit beside the plan, right-aligned, instead of a second row.
+    @include m.desktop {
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      column-gap: var(--space-6);
+    }
   }
 
   &__plan-main {
     display: flex;
     align-items: flex-start;
     gap: var(--space-3);
+
+    @include m.desktop {
+      align-self: stretch;
+    }
   }
 
   &__plan-icon {
@@ -85,6 +98,11 @@
   // The status never shrinks or truncates (icon + word stay whole).
   &__plan-status {
     flex: none;
+
+    // Desktop: the status sits on the actions' center line, just left of them.
+    @include m.desktop {
+      align-self: center;
+    }
   }
 
   // Edit / Pause / End / Delete on one line, even at 360 px: compact buttons share the row.
@@ -93,6 +111,10 @@
     flex-wrap: nowrap;
     gap: var(--space-1);
     margin-left: calc(var(--space-7) + var(--space-3));
+
+    @include m.desktop {
+      margin-left: 0;
+    }
 
     > * {
       flex: 0 1 auto;
@@ -125,6 +147,18 @@
   &__form {
     display: grid;
     gap: var(--space-3);
+  }
+
+  &__conv-mode {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+  }
+
+  &__conv-mode-label {
+    @include m.eyebrow(var(--font-size-xs));
   }
 
   &__form-kind {
@@ -202,6 +236,26 @@
     margin: 0;
     color: var(--color-muted);
     font-size: var(--font-size-sm);
+  }
+
+  &__setup-totals {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0;
+    padding: var(--space-2) var(--space-3);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-warn-soft);
+    color: var(--color-fg);
+    font-size: var(--font-size-sm);
+  }
+
+  &__setup-totals-icon {
+    flex: none;
+    width: 1em;
+    height: 1em;
+    color: var(--color-warn);
   }
 
   &__setup-note {

@@ -111,6 +111,14 @@ export const CVD_PAIRS: { a: string; b: string; why: string }[] = [
   { a: "--color-fx-moon", b: "--chart-3", why: "rate chart: weekend moon glyph vs 200-day average" },
   { a: "--color-fx-sunrise", b: "--chart-1", why: "rate chart: reopen sunrise glyph vs rate line" },
   { a: "--color-fx-sunrise", b: "--chart-3", why: "rate chart: reopen sunrise glyph vs 200-day average" },
+  // Currency journey (7.4): MoneyTrail (step icon + label, pos/neg change beside fg figure,
+  // warn "Part at the ECB rate" chip), Your dollars (DivergingBar pos/neg stage bars,
+  // accent links beside pos/neg total), CashOutCard (pos/neg figures beside warn flagged chip
+  // and faint "only in euros" dashes), and Impact bridge (accent flow bars beside pos/neg).
+  // All already-covered pos/neg, warn/pos, warn/neg, fg/pos, fg/neg pairs hold here too;
+  // neutral step icons and EurOnly dashes rely on shape/word, never hue.
+  { a: "--color-faint", b: "--color-neg", why: "Dollars bridge / CashOutCard: neutral dash vs loss" },
+  { a: "--color-accent", b: "--color-neg", why: "Dollars / Impact bridge: action link or flow bar vs loss" },
 ];
 
 /** Charts with 3+ untoned series (n2..n4) are rare; they get the lower bar plus dashes. */

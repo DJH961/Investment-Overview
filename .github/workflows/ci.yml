@@ -35,7 +35,7 @@ jobs:
           REPO: ${{ github.repository }}
           SHA: ${{ github.sha }}
           EVENT: ${{ github.event_name }}
-          REQUIRED: "quality web frontend e2e image"
+          REQUIRED: "quality web frontend e2e image fixtures"
         run: |
           set -euo pipefail
           tested=false

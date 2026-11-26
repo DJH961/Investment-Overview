@@ -214,6 +214,30 @@ def test_conversion_is_ecb_pushed_by_the_providers_average_off_pct(session: Sess
     assert svc.estimate_count(session) == 1
 
 
+def test_conversion_fixed_usd_computes_eur_sent(session: Session) -> None:
+    from investment_dashboard.services import fx_conversion_service as fxs
+
+    _fx(session, {date(2026, 1, 5): "1.10", date(2026, 2, 10): "1.20"})
+    fxs.create_conversion(
+        session,
+        on=date(2026, 1, 5),
+        eur_sent=D("1000"),
+        usd_received=D("1089"),  # 1.089 = ECB 1.10 less 1 %
+        fees_eur=D("2"),
+        provider="wise",
+    )
+    plan_id = _conv_plan(session, "wise", amount=D("1000"), currency="USD")
+    plan = svc.get_plan(session, plan_id)
+    assert plan.currency == "USD"
+    report = svc.generate_due_estimates(session, today=date(2026, 2, 12), settled=date(2026, 2, 12))
+    assert report.created == 1
+    est = session.scalars(select(FxConversion).where(FxConversion.is_estimate.is_(True))).one()
+    rate = D("1.20") * D("0.99")
+    assert est.usd_received == D("1000")
+    assert est.eur_sent == (D("1000") / rate).quantize(D("0.000001"))
+    assert est.fees_eur == D("2")
+
+
 def test_conversion_without_history_is_plain_ecb_and_weekend_uses_last_fixing(
     session: Session,
 ) -> None:
@@ -307,6 +331,8 @@ def test_plan_validation(session: Session) -> None:
         _buy_plan(session, acct, inst, end_date=date(2025, 1, 1))
     with pytest.raises(svc.RecurringError, match="weekday"):
         _buy_plan(session, acct, inst, unit="weeks", anchor=9)
+    with pytest.raises(svc.RecurringError, match="EUR or USD"):
+        _conv_plan(session, "wise", currency="GBP")
 
 
 def test_est_buy_draws_the_settlement_fund_and_settles_with_it(session: Session) -> None:
@@ -645,3 +671,42 @@ def test_same_rhythm_buys_are_suggested_as_one_multi_leg_plan(session: Session) 
         ("VOO", D("100")),
     ]
     assert (found.cadence.unit, found.cadence.anchor) == ("weeks", 0)
+
+
+def test_monthly_conversion_biweekly_deposit_weekly_buys_are_independent(session: Session) -> None:
+    acct, inst = _world(session)
+    _fund(session, acct)
+    _fx(session, {date(2026, 3, 2): "1.10"})
+    conv = _conv_plan(session, "revolut", anchor=2, start_date=date(2026, 3, 1), end_date=None)
+    dep = svc.create_plan(
+        session,
+        svc.PlanInput(
+            kind="deposit",
+            unit="weeks",
+            every=2,
+            anchor=0,
+            start_date=date(2026, 3, 2),
+            account_id=acct.id,
+            amount=D("300"),
+        ),
+    ).id
+    # Buys of $400 a week against $300 a fortnight deposited: nothing forces them to match.
+    buy = _buy_plan(
+        session,
+        acct,
+        inst,
+        amount=D("400"),
+        unit="weeks",
+        every=1,
+        anchor=4,
+        start_date=date(2026, 3, 2),
+    )
+    got = {p.id: (p.kind, p.unit, p.every) for p in svc.list_plans(session)}
+    assert got == {
+        conv: ("conversion", "months", 1),
+        dep: ("deposit", "weeks", 2),
+        buy: ("buy", "weeks", 1),
+    }
+    svc.generate_due_estimates(session, today=date(2026, 3, 31), settled=date(2026, 3, 31))
+    deposits = sorted(t.date for t in _estimates(session) if t.kind == "deposit")
+    assert deposits == [date(2026, 3, 2), date(2026, 3, 16), date(2026, 3, 30)]

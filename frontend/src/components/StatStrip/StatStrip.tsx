@@ -23,6 +23,10 @@ export interface StatStripProps {
   phoneColumns?: 2 | 3;
   /** Six figures: one row of six on desktop, 3 × 2 on tablets, 2 × 3 on phones. */
   six?: boolean;
+  /** Four figures: one row of four from tablets up, 2 × 2 on phones (never 3 + 1). */
+  four?: boolean;
+  /** Eight figures: two rows of four from tablets up, 2 × 4 on phones. */
+  eight?: boolean;
 }
 
 /**
@@ -30,7 +34,7 @@ export interface StatStripProps {
  * page's always-visible tile strip). Wraps to two columns on phones, never clips;
  * tiles that have no figure yet are simply left out by the caller.
  */
-export function StatStrip({ items, label, className, phoneColumns = 2, six = false }: StatStripProps) {
+export function StatStrip({ items, label, className, phoneColumns = 2, six = false, four = false, eight = false }: StatStripProps) {
   // Phones: a short last row stretches across the width instead of leaving an empty
   // cell (5 figures in 3 columns = 3 + 2 wide; 3 in 2 = 2 + 1 full).
   const rest = items.length % phoneColumns;
@@ -42,6 +46,7 @@ export function StatStrip({ items, label, className, phoneColumns = 2, six = fal
         "stat-strip",
         phoneColumns === 3 && "stat-strip--phone-3",
         six && items.length === 6 && "stat-strip--six",
+        ((four && items.length === 4) || (eight && items.length === 8)) && "stat-strip--four",
         className,
       )}
       aria-label={label}

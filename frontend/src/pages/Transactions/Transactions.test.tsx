@@ -141,7 +141,7 @@ describe("Transactions", () => {
   });
 
   it("pages through the full list locally", async () => {
-    const rows = Array.from({ length: 60 }, (_, i) => ({ ...row, id: i + 1, symbol: `S${String(i + 1).padStart(2, "0")}`, date: "2026-01-05" }));
+    const rows = Array.from({ length: 60 }, (_, i) => ({ ...row, id: i + 1, symbol: `S${String(i + 1).padStart(2, "0")}`, date: i < 30 ? "2026-02-05" : "2026-01-05" }));
     const fetchMock = accountsAnd(() => new Response(JSON.stringify({ rows }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     renderPage();

@@ -188,6 +188,8 @@ def build_for_ccy(
         "summary_other": _summary_for(summary, other),
         "years": sorted({r.date.year for r in all_records}, reverse=True),
         "by_year": _by_year(records, ccy, other),
+        # 7.4: euros back from cash-outs, whole ledger (0 when there is none).
+        "cashed_out_eur": dec(_cashed_out_eur(session)),
         "rows": [
             {
                 "id": r.id,
@@ -204,6 +206,13 @@ def build_for_ccy(
             for r in records
         ],
     }
+
+
+def _cashed_out_eur(session: Session) -> Decimal:
+    from investment_dashboard.readmodels import journey_fields  # noqa: PLC0415
+
+    inputs = journey_fields.inputs_for(session)
+    return ZERO if inputs is None else journey_fields.cashed_out_eur(inputs)
 
 
 # -- dividends ------------------------------------------------------------------

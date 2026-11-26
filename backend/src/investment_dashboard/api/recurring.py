@@ -10,6 +10,7 @@ from fastapi import APIRouter, Query, Response
 from investment_dashboard.api.deps import SessionDep
 from investment_dashboard.api.schemas.recurring import (
     BuySplitOut,
+    ConversionCurrency,
     ConversionEstimateOut,
     EstimateOut,
     EstimatesOut,
@@ -65,6 +66,9 @@ def _plan_out(session: SessionDep, plan_id: int) -> PlanOut:
             for leg in view.legs
         ],
         amount=_s(p.amount),
+        currency=cast(
+            "ConversionCurrency | None", p.currency or ("EUR" if p.kind == "conversion" else None)
+        ),
         provider=cast("Provider | None", p.provider),
         expected_fee=_s(p.expected_fee),
         next_due=view.next_due.isoformat() if view.next_due else None,
@@ -85,6 +89,7 @@ def _input(body: PlanIn) -> service.PlanInput:
         legs=tuple(
             service.LegInput(leg.instrument_id, leg.amount, leg.shares) for leg in body.legs
         ),
+        currency=body.currency,
         provider=body.provider,
         expected_fee=body.expected_fee,
     )
@@ -149,6 +154,7 @@ def suggestions(session: SessionDep) -> list[SuggestionOut]:
                 )
                 for g in s.legs
             ],
+            currency=cast("ConversionCurrency | None", s.currency),
             provider=cast("Provider | None", s.provider),
         )
         for s in service.suggest_routine(session)
@@ -159,6 +165,7 @@ def suggestions(session: SessionDep) -> list[SuggestionOut]:
 def setup_plan(
     session: SessionDep,
     eur_amount: Annotated[Decimal | None, Query(gt=0, description="Step 1: EUR converted.")] = None,
+    usd_amount: Annotated[Decimal | None, Query(gt=0, description="Step 1: USD arriving.")] = None,
     provider: Provider = "revolut",
     expected_fee: Annotated[Decimal | None, Query(ge=0)] = None,
     buy_total_usd: Annotated[
@@ -183,12 +190,13 @@ def setup_plan(
         recurring_setup.conversion_estimate(
             session,
             eur=eur_amount,
+            usd=usd_amount,
             provider=provider,
             fee_eur=expected_fee,
             conversion=(conversion_unit, conversion_every) if conversion_unit else None,
             deposit=(deposit_unit, deposit_every) if deposit_unit else None,
         )
-        if eur_amount is not None
+        if eur_amount is not None or usd_amount is not None
         else None
     )
     split = (

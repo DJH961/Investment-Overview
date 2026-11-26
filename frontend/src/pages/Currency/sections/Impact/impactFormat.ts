@@ -1,6 +1,32 @@
 import { formatDate, formatMonth, formatMoney, formatNumber, getFormatPrefs } from "../../../../lib/format";
 import { fractionTone, PP_DIGITS } from "../../numbers";
 
+/**
+ * Exchange sessions inferred from a 1W series: runs of samples with no long hole between them.
+ * The Impact payload carries no session list, so a closed market (night, weekend) shows as a
+ * hole; each run becomes one band of the Chart's `session` axis, like the Overview 1W chart.
+ */
+export function sessionsFromTimes(times: number[]): { date: string; open: number; close: number }[] {
+  const ts = times.filter((t) => Number.isFinite(t)).sort((a, b) => a - b);
+  if (ts.length < 2) return [];
+  const steps = ts
+    .slice(1)
+    .map((t, i) => t - ts[i])
+    .filter((d) => d > 0)
+    .sort((a, b) => a - b);
+  const median = steps.length ? steps[Math.floor(steps.length / 2)] : 0;
+  const hole = Math.max(4 * median, 90 * 60_000);
+  const out: { date: string; open: number; close: number }[] = [];
+  let start = ts[0];
+  for (let i = 1; i <= ts.length; i++) {
+    if (i === ts.length || ts[i] - ts[i - 1] > hole) {
+      if (ts[i - 1] > start) out.push({ date: new Date(ts[i - 1]).toISOString().slice(0, 10), open: start, close: ts[i - 1] });
+      if (i < ts.length) start = ts[i];
+    }
+  }
+  return out;
+}
+
 /** "2026-03" -> "Mar" (bar labels); anything else passes through. */
 export function monthShort(label: string): string {
   const m = /^(\d{4})-(\d{2})$/.exec(label);

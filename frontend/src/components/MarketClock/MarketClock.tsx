@@ -244,8 +244,12 @@ export function useClockModel(freshness: ClockFreshness | null | undefined, onBo
   const soon = remaining != null && remaining <= SOON;
   const last = remaining != null && remaining <= MINUTE;
   const at = view.target ? parseInstant(view.target).getTime() : Number.NaN;
-  const bellTime =
-    Number.isNaN(at) ? null : remaining != null && remaining >= DAY ? formatWeekdayTime(at, timeZone) : formatTime(new Date(at), timeZone);
+  const diffDay = !Number.isNaN(at) && dayKey(at, timeZone) !== dayKey(now.getTime(), timeZone);
+  const bellTime = Number.isNaN(at)
+    ? null
+    : (remaining != null && remaining >= DAY) || (phase === "holiday" && diffDay)
+      ? formatWeekdayTime(at, timeZone)
+      : formatTime(new Date(at), timeZone);
   // From the bell until the server's next word: "Closing…" / "Opening", never a stale "Open".
   const stateWord = phase === "closing" ? "Closing…" : phase === "opening" ? "Opening" : view.state;
   const sentence = [
@@ -310,6 +314,10 @@ export function clockLabel(o: {
   if (o.remaining == null || o.remaining <= SOON || !o.target) return { long: "Until the opening bell", short: "Until the opening bell" };
   const at = parseInstant(o.target).getTime();
   const tomorrow = dayKey(at, o.timeZone) === dayKey(o.now.getTime() + DAY, o.timeZone) || dayKey(at, o.timeZone) === dayKey(o.now.getTime(), o.timeZone);
+  if (o.phase === "holiday") {
+    const when = formatWeekdayTime(at, o.timeZone);
+    return { long: `Holiday · opens ${when}`, short: `Holiday · ${when}` };
+  }
   if (tomorrow && o.remaining < DAY) {
     const text = `Opens in ${Math.floor(o.remaining / HOUR)} h`;
     return { long: text, short: text };

@@ -27,10 +27,12 @@ import {
   type TransactionOut,
   type TransactionWrite,
 } from "../../lib/queries/ledger";
+import { pageByMonth, pageBySize } from "./paging";
 import { filterLedger, monthTotals, sortLedger, summarizeLedger, useLedgerAll } from "../../lib/queries/ledgerAll";
 import { useFxConversions, useFxPool, type DepositMatch } from "../../lib/queries/manage";
 import { depositsById } from "../CurrencyConversions/matching";
-import { RateChip, RateSheet } from "./RateChip";
+import { RateChip, RateSheet, TrailChip, TrailSheet } from "./RateChip";
+import type { TrailKind } from "../../lib/journey-types";
 import { EstChip, useEstimateQueue } from "./EstChip";
 import { ReminderCard } from "../../components/ReminderCard";
 import { SettleSheet } from "../../components/SettleSheet";
@@ -39,10 +41,18 @@ import { useDebouncedValue } from "../../lib/useDebouncedValue";
 import { useIsPhone } from "../../lib/useMediaQuery";
 import { usePersistentState } from "../../lib/usePersistentState";
 import { formatPrice, formatQuantity, num } from "./numbers";
+import { PhoneTransactions } from "./PhoneTransactions";
+import "./PhoneTransactions.scss";
 import { KIND_OPTIONS, TransactionForm } from "./TransactionForm";
 import "./Transactions.scss";
 
 const PAGE_SIZE = 50;
+
+/** 7.4: the server names the rows that have a money trail (buys, sales, withdrawals; deposits use the rate chip). */
+function trailKindOf(r: TransactionOut): TrailKind | null {
+  const k = (r as TransactionOut & { trail_kind?: TrailKind | null }).trail_kind;
+  return k === "buy" || k === "sell" || k === "withdrawal" ? k : null;
+}
 const ALL = "all";
 const KIND_LABEL: Record<string, string> = {
   ...Object.fromEntries(KIND_OPTIONS.map((o) => [o.value, o.label])),
@@ -217,13 +227,23 @@ export function Transactions() {
   const est = useEstimateQueue();
   const depositMap = useMemo(() => depositsById(fxPool.data?.deposits ?? []), [fxPool.data]);
   const [rateFor, setRateFor] = useState<DepositMatch | null>(null);
+  // `?trail=buy-123` opens that row's trail (links from the Holding page, Data Health, the cash-out flow).
+  const [trailFor, setTrailFor] = useState<{ kind: TrailKind; id: number } | null>(() => {
+    const m = /^(buy|sell|withdrawal|deposit)-(\d+)$/.exec(searchParams.get("trail") ?? "");
+    return m ? { kind: m[1] as TrailKind, id: Number(m[2]) } : null;
+  });
 
   const create = useCreateTransaction();
   const update = useUpdateTransaction();
   const remove = useDeleteTransaction();
 
   // A delete (or a narrower filter) can leave the current page past the end.
-  const lastPage = Math.max(0, Math.ceil(view.sorted.length / PAGE_SIZE) - 1);
+  // Date sort groups by month, so a page holds whole months (never a month split in two).
+  const pageList = useMemo(
+    () => (f.sort === "date" ? pageByMonth(view.sorted, PAGE_SIZE) : pageBySize(view.sorted, PAGE_SIZE)),
+    [view.sorted, f.sort],
+  );
+  const lastPage = Math.max(0, pageList.length - 1);
   if (page > lastPage) setPage(lastPage);
 
   const { refetch } = list;
@@ -284,6 +304,7 @@ export function Transactions() {
           <span className="transactions-page__kind-cell">
             <span className={`transactions-page__kind transactions-page__kind--${r.kind}`}>{KIND_LABEL[r.kind] ?? r.kind}</span>
             {match && <RateChip match={match} onOpen={setRateFor} />}
+            {!match && trailKindOf(r) && <TrailChip kind={trailKindOf(r)!} onOpen={() => setTrailFor({ kind: trailKindOf(r)!, id: r.id })} />}
             {r.is_estimate && <EstChip onOpen={() => est.open(r.id)} />}
           </span>
         );
@@ -328,9 +349,8 @@ export function Transactions() {
   ];
 
   const summary = list.data ? view.summary : undefined;
-  const total = view.sorted.length;
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const pageRows = useMemo(() => view.sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [view.sorted, page]);
+  const pages = Math.max(1, pageList.length);
+  const pageRows = pageList[page] ?? [];
   const activeFilters = [f.account !== ALL, f.kind !== ALL, Boolean(f.symbol), Boolean(dates.start || dates.end), f.sweeps].filter(
     Boolean,
   ).length;
@@ -401,7 +421,7 @@ export function Transactions() {
     <SegmentedControl
       ariaLabel="Time range"
       size="sm"
-      options={RANGE_OPTIONS}
+      options={isPhone ? RANGE_OPTIONS.map((o) => (o.value === "ytd" ? { ...o, label: "YTD" } : o)) : RANGE_OPTIONS}
       value={f.range === "custom" ? ("" as Exclude<RangeKey, "custom">) : f.range}
       onChange={pickRange}
     />
@@ -428,6 +448,22 @@ export function Transactions() {
             </Button>
           )
         }
+      />
+    );
+  } else if (isPhone) {
+    body = (
+      <PhoneTransactions
+        rows={pageRows}
+        months={f.sort === "date" ? view.months : null}
+        currency={currency}
+        depositMap={depositMap}
+        kindLabel={(k) => KIND_LABEL[k] ?? k}
+        monthLabel={monthLabel}
+        trailKindOf={trailKindOf}
+        onEdit={setEditing}
+        onOpenRate={setRateFor}
+        onOpenTrail={(kind, id) => setTrailFor({ kind, id })}
+        onOpenEst={est.open}
       />
     );
   } else if (f.sort === "date") {
@@ -519,7 +555,7 @@ export function Transactions() {
 
       {summary && (
         <p className="transactions-page__summary">
-          {filtered ? `${summary.count} matching` : `${summary.count} transactions`} · {summary.buy_count} buys · {summary.sell_count}{" "}
+          {filtered ? `${summary.count} matching` : isPhone ? `${summary.count}` : `${summary.count} transactions`} · {summary.buy_count} buys · {summary.sell_count}{" "}
           sells
           {avgTrade ? (
             <>
@@ -556,6 +592,8 @@ export function Transactions() {
             {form}
           </Dialog>
         ))}
+
+      <TrailSheet target={trailFor} onClose={() => setTrailFor(null)} />
 
       <RateSheet
         match={rateFor}

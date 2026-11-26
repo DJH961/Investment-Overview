@@ -19,9 +19,13 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 
-def conversions_with_fixings(session: Session) -> list[fx_spread.Conversion]:
-    """Every real EUR to USD conversion with the settled fixing it is compared with.
+def conversions_with_fixings(
+    session: Session, *, direction: fx_spread.Direction = "to_usd"
+) -> list[fx_spread.Conversion]:
+    """Every real conversion in ``direction`` with the settled fixing it is compared with.
 
+    Default: EUR to USD only (every cost figure before 7.4); ``"to_eur"`` gives the
+    conversions back, priced in their own direction (:func:`fx_spread.conversion_cost`).
     Estimated conversions (recurring plans, not settled yet) are left out: their rate is
     itself derived from these averages, so costs, markers and the provider offset only
     ever read what really happened.
@@ -31,7 +35,7 @@ def conversions_with_fixings(session: Session) -> list[fx_spread.Conversion]:
     today = exchange_today()
     out: list[fx_spread.Conversion] = []
     for r in rows:
-        if r.is_estimate:
+        if r.is_estimate or fx_conversion_service.direction(r) != direction:
             continue
         fixing = fx_spread.fixing_for(rates, r.date)
         month = fx_spread.month_average(rates, r.date, today)
@@ -42,19 +46,25 @@ def conversions_with_fixings(session: Session) -> list[fx_spread.Conversion]:
                 eur_sent=r.eur_sent,
                 usd_received=r.usd_received,
                 fees_eur=r.fees_eur if r.fees_eur is not None else Decimal(0),
+                fees_usd=r.fees_usd if r.fees_usd is not None else Decimal(0),
                 provider=r.provider,
                 ecb_rate=None if fixing is None else fixing[0],
                 ecb_rate_date=None if fixing is None else fixing[1],
                 month_avg=None if month is None else month[0],
                 month_so_far=month is not None and month[1],
+                direction=direction,
             )
         )
     return out
 
 
-def conversion_costs(session: Session) -> list[fx_spread.ConversionCost]:
-    """Per-conversion costs, oldest first."""
-    return [fx_spread.conversion_cost(c) for c in conversions_with_fixings(session)]
+def conversion_costs(
+    session: Session, *, direction: fx_spread.Direction = "to_usd"
+) -> list[fx_spread.ConversionCost]:
+    """Per-conversion costs in ``direction`` (default EUR to USD), oldest first."""
+    return [
+        fx_spread.conversion_cost(c) for c in conversions_with_fixings(session, direction=direction)
+    ]
 
 
 def cost_report(
