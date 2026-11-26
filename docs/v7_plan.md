@@ -1309,6 +1309,13 @@ that push. The P numbers are labels other notes refer to.
   - Direction filters (to USD / to EUR) in fx_cost, recurring, currency_deposits and the
     conversions API; drop the frozen EUR legs and diagnostics `_check_frozen_legs` together.
   - Stabilize the flaky `test_tiingo_fallback_backoff` hypothesis test.
+  - Multi-day intraday fixtures (owner, 2026-11-26): the stress and `nice` fixture sets
+    hold intraday bars for one session only, so no 1W chart (Overview, Impact, rate,
+    holding) can be checked in shots. Generate at least 7 calendar days of synthetic
+    intraday bars with real session shapes: nights, a weekend, a US holiday, an early
+    close, pre/post-market, a feed gap, with per-instant FX next to each sample. Make
+    `npm run shots` and the overflow check cover 1W on these pages, and add e2e checks
+    that the 1W charts show session dividers and no flat closed-market stretches.
   - Currency › Impact 1D/1W, properly (owner, 2026-11-26): 7.4 only hides closed-market
     stretches in the client. Do it with the backend: serve the Impact intraday series
     session-aware like the Overview value series (samples only inside trading sessions,
