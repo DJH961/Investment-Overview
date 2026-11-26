@@ -78,9 +78,9 @@ function PaidDates({ c }: { c: FxConversion }) {
   );
 }
 
-function Cell({ label, children, span }: { label: string; children: ReactNode; span?: 2 | 3 }) {
+function Cell({ label, children, span, end }: { label: string; children: ReactNode; span?: 2 | 3; end?: boolean }) {
   return (
-    <div className={clsx("phone-conv__cell", span === 2 && "phone-conv__cell--span2", span === 3 && "phone-conv__cell--wide")}>
+    <div className={clsx("phone-conv__cell", span === 2 && "phone-conv__cell--span2", span === 3 && "phone-conv__cell--wide", end && "phone-conv__cell--end")}>
       <dt className="phone-conv__label">{label}</dt>
       <dd className="phone-conv__value">{children}</dd>
     </div>
@@ -159,7 +159,7 @@ function PhoneConversionRow({
             <Cell label="Fees">
               {fees > 0 ? <Money amount={fees} currency="EUR" /> : feesUsd > 0 ? <Money amount={feesUsd} currency="USD" /> : "–"}
             </Cell>
-            <Cell label="Cost">{cost !== null ? <Money amount={cost} currency="EUR" signed /> : "–"}</Cell>
+            <Cell label="Cost" end>{cost !== null ? <Money amount={cost} currency="EUR" signed /> : "–"}</Cell>
             <Cell label="Rate">
               {formatNumber(Number(c.rate), 4)}
               {allIn && <span className="phone-conv__muted">all-in {formatNumber(Number(c.all_in_rate), 4)}</span>}
@@ -168,7 +168,7 @@ function PhoneConversionRow({
               <span title={e.title}>{e.text}</span>
               {e.from && <span className="phone-conv__muted">{e.from}</span>}
             </Cell>
-            <Cell label="vs ECB">
+            <Cell label="vs ECB" end>
               <span title={offPctWords(c.off_pct) ?? undefined}>{offPctText(c.off_pct)}</span>
             </Cell>
             {kept > 0 && (
@@ -176,12 +176,11 @@ function PhoneConversionRow({
                 <Money amount={kept} currency="USD" />
               </Cell>
             )}
-            <Cell label={back ? "Dollars from" : "Paid for"} span={kept > 0 ? 2 : 3}>
+            <Cell label={back ? "Dollars from" : "Paid for"} span={kept > 0 ? undefined : 2}>
               {back ? "USD account" : <PaidDates c={c} />}
             </Cell>
-          </dl>
-          {note && <p className="phone-conv__note">{note}</p>}
-          <div className="phone-conv__actions">
+            {/* The actions share the last row, in the third column. */}
+            <div className="phone-conv__actions">
             <button
               type="button"
               className="phone-conv__trail"
@@ -194,7 +193,9 @@ function PhoneConversionRow({
             </button>
             {c.is_estimate && onSettle && <EstChip onOpen={onSettle} />}
             <span className="phone-conv__menu">{menu}</span>
-          </div>
+            </div>
+          </dl>
+          {note && <p className="phone-conv__note">{note}</p>}
           {trail &&
             (back ? (
               cashOut ? (

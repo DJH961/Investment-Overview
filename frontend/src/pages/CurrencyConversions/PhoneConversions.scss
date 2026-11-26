@@ -191,7 +191,9 @@
 
   &__grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    // Content-sized columns spread edge to edge: the third column ends on the row's right edge.
+    grid-template-columns: repeat(3, auto);
+    justify-content: space-between;
     gap: var(--space-2) var(--space-4);
     margin: 0;
   }
@@ -218,6 +220,12 @@
     &--span2 {
       grid-column: span 2;
     }
+
+    // Third column: right-aligned, ending on the row's right edge like the rate column above.
+    &--end {
+      align-items: flex-end;
+      text-align: right;
+    }
   }
 
   &__label {
@@ -236,7 +244,9 @@
     align-items: center;
     justify-content: flex-end;
     gap: var(--space-2);
-    margin-top: calc(-1 * var(--space-1));
+    grid-column: 3;
+    align-self: end;
+    justify-self: end;
   }
 
   &__muted {
