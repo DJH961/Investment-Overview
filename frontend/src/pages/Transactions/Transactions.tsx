@@ -41,6 +41,8 @@ import { useDebouncedValue } from "../../lib/useDebouncedValue";
 import { useIsPhone } from "../../lib/useMediaQuery";
 import { usePersistentState } from "../../lib/usePersistentState";
 import { formatPrice, formatQuantity, num } from "./numbers";
+import { PhoneTransactions } from "./PhoneTransactions";
+import "./PhoneTransactions.scss";
 import { KIND_OPTIONS, TransactionForm } from "./TransactionForm";
 import "./Transactions.scss";
 
@@ -419,7 +421,7 @@ export function Transactions() {
     <SegmentedControl
       ariaLabel="Time range"
       size="sm"
-      options={RANGE_OPTIONS}
+      options={isPhone ? RANGE_OPTIONS.map((o) => (o.value === "ytd" ? { ...o, label: "YTD" } : o)) : RANGE_OPTIONS}
       value={f.range === "custom" ? ("" as Exclude<RangeKey, "custom">) : f.range}
       onChange={pickRange}
     />
@@ -446,6 +448,22 @@ export function Transactions() {
             </Button>
           )
         }
+      />
+    );
+  } else if (isPhone) {
+    body = (
+      <PhoneTransactions
+        rows={pageRows}
+        months={f.sort === "date" ? view.months : null}
+        currency={currency}
+        depositMap={depositMap}
+        kindLabel={(k) => KIND_LABEL[k] ?? k}
+        monthLabel={monthLabel}
+        trailKindOf={trailKindOf}
+        onEdit={setEditing}
+        onOpenRate={setRateFor}
+        onOpenTrail={(kind, id) => setTrailFor({ kind, id })}
+        onOpenEst={est.open}
       />
     );
   } else if (f.sort === "date") {
@@ -537,7 +555,7 @@ export function Transactions() {
 
       {summary && (
         <p className="transactions-page__summary">
-          {filtered ? `${summary.count} matching` : `${summary.count} transactions`} · {summary.buy_count} buys · {summary.sell_count}{" "}
+          {filtered ? `${summary.count} matching` : isPhone ? `${summary.count}` : `${summary.count} transactions`} · {summary.buy_count} buys · {summary.sell_count}{" "}
           sells
           {avgTrade ? (
             <>

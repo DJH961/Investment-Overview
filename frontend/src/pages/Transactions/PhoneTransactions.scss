@@ -1,0 +1,288 @@
+@use "../../styles/mixins" as m;
+
+// Phone Transactions: month groups of two-line rows (name | amount | type pill), a tap
+// opens the detail in place. One left edge (a fixed chevron gutter), one right edge.
+.phone-tx-months {
+  --tx-pad: var(--space-3);
+  --tx-gutter: calc(var(--icon-sm) + var(--space-1));
+
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.phone-tx-month {
+  overflow: hidden;
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+
+  // Month left, the net (the largest figure) right; count and "net" muted beneath.
+  &__head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+    column-gap: var(--space-3);
+    align-items: center;
+    width: 100%;
+    padding: var(--space-2) var(--tx-pad);
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+
+    &:focus-visible {
+      @include m.focus-ring;
+    }
+  }
+
+  &__title {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  &__chevron {
+    flex: none;
+    width: var(--icon-sm);
+    height: var(--icon-sm);
+    color: var(--color-muted);
+    transform: rotate(-90deg);
+    transition: transform 0.15s ease;
+
+    @include m.reduced-motion {
+      transition: none;
+    }
+  }
+
+  &--open &__chevron {
+    transform: none;
+  }
+
+  &__net {
+    color: var(--color-fg);
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-bold, var(--font-weight-semibold));
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  &__sub {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    padding-left: var(--tx-gutter);
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-tight);
+
+    &--right {
+      padding-left: 0;
+      justify-content: flex-end;
+    }
+  }
+
+  &__warn {
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-full);
+    background: var(--color-warn-soft);
+    color: var(--color-fg);
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-medium);
+    white-space: nowrap;
+  }
+}
+
+.phone-tx-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  &--flat {
+    overflow: hidden;
+    background: var(--color-surface);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-1);
+  }
+}
+
+.phone-tx {
+  border-top: var(--border-width) solid var(--color-border);
+
+  &__row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto 4.75rem;
+    grid-template-rows: auto auto;
+    column-gap: var(--space-2);
+    align-items: center;
+    width: 100%;
+    min-height: 3.25rem;
+    padding: var(--space-2) var(--tx-pad, var(--space-3));
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+
+    &:focus-visible {
+      @include m.focus-ring;
+    }
+  }
+
+  &__name {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+  }
+
+  &__title {
+    overflow: hidden;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__chevron {
+    flex: none;
+    width: var(--icon-sm);
+    height: var(--icon-sm);
+    color: var(--color-faint);
+    transform: rotate(-90deg);
+    transition: transform 0.15s ease;
+
+    @include m.reduced-motion {
+      transition: none;
+    }
+  }
+
+  &--open &__chevron {
+    transform: none;
+  }
+
+  &__main {
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  &__kind-col {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  // Neutral on purpose: blue/orange mean gain/loss, and a sale is not a loss. A fixed width so the pills line up.
+  &__kind {
+    box-sizing: border-box;
+    width: 100%;
+    overflow: hidden;
+    padding: 1px var(--space-1);
+    border-radius: var(--radius-full);
+    background: var(--color-surface-2);
+    color: var(--color-fg);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__sub {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    &--left {
+      padding-left: var(--tx-gutter, calc(var(--icon-sm) + var(--space-1)));
+      text-align: left;
+    }
+
+    &--pill {
+      text-align: center;
+    }
+  }
+}
+
+// Opened row: label-above-value grid, then the chips and actions on one line.
+.phone-tx-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 0 var(--tx-pad, var(--space-3)) var(--space-2) calc(var(--tx-pad, var(--space-3)) + var(--icon-sm) + var(--space-1));
+
+  &__grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-2);
+    margin: 0;
+  }
+
+  &__cell {
+    min-width: 0;
+  }
+
+  &__label {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-tight);
+    white-space: nowrap;
+  }
+
+  &__value {
+    margin: 0;
+    overflow: hidden;
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  &__spacer {
+    flex: 1;
+  }
+
+  &__action {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-height: 2rem;
+    padding: 0 var(--space-2);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: none;
+    color: var(--color-accent);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    text-decoration: none;
+    cursor: pointer;
+
+    svg {
+      width: var(--icon-sm);
+      height: var(--icon-sm);
+    }
+  }
+}
