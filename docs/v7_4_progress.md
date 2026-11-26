@@ -72,3 +72,4 @@ plus its last `Next:` line.
 - 2026-11-26: owner APPROVED round-1 phone layouts except the opened Conversions row (too vertical) — lane L flattening it (3-col grid, ≤150 px). 7.6 plan: Activity links per paying conversion.
 - 2026-11-26: opened Conversions row flattened (e9b0fcda), owner approvals complete. PR #435 marked ready. Waiting: CI on e9b0fcda + DEPLOY_MODE answer, then merge.
 - 2026-11-26: opened Conversions row regrouped (b5e044e2; owner agreed the plan). CI on earlier commit: 9 pass, 0 fail. Waiting: CI on b5e044e2, DEPLOY_MODE answer, merge #435.
+- 2026-11-26: owner approved all 7.4 shots (final: conversions detail centered, 17ad3518). DEPLOY_MODE=scheduled (unchanged). Auto-merge (merge commit) enabled on #435 per owner "deploy scheduled": merges when CI is green, deploys at the next scheduled window. After merge: tag check, update v7_plan status (release tool did), and the 7.6 list in v7_plan.md push 10 holds the follow-ups.
