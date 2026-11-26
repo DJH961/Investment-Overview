@@ -1309,6 +1309,11 @@ that push. The P numbers are labels other notes refer to.
   - Direction filters (to USD / to EUR) in fx_cost, recurring, currency_deposits and the
     conversions API; drop the frozen EUR legs and diagnostics `_check_frozen_legs` together.
   - Stabilize the flaky `test_tiingo_fallback_backoff` hypothesis test.
+  - Currency › Impact 1D/1W, properly (owner, 2026-11-26): 7.4 only hides closed-market
+    stretches in the client. Do it with the backend: serve the Impact intraday series
+    session-aware like the Overview value series (samples only inside trading sessions,
+    session boundaries marked, per-instant FX stored next to each sample), so the chart,
+    tooltips and the Impact figures all come from the same server-side session series.
 - **Activity links to its conversions** (owner, 2026-11-26). Each contribution row on
   Activity links directly to every conversion that paid for it ("Paid from Conversion
   27 Oct 2026" becomes a link): one tap opens that conversion on the Conversions page
