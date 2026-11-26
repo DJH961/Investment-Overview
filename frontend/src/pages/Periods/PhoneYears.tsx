@@ -1,9 +1,9 @@
 import { ChevronDown } from "lucide-react";
-import { Fragment, type ReactNode } from "react";
+import { useState } from "react";
 import { FOLD_KEY_PREFIX } from "../../components/Card";
 import { Money } from "../../components/Money";
 import { Percent } from "../../components/Percent";
-import { formatMonth } from "../../lib/format";
+import { formatMonth, MISSING } from "../../lib/format";
 import type { ReportingCurrency } from "../../lib/prefs";
 import { type PeriodRowOut, toNum } from "../../lib/queries/reports";
 import { usePersistentState } from "../../lib/usePersistentState";
@@ -17,65 +17,62 @@ function monthName(label: string): string {
   return formatMonth(label, "month-only");
 }
 
-/** Net flow only adds something when money also went out (it equals "In" otherwise). */
-function flowDiffers(row: PeriodRowOut): boolean {
-  return toNum(row.net_flow) !== toNum(row.contributions);
-}
-
 type PeriodRowWithCashOut = PeriodRowOut & { cashed_out_eur?: string | null; cashed_out?: string | null };
 
-/** One labelled figure in a muted text line; null when the amount is zero or missing. */
-function part(label: string, value: string | null, currency: ReportingCurrency, kind: "money" | "pct"): ReactNode {
-  const n = toNum(value);
-  if (n === null || n === 0) return null;
+function money(v: string | null, currency: ReportingCurrency) {
+  const n = toNum(v);
+  return n === null ? MISSING : <Money amount={n} currency={currency} digits={0} />;
+}
+
+function cashedOut(row: PeriodRowOut, currency: ReportingCurrency) {
+  const r = row as PeriodRowWithCashOut;
+  const v = toNum(r.cashed_out);
+  if (v !== null && v > 0) return <Money amount={v} currency={currency} digits={0} />;
+  const eur = toNum(r.cashed_out_eur);
+  if (eur !== null && eur > 0) return <Money amount={eur} currency="EUR" digits={0} />;
+  return MISSING;
+}
+
+/** Label above value: In, Net flow, Cashed out, Dividends (a dash when empty). */
+function Flows({ row, currency, modifier }: { row: PeriodRowOut; currency: ReportingCurrency; modifier: "year" | "month" }) {
+  const cell = (label: string, value: React.ReactNode) => (
+    <div className="period-flow">
+      <dt className="period-flow__label">{label}</dt>
+      <dd className="period-flow__value">{value}</dd>
+    </div>
+  );
   return (
-    <span className="period-part">
-      <span className="period-part__label">{label}</span>{" "}
-      {kind === "pct" ? <Percent ratio={n} signed colored /> : <Money amount={n} currency={currency} digits={0} />}
-    </span>
+    <dl className={`period-flows period-flows--${modifier}`}>
+      {cell("In", money(row.contributions, currency))}
+      {cell("Net flow", money(row.net_flow, currency))}
+      {cell("Cashed out", cashedOut(row, currency))}
+      {cell("Dividends", money(row.dividends, currency))}
+    </dl>
   );
 }
 
-function cashOutPart(row: PeriodRowWithCashOut, currency: ReportingCurrency): ReactNode {
-  const v = toNum(row.cashed_out);
-  if (v !== null && v > 0) return part("Cashed out", row.cashed_out ?? null, currency, "money");
-  const eur = toNum(row.cashed_out_eur);
-  if (eur !== null && eur > 0) return part("Cashed out", row.cashed_out_eur ?? null, "EUR", "money");
-  return null;
-}
-
-/** Muted text line: the non-empty parts joined by a middle dot. */
-function Line({ parts }: { parts: ReactNode[] }) {
-  const shown = parts.filter((p) => p !== null);
-  if (shown.length === 0) return null;
+function MonthRow({
+  row,
+  currency,
+  other,
+  open,
+  onToggle,
+}: {
+  row: PeriodRowOut;
+  currency: ReportingCurrency;
+  other?: PeriodRowOut;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const second = toNum(other?.closing_value);
+  const g = toNum(row.growth_pct);
+  const tone = g === null ? "flat" : g > 0 ? "pos" : g < 0 ? "neg" : "flat";
+  const total = toNum(row.total_growth_compounded);
   return (
-    <span className="period-line">
-      {shown.map((p, i) => (
-        // oxlint-disable-next-line react/no-array-index-key
-        <Fragment key={i}>
-          {i > 0 && <span aria-hidden> · </span>}
-          {p}
-        </Fragment>
-      ))}
-    </span>
-  );
-}
-
-function secondPart(other: PeriodRowOut | undefined, currency: ReportingCurrency): ReactNode {
-  const o = toNum(other?.closing_value);
-  if (o === null) return null;
-  return (
-    <span className="period-part">
-      <Money amount={o} currency={otherCcy(currency)} digits={0} />
-    </span>
-  );
-}
-
-function MonthRow({ row, currency, other }: { row: PeriodRowOut; currency: ReportingCurrency; other?: PeriodRowOut }) {
-  return (
-    <li className="period-month" data-period={row.label}>
-      <div className="period-month__top">
+    <li className={`period-month${open ? " period-month--open" : ""}`} data-period={row.label}>
+      <button type="button" className="period-month__row" aria-expanded={open} onClick={onToggle}>
         <span className="period-month__name">
+          <ChevronDown className="period-month__chevron" aria-hidden />
           {monthName(row.label)}
           {row.is_current && <span className="period-month__pill">live</span>}
         </span>
@@ -84,22 +81,23 @@ function MonthRow({ row, currency, other }: { row: PeriodRowOut; currency: Repor
             <Money amount={toNum(row.closing_value)} currency={currency} digits={0} />
           </Maybe>
         </span>
-        <span className="period-month__growth">
-          <Maybe present={toNum(row.growth_pct) !== null} ccy={currency}>
-            <Percent ratio={toNum(row.growth_pct)} signed colored />
+        <span className={`period-month__growth period-month__growth--${tone}`}>
+          <Maybe present={g !== null} ccy={currency}>
+            <Percent ratio={g} signed colored />
           </Maybe>
         </span>
-      </div>
-      <Line
-        parts={[
-          secondPart(other, currency),
-          part("Total", row.total_growth_compounded, currency, "pct"),
-          part("In", row.contributions, currency, "money"),
-          flowDiffers(row) ? part("Net flow", row.net_flow, currency, "money") : null,
-          cashOutPart(row, currency),
-          part("Div.", row.dividends, currency, "money"),
-        ]}
-      />
+        <span className="period-month__sub">
+          {second !== null && <Money amount={second} currency={otherCcy(currency)} digits={0} />}
+        </span>
+        <span className="period-month__sub">
+          {total !== null && (
+            <>
+              Total <Percent ratio={total} signed colored />
+            </>
+          )}
+        </span>
+      </button>
+      {open && <Flows row={row} currency={currency} modifier="month" />}
     </li>
   );
 }
@@ -117,10 +115,16 @@ function PhoneYear({
 }) {
   // Shares the fold memory with the desktop table.
   const [open, setOpen] = usePersistentState<boolean>(`${FOLD_KEY_PREFIX}periods.year.${group.year}`, group.isCurrent);
+  const [openMonth, setOpenMonth] = useState<string | null>(null);
   const s = group.summary;
   const lastMonth = group.months[0];
   const total = toNum(s?.closing_value ?? lastMonth?.closing_value ?? null);
-  const other = s ? yearOther.get(s.label) : undefined;
+  const second = toNum(s ? yearOther.get(s.label)?.closing_value : null);
+  const pct = (v: string | null) => (
+    <Maybe present={toNum(v) !== null} ccy={currency}>
+      <Percent ratio={toNum(v)} signed colored />
+    </Maybe>
+  );
   return (
     <section className={`period-year${open ? " period-year--open" : ""}`} data-year={group.year}>
       <button
@@ -130,51 +134,47 @@ function PhoneYear({
         aria-label={`${group.year}${open ? ", fold" : ", unfold"}`}
         onClick={() => setOpen((o) => !o)}
       >
-        <span className="period-year__top">
-          <span className="period-year__title">
-            <ChevronDown className="period-year__chevron" aria-hidden />
-            {group.year}
-            {group.isCurrent && <span className="period-year__pill">current</span>}
-          </span>
-          <span className="period-year__total">
-            <span className="period-year__total-label">{s?.is_current || group.isCurrent ? "Now" : "Year end"}</span>
+        <span className="period-year__title">
+          <ChevronDown className="period-year__chevron" aria-hidden />
+          {group.year}
+          {group.isCurrent && <span className="period-year__pill">current</span>}
+        </span>
+        <span className="period-year__total">
+          <span className="period-year__label">{s?.is_current || group.isCurrent ? "Now" : "Year end"}</span>
+          <span className="period-year__amount">
             <Money amount={total} currency={currency} digits={0} />
           </span>
+          {second !== null && (
+            <span className="period-year__second">
+              <Money amount={second} currency={otherCcy(currency)} digits={0} />
+            </span>
+          )}
         </span>
         {s && (
-          <>
-            <Line
-              parts={[
-                secondPart(other, currency),
-                <span className="period-part" key="twr">
-                  <span className="period-part__label">Growth (TWR)</span>{" "}
-                  <Maybe present={toNum(s.growth_pct) !== null} ccy={currency}>
-                    <Percent ratio={toNum(s.growth_pct)} signed colored />
-                  </Maybe>
-                </span>,
-                <span className="period-part" key="xirr">
-                  <span className="period-part__label">XIRR</span>{" "}
-                  <Maybe present={toNum(s.period_growth_xirr) !== null} ccy={currency}>
-                    <Percent ratio={toNum(s.period_growth_xirr)} signed colored />
-                  </Maybe>
-                </span>,
-              ]}
-            />
-            <Line
-              parts={[
-                part("In", s.contributions, currency, "money"),
-                flowDiffers(s) ? part("Net flow", s.net_flow, currency, "money") : null,
-                cashOutPart(s, currency),
-                part("Div.", s.dividends, currency, "money"),
-              ]}
-            />
-          </>
+          <span className="period-year__heroes">
+            <span className="period-year__hero">
+              <span className="period-year__label">Growth (TWR)</span>
+              <span className="period-year__hero-value">{pct(s.growth_pct)}</span>
+            </span>
+            <span className="period-year__hero">
+              <span className="period-year__label">XIRR</span>
+              <span className="period-year__hero-value">{pct(s.period_growth_xirr)}</span>
+            </span>
+          </span>
         )}
       </button>
+      {open && s && <Flows row={s} currency={currency} modifier="year" />}
       {open && (
         <ul className="period-year__months" aria-label={`${group.year} months`}>
           {group.months.map((m) => (
-            <MonthRow key={m.label} row={m} currency={currency} other={monthsOther.get(m.label)} />
+            <MonthRow
+              key={m.label}
+              row={m}
+              currency={currency}
+              other={monthsOther.get(m.label)}
+              open={openMonth === m.label}
+              onToggle={() => setOpenMonth((cur) => (cur === m.label ? null : m.label))}
+            />
           ))}
         </ul>
       )}
@@ -182,7 +182,7 @@ function PhoneYear({
   );
 }
 
-/** Phone "By year" view: compact year blocks with their months, server figures only. */
+/** Phone "By year": native-list style year cards with their months, server figures only. */
 export function PhoneYears({
   groups,
   currency,
