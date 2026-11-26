@@ -22,7 +22,7 @@ function shortDay(iso: string): string {
  * The deposits a conversion paid for. Wide: pills that jump to them (under the "Paid for deposits"
  * column). Phones: one labelled line of plain links ("Paid for deposits on 20 Oct · 22 Sep +1 more").
  */
-function PaidChips({ c }: { c: FxConversion }) {
+export function PaidChips({ c }: { c: FxConversion }) {
   const n = c.used_by.length;
   const left = Number(c.remaining_usd);
   return (

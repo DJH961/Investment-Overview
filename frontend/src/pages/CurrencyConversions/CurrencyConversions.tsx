@@ -49,6 +49,8 @@ import {
   validPeriod,
 } from "./grouping";
 import { PinDialog } from "./PinDialog";
+import { PhoneConversionList, PhoneFold } from "./PhoneConversions";
+import { useIsPhone } from "../../lib/useMediaQuery";
 import "./CurrencyConversions.scss";
 
 interface FormState {
@@ -491,9 +493,12 @@ function FoldedList<T>({
   folds,
   setFolds,
   meta,
+  figure,
   children,
 }: {
   prefix: string;
+  /** Phones: the group's main figure, shown right in the header (with its label). */
+  figure?: { label: string; value: (items: readonly T[]) => ReactNode };
   items: readonly T[];
   dateOf: (item: T) => string;
   thisYear: string;
@@ -505,11 +510,27 @@ function FoldedList<T>({
   children: (items: readonly T[]) => ReactNode;
 }) {
   const blocks = groupByYear(items, dateOf);
+  const phone = useIsPhone();
   return (
     <div className="conversions__folds">
       {blocks.map((b) => {
         const key = `${prefix}:y${b.year}`;
         const open = folds[key] ?? (filtered ? true : b.year >= thisYear);
+        if (phone && figure) {
+          return (
+            <PhoneFold
+              key={key}
+              open={open}
+              onToggle={() => setFolds((prev) => ({ ...prev, [key]: !open }))}
+              title={b.year}
+              meta={meta(b.items)}
+              figureLabel={figure.label}
+              figure={figure.value(b.items)}
+            >
+              {children(b.items)}
+            </PhoneFold>
+          );
+        }
         return (
           <Fold
             key={key}
@@ -548,6 +569,7 @@ export function CurrencyConversions() {
   const [folds, setFolds] = usePersistentState<Folds>(FOLDS_KEY, {}, isFolds);
   const [openDeposits, setOpenDeposits] = useState<ReadonlySet<number>>(new Set());
   const [pending, setPending] = useState<string | null>(null);
+  const phone = useIsPhone();
 
   const today = todayIn(getFormatPrefs().timeZone);
   const conversions = list.data ?? [];
@@ -767,6 +789,10 @@ export function CurrencyConversions() {
                   filtered={conversionsFiltered}
                   folds={folds}
                   setFolds={setFolds}
+                  figure={{
+                    label: "Received",
+                    value: (rows) => <Money amount={sumOf(rows, (c) => c.usd_received)} currency="USD" digits={0} />,
+                  }}
                   meta={(rows) => (
                     <>
                       {plural(rows.length, "conversion", "conversions")} ·{" "}
@@ -776,7 +802,15 @@ export function CurrencyConversions() {
                     </>
                   )}
                 >
-                  {(rows) => (
+                  {(rows) => phone ? (
+                    <PhoneConversionList
+                      rows={rows}
+                      menuFor={menuFor}
+                      onSettle={(id) => est.open(id)}
+                      cashOuts={cashOuts}
+                      trailId={params.get("trail")}
+                    />
+                  ) : (
                     <>
                       <ConversionHead />
                       <ul className="conversions__list" aria-label="Currency conversions">

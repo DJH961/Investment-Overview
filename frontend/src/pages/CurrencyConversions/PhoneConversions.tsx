@@ -1,0 +1,229 @@
+import clsx from "clsx";
+import { ChevronDown, Route, Undo2 } from "lucide-react";
+import { useId, useState, type ReactNode } from "react";
+import { CashOutCard } from "../../components/CashOutCard";
+import { Money } from "../../components/Money";
+import { TrailPanel } from "../../components/MoneyTrail";
+import type { CashOutOut } from "../../lib/journey-types";
+import { formatDate, formatNumber } from "../../lib/format";
+import type { FxConversion } from "../../lib/queries/manage";
+import { EstChip } from "../Transactions/EstChip";
+import { directionOf, PaidChips } from "./ConversionRow";
+import "./PhoneConversions.scss";
+import { ecbCell, offPctText, offPctWords, providerLabel } from "./matching";
+
+/** A year group on a phone: chevron + year left, the received dollars right, one muted summary line. */
+export function PhoneFold({
+  open,
+  onToggle,
+  title,
+  meta,
+  figureLabel,
+  figure,
+  children,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  title: ReactNode;
+  meta: ReactNode;
+  figureLabel?: string;
+  figure?: ReactNode;
+  children: ReactNode;
+}) {
+  const bodyId = useId();
+  return (
+    <section className={clsx("phone-fold", open && "phone-fold--open")}>
+      <button type="button" className="phone-fold__head" aria-expanded={open} aria-controls={bodyId} onClick={onToggle}>
+        <ChevronDown aria-hidden className="phone-fold__chevron" />
+        <span className="phone-fold__title">{title}</span>
+        {figure && (
+          <span className="phone-fold__figure">
+            {figureLabel && <span className="phone-fold__label">{figureLabel}</span>}
+            <span className="phone-fold__amount">{figure}</span>
+          </span>
+        )}
+        <span className="phone-fold__meta">{meta}</span>
+      </button>
+      <div id={bodyId} hidden={!open}>
+        {open ? children : null}
+      </div>
+    </section>
+  );
+}
+
+function Cell({ label, children, wide }: { label: string; children: ReactNode; wide?: boolean }) {
+  return (
+    <div className={clsx("phone-conv__cell", wide && "phone-conv__cell--wide")}>
+      <dt className="phone-conv__label">{label}</dt>
+      <dd className="phone-conv__value">{children}</dd>
+    </div>
+  );
+}
+
+function PhoneConversionRow({
+  c,
+  menu,
+  open,
+  onToggle,
+  onSettle,
+  cashOut,
+  initialTrail,
+}: {
+  c: FxConversion;
+  menu: ReactNode;
+  open: boolean;
+  onToggle: () => void;
+  onSettle?: () => void;
+  cashOut?: CashOutOut | null;
+  initialTrail: boolean;
+}) {
+  const [trail, setTrail] = useState(initialTrail);
+  const back = directionOf(c) === "to_eur";
+  const e = ecbCell(c);
+  const note = c.is_estimate && c.note?.startsWith("est.") ? null : c.note;
+  const fees = c.fees_eur && Number(c.fees_eur) > 0 ? Number(c.fees_eur) : 0;
+  const feesUsd = c.fee_ccy === "USD" && c.fees_usd ? Number(c.fees_usd) : 0;
+  const allIn = Number(c.all_in_rate) !== Number(c.rate);
+  const cost = c.cost_eur === null || c.cost_eur === undefined ? null : -Number(c.cost_eur);
+  const kept = Number(c.kept_usd);
+  const mainCcy = back ? "EUR" : "USD";
+  const fromCcy = back ? "USD" : "EUR";
+  const mainAmt = Number(back ? c.eur_sent : c.usd_received);
+  const fromAmt = Number(back ? c.usd_received : c.eur_sent);
+  const date = formatDate(c.date);
+  return (
+    <li className={clsx("phone-conv", open && "phone-conv--open")} id={`conversion-${c.id}`}>
+      <button
+        type="button"
+        className="phone-conv__row"
+        aria-expanded={open}
+        aria-label={`Details of the ${date} conversion`}
+        onClick={onToggle}
+      >
+        <span className="phone-conv__date">{date}</span>
+        <span className="phone-conv__main">
+          <Money amount={mainAmt} currency={mainCcy} />
+        </span>
+        <span className="phone-conv__rate">{formatNumber(Number(c.rate), 4)}</span>
+        <span className="phone-conv__who">
+          {back && (
+            <span className="phone-conv__tag">
+              <Undo2 aria-hidden className="phone-conv__tag-icon" />
+              Back to euros
+            </span>
+          )}
+          {!back && c.provider && providerLabel(c.provider)}
+          {!back && !c.provider && "Conversion"}
+          {c.is_estimate && " · est."}
+        </span>
+        <span className="phone-conv__from">
+          from <Money amount={fromAmt} currency={fromCcy} />
+        </span>
+        <span className="phone-conv__sub">
+          {cost !== null ? <Money amount={cost} currency="EUR" signed colored /> : offPctText(c.off_pct)}
+        </span>
+      </button>
+      {open && (
+        <div className="phone-conv__detail">
+          <dl className="phone-conv__grid">
+            <Cell label={back ? "Received" : "Sent"}>
+              <Money amount={Number(c.eur_sent)} currency="EUR" />
+            </Cell>
+            <Cell label="Fees">
+              {fees > 0 ? <Money amount={fees} currency="EUR" /> : feesUsd > 0 ? <Money amount={feesUsd} currency="USD" /> : "None"}
+            </Cell>
+            <Cell label="Rate">{formatNumber(Number(c.rate), 4)}</Cell>
+            <Cell label="All-in rate">{allIn ? formatNumber(Number(c.all_in_rate), 4) : "Same"}</Cell>
+            <Cell label="ECB that day">
+              <span title={e.title}>
+                {e.text}
+                {e.from && ` ${e.from}`}
+              </span>
+            </Cell>
+            <Cell label="vs ECB">
+              <span title={offPctWords(c.off_pct) ?? undefined}>{offPctText(c.off_pct)}</span>
+            </Cell>
+            {cost !== null && (
+              <Cell label="Cost">
+                <Money amount={cost} currency="EUR" signed />
+              </Cell>
+            )}
+            {kept > 0 && (
+              <Cell label="Kept in your USD account">
+                <Money amount={kept} currency="USD" />
+              </Cell>
+            )}
+            <Cell label={back ? "Dollars from" : "Deposits it paid for"} wide>
+              {back ? <span className="conv__paid-date conv__paid-date--pool">USD account</span> : <PaidChips c={c} />}
+            </Cell>
+            {note && (
+              <Cell label="Note" wide>
+                {note}
+              </Cell>
+            )}
+          </dl>
+          <div className="phone-conv__actions">
+            <button
+              type="button"
+              className="phone-conv__trail"
+              aria-expanded={trail}
+              aria-label={back ? "Result of this cash-out" : "Where these dollars went"}
+              onClick={() => setTrail((t) => !t)}
+            >
+              <Route aria-hidden className="phone-conv__trail-icon" />
+              {back ? "Result" : "Trail"}
+            </button>
+            {c.is_estimate && onSettle && <EstChip onOpen={onSettle} />}
+            <span className="phone-conv__menu">{menu}</span>
+          </div>
+          {trail &&
+            (back ? (
+              cashOut ? (
+                <CashOutCard out={cashOut} />
+              ) : (
+                <p className="phone-conv__muted">The result shows once the server has matched these dollars.</p>
+              )
+            ) : (
+              <TrailPanel kind="conversion" id={c.id} label="Where these dollars went" />
+            ))}
+        </div>
+      )}
+    </li>
+  );
+}
+
+/** Phone list of one year's conversions: two-line rows, one open at a time. */
+export function PhoneConversionList({
+  rows,
+  menuFor,
+  onSettle,
+  cashOuts,
+  trailId,
+}: {
+  rows: readonly FxConversion[];
+  menuFor: (c: FxConversion) => ReactNode;
+  onSettle: (id: number) => void;
+  cashOuts: Map<number | null, CashOutOut>;
+  trailId: string | null;
+}) {
+  const [openId, setOpenId] = useState<number | null>(() => {
+    const t = rows.find((r) => String(r.id) === trailId);
+    return t ? t.id : null;
+  });
+  return (
+    <ul className="phone-convs" aria-label="Currency conversions">
+      {rows.map((c) => (
+        <PhoneConversionRow
+          key={c.id}
+          c={c}
+          menu={menuFor(c)}
+          open={openId === c.id}
+          onToggle={() => setOpenId((cur) => (cur === c.id ? null : c.id))}
+          onSettle={() => onSettle(c.id)}
+          cashOut={cashOuts.get(c.id) ?? null}
+          initialTrail={trailId === String(c.id)}
+        />
+      ))}
+    </ul>
+  );
+}
