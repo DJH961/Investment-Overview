@@ -1280,6 +1280,15 @@ that push. The P numbers are labels other notes refer to.
 - **Real euro return** (P10). Periods and the recaps show the EUR return after euro-area inflation, from the public HICP series.
 - **One channel for facts** (P9). Email or web push, off by default, only for facts: backup failed, price feed stalled, ledger gap found, a tranche turned long-term.
 - Instrument metadata from the price provider with sector and country allocation; the hand-written risk explanations (§4.5).
+- **The cash-out journey, end to end** (owner, 2026-11-26; moved out of 7.4). 7.4 ships manual
+  USD → EUR conversion entry with native-USD fees, but the journey back to euros is still
+  loose. Build: (a) link a broker withdrawal (already a ledger transaction, already counted
+  by the deposits read model) to the USD → EUR conversion(s) it paid for, from the
+  conversion dialog and the withdrawal row, not only via trail pins; (b) the Cash out page
+  as the home of that journey (withdrawal → USD account → conversion → euros received),
+  with the realized-in-euros result per cash-out; (c) the same view on the Deposits page,
+  so withdrawals sit next to deposits with their onward conversion; (d) recurring/planned
+  cash-outs if the owner wants them. Golden values by hand for the euros realized.
 
 **Already shipped:** ledger completeness checks (P7, 6.15.0 and 7.0), the market
 clock (P13, 7.0), the USD-view currency figure (P12, 7.0) and the day rule (D1,
