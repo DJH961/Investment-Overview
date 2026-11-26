@@ -17,6 +17,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Currency › Add conversion, USD → EUR: the fee is entered in dollars (native `fees_usd`,
+  migration 0032) and comes out of the dollars sent; its euro value uses that
+  conversion's own ECB fixing, and the all-in rate is dollars sent per euro received.
+
 ### Fixed
 - Recurring › Set up your routine: each step keeps the cadence and amount you chose. Changing
   one step's rhythm (say monthly conversion, biweekly deposit, weekly buys) no longer

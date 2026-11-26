@@ -200,4 +200,6 @@ class CashOutPreviewIn(ApiModel):
     usd_sent: DecStr
     eur_received: DecStr
     fees_eur: DecStr = "0"
+    #: Native USD fee, paid out of the dollars sent (7.4); at most one of the two fees.
+    fees_usd: DecStr = "0"
     date: dt.date

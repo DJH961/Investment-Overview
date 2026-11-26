@@ -124,6 +124,8 @@ export function ConversionRow({
   // An estimate already wears the "est." chip: the plan's own "est. (recurring plan)" note would say it twice.
   const note = c.is_estimate && c.note?.startsWith("est.") ? null : c.note;
   const fees = c.fees_eur && Number(c.fees_eur) > 0 ? Number(c.fees_eur) : 0;
+  // A dollar fee (conversion back) is inside the dollars sent.
+  const feesUsd = c.fee_ccy === "USD" && c.fees_usd ? Number(c.fees_usd) : 0;
   const allIn = Number(c.all_in_rate) !== Number(c.rate);
   // Shown as what it took from you: negative (one sign rule on every currency figure).
   const cost = c.cost_eur === null || c.cost_eur === undefined ? null : -Number(c.cost_eur);
@@ -160,6 +162,12 @@ export function ConversionRow({
             <>
               {" "}
               + <Money amount={fees} currency="EUR" /> fees
+            </>
+          )}
+          {feesUsd > 0 && (
+            <>
+              {" "}
+              (incl. <Money amount={feesUsd} currency="USD" /> fees)
             </>
           )}
         </span>

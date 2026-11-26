@@ -46,6 +46,7 @@ def conversions_with_fixings(
                 eur_sent=r.eur_sent,
                 usd_received=r.usd_received,
                 fees_eur=r.fees_eur if r.fees_eur is not None else Decimal(0),
+                fees_usd=r.fees_usd if r.fees_usd is not None else Decimal(0),
                 provider=r.provider,
                 ecb_rate=None if fixing is None else fixing[0],
                 ecb_rate_date=None if fixing is None else fixing[1],

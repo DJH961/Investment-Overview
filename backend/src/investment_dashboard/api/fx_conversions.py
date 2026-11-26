@@ -51,6 +51,7 @@ def _out(
 ) -> FxConversionOut:
     use = next((u for u in result.by_conversion if u.conversion_id == row.id), None)
     fees = row.fees_eur if row.fees_eur is not None else Decimal(0)
+    fees_usd_native = row.fees_usd if row.fees_usd is not None else Decimal(0)
     fixing = service.ecb_fixing_for(session, row.date)
     ecb = None if fixing is None else fixing[0]
     direction = service.direction(row)
@@ -61,6 +62,7 @@ def _out(
             eur_sent=row.eur_sent,
             usd_received=row.usd_received,
             fees_eur=fees,
+            fees_usd=fees_usd_native,
             provider=row.provider,
             ecb_rate=ecb,
             ecb_rate_date=None if fixing is None else fixing[1],
@@ -83,12 +85,12 @@ def _out(
         usd_received=_s(row.usd_received),
         fees_eur=None if row.fees_eur is None else _s(row.fees_eur),
         note=row.note,
-        effective_rate=_s(row.usd_received / row.eur_sent),
+        effective_rate=_s((row.usd_received - fees_usd_native) / row.eur_sent),
         from_ccy=row.from_ccy,
         to_ccy=row.to_ccy,
         provider=cast("Literal['wise', 'revolut', 'other'] | None", row.provider),
         kept_usd=_s(row.kept_usd),
-        rate=_s(row.usd_received / row.eur_sent),
+        rate=_s((row.usd_received - fees_usd_native) / row.eur_sent),
         all_in_rate=_s(cost.all_in_rate),
         direction=direction,
         ecb_rate=None if ecb is None else _s(ecb),
@@ -96,7 +98,8 @@ def _out(
         off_pct=None if cost.off_pct is None else _s(cost.off_pct),
         spread_eur=dec(cost.spread_eur),
         cost_eur=dec(cost.cost_eur),
-        fees_usd=dec(cost.fees_usd),
+        fees_usd=_s(fees_usd_native) if fees_usd_native > 0 else dec(cost.fees_usd),
+        fee_ccy="USD" if fees_usd_native > 0 else ("EUR" if row.fees_eur is not None else None),
         cost_usd=dec(cost.cost_usd),
         used_by=[
             UsedByOut(
@@ -196,6 +199,7 @@ def create_conversion(body: FxConversionIn, session: SessionDep) -> FxConversion
             eur_sent=body.eur_sent,
             usd_received=body.usd_received,
             fees_eur=body.fees_eur,
+            fees_usd=body.fees_usd,
             note=body.note,
             provider=body.provider,
             kept_usd=body.kept_usd,
@@ -306,6 +310,7 @@ def update_conversion(
             eur_sent=body.eur_sent,
             usd_received=body.usd_received,
             fees_eur=body.fees_eur,
+            fees_usd=body.fees_usd,
             note=body.note,
             provider=body.provider,
             kept_usd=body.kept_usd,

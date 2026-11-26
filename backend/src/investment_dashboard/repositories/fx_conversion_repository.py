@@ -46,6 +46,7 @@ def add(
     eur_sent: Decimal,
     usd_received: Decimal,
     fees_eur: Decimal | None,
+    fees_usd: Decimal | None = None,
     note: str | None,
     provider: str | None = None,
     from_ccy: str = "EUR",
@@ -60,6 +61,7 @@ def add(
         eur_sent=eur_sent,
         usd_received=usd_received,
         fees_eur=fees_eur,
+        fees_usd=fees_usd,
         note=note,
         provider=provider,
         from_ccy=from_ccy,
@@ -79,6 +81,7 @@ def update(
     eur_sent: Decimal,
     usd_received: Decimal,
     fees_eur: Decimal | None,
+    fees_usd: Decimal | None = None,
     note: str | None,
     provider: str | None = None,
     from_ccy: str = "EUR",
@@ -93,6 +96,7 @@ def update(
     row.eur_sent = eur_sent
     row.usd_received = usd_received
     row.fees_eur = fees_eur
+    row.fees_usd = fees_usd
     row.note = note
     session.flush()
     session.refresh(row)

@@ -187,6 +187,9 @@ class ConversionBack:
     sent: Decimal
     eur_received: Decimal
     fees_eur: Decimal = ZERO
+    #: Native USD fee (7.4), paid out of ``sent`` (the pool still gives up all ``sent``
+    #: dollars) and never out of ``eur_received``; at most one of the two fees is set.
+    fees_usd: Decimal = ZERO
 
 
 Event = TxnEvent | ConversionBack

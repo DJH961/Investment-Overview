@@ -78,10 +78,26 @@ def direction(row: FxConversion) -> Direction:
 
 
 def _validate_pair(
-    *, from_ccy: str, to_ccy: str, provider: str | None, kept_usd: Decimal = Decimal(0)
+    *,
+    from_ccy: str,
+    to_ccy: str,
+    provider: str | None,
+    kept_usd: Decimal = Decimal(0),
+    fees_eur: Decimal | None = None,
+    fees_usd: Decimal | None = None,
+    usd_received: Decimal = Decimal(0),
 ) -> None:
     if (from_ccy, to_ccy) not in PAIRS:
         raise ValueError("only EUR to USD conversions and USD back to EUR are supported")
+    if fees_usd is not None:
+        if fees_usd < 0:
+            raise ValueError("fees_usd must not be negative")
+        if direction_of(from_ccy, to_ccy) != "to_eur":
+            raise ValueError("a fee in dollars applies only to a conversion back to euros")
+        if fees_eur is not None:
+            raise ValueError("give the fee in euros or in dollars, not both")
+        if fees_usd >= usd_received:
+            raise ValueError("fees_usd must be below the dollars sent")
     if direction_of(from_ccy, to_ccy) == "to_eur" and kept_usd != 0:
         raise ValueError("kept_usd applies only to EUR to USD conversions")
     if provider is not None and provider not in PROVIDERS:
@@ -116,6 +132,7 @@ def create_conversion(
     eur_sent: Decimal,
     usd_received: Decimal,
     fees_eur: Decimal | None = None,
+    fees_usd: Decimal | None = None,
     note: str | None = None,
     provider: str | None = None,
     from_ccy: str = "EUR",
@@ -126,7 +143,15 @@ def create_conversion(
     _validate(
         on=on, eur_sent=eur_sent, usd_received=usd_received, fees_eur=fees_eur, kept_usd=kept_usd
     )
-    _validate_pair(from_ccy=from_ccy, to_ccy=to_ccy, provider=provider, kept_usd=kept_usd)
+    _validate_pair(
+        from_ccy=from_ccy,
+        to_ccy=to_ccy,
+        provider=provider,
+        kept_usd=kept_usd,
+        fees_eur=fees_eur,
+        fees_usd=fees_usd,
+        usd_received=usd_received,
+    )
     row = repo.add(
         session,
         kept_usd=kept_usd,
@@ -135,6 +160,7 @@ def create_conversion(
         eur_sent=eur_sent,
         usd_received=usd_received,
         fees_eur=fees_eur,
+        fees_usd=fees_usd,
         note=note,
         provider=provider,
         from_ccy=from_ccy,
@@ -152,6 +178,7 @@ def update_conversion(
     eur_sent: Decimal,
     usd_received: Decimal,
     fees_eur: Decimal | None = None,
+    fees_usd: Decimal | None = None,
     note: str | None = None,
     provider: str | None = None,
     from_ccy: str = "EUR",
@@ -162,7 +189,15 @@ def update_conversion(
     _validate(
         on=on, eur_sent=eur_sent, usd_received=usd_received, fees_eur=fees_eur, kept_usd=kept_usd
     )
-    _validate_pair(from_ccy=from_ccy, to_ccy=to_ccy, provider=provider, kept_usd=kept_usd)
+    _validate_pair(
+        from_ccy=from_ccy,
+        to_ccy=to_ccy,
+        provider=provider,
+        kept_usd=kept_usd,
+        fees_eur=fees_eur,
+        fees_usd=fees_usd,
+        usd_received=usd_received,
+    )
     row = repo.get(session, conversion_id)
     if row is None:
         return None
@@ -173,6 +208,7 @@ def update_conversion(
         eur_sent=eur_sent,
         usd_received=usd_received,
         fees_eur=fees_eur,
+        fees_usd=fees_usd,
         note=note,
         provider=provider,
         from_ccy=from_ccy,
@@ -224,6 +260,7 @@ def conversions_back(session: Session) -> list[cash_pool.ConversionBack]:
             sent=r.usd_received,
             eur_received=r.eur_sent,
             fees_eur=r.fees_eur if r.fees_eur is not None else Decimal(0),
+            fees_usd=r.fees_usd if r.fees_usd is not None else Decimal(0),
         )
         for r in repo.list_all(session)
         if direction(r) == "to_eur"

@@ -78,7 +78,7 @@ function fromConversion(c: FxConversion): FormState {
     date: c.date,
     eur: trimDecimal(c.eur_sent),
     usd: trimDecimal(c.usd_received),
-    fees: trimDecimal(c.fees_eur),
+    fees: trimDecimal(c.fee_ccy === "USD" ? c.fees_usd : c.fees_eur),
     kept: Number(c.kept_usd) > 0 ? trimDecimal(c.kept_usd) : "",
     note: c.note ?? "",
     provider: c.provider ?? "",
@@ -202,6 +202,18 @@ function computeEurPreview(form: FormState, feeMode: EurFeeMode): EurPreview {
   };
 }
 
+function backRatesOf(form: FormState): { hasFee: boolean; converted: number | null; allIn: number | null } {
+  const usd = toApiDecimal(form.usd);
+  const eur = toApiDecimal(form.eur);
+  const fee = form.fees.trim() === "" ? "0" : toApiDecimal(form.fees);
+  const ok = (v: string | null) => v !== null && !v.startsWith("-") && Number(v) > 0;
+  if (!ok(usd) || !ok(eur)) return { hasFee: false, converted: null, allIn: null };
+  const feeNum = fee !== null && !fee.startsWith("-") ? Number(fee) : 0;
+  const allIn = Number(usd) / Number(eur);
+  const converted = feeNum < Number(usd) ? (Number(usd) - feeNum) / Number(eur) : null;
+  return { hasFee: feeNum > 0, converted, allIn };
+}
+
 export interface ConversionDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -222,6 +234,9 @@ export function ConversionDialog({ open, onOpenChange, editing, prefill }: Conve
   const [error, setError] = useState<string | null>(null);
   const reference = useFxReference(form.date);
   const preview = computeEurPreview(form, back ? "excluding" : feeMode);
+  // USD -> EUR: the dollar fee is part of the dollars sent. Converted rate = (USD sent - fee) / EUR
+  // received; all-in rate = USD sent / EUR received (linear display maths on the typed amounts).
+  const backRates = backRatesOf(form);
   const ecb = reference.data?.published && reference.data.ecb_rate ? Number(reference.data.ecb_rate) : null;
   const usedBy = editing?.used_by.length ?? 0;
   const set = (k: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -245,8 +260,8 @@ export function ConversionDialog({ open, onOpenChange, editing, prefill }: Conve
       return;
     }
     const eurSent = !back && feeMode === "including" && fees !== null && Number(fees) > 0 ? subtractDecimals(eur, fees) : eur;
-    if (back && fees !== null && compareDecimals(eur, fees) <= 0) {
-      setError("Fees must be less than the EUR received.");
+    if (back && fees !== null && compareDecimals(usd, fees) <= 0) {
+      setError("Fees must be less than the USD sent.");
       return;
     }
     const kept = back || form.kept.trim() === "" ? "0" : toApiDecimal(form.kept);
@@ -262,7 +277,8 @@ export function ConversionDialog({ open, onOpenChange, editing, prefill }: Conve
           date: form.date,
           eur_sent: eurSent,
           usd_received: usd,
-          fees_eur: fees,
+          fees_eur: back ? null : fees,
+          fees_usd: back ? fees : null,
           kept_usd: kept,
           note: form.note || null,
           provider: form.provider || null,
@@ -324,7 +340,7 @@ export function ConversionDialog({ open, onOpenChange, editing, prefill }: Conve
             <Field label="USD sent">
               {(c) => <Input {...c} inputMode="decimal" value={form.usd} onChange={set("usd")} />}
             </Field>
-            <Field label="EUR received (before fees)">
+            <Field label="EUR received">
               {(c) => <Input {...c} inputMode="decimal" value={form.eur} onChange={set("eur")} />}
             </Field>
           </>
@@ -356,7 +372,10 @@ export function ConversionDialog({ open, onOpenChange, editing, prefill }: Conve
         </Field>
         </>
         )}
-        <Field label="Fees (EUR, optional)">
+        <Field
+          label={back ? "Fees (USD, optional)" : "Fees (EUR, optional)"}
+          hint={back ? "Fees come out of the dollars you sent." : undefined}
+        >
           {(c) => <Input {...c} inputMode="decimal" value={form.fees} onChange={set("fees")} />}
         </Field>
         {!back && (
@@ -397,8 +416,17 @@ export function ConversionDialog({ open, onOpenChange, editing, prefill }: Conve
         )}
         {back && (
           <p className="conversion-form__rate" data-testid="rate-line">
-            Effective rate: <strong>{preview.convertedRate !== null ? formatNumber(preview.convertedRate, 4) : "\u2013"}</strong> USD
-            per EUR
+            {backRates.hasFee && backRates.converted !== null && backRates.allIn !== null ? (
+              <>
+                Converted rate: <strong>{formatNumber(backRates.converted, 4)}</strong> \u00b7 All-in rate:{" "}
+                <strong>{formatNumber(backRates.allIn, 4)}</strong> USD per EUR
+              </>
+            ) : (
+              <>
+                Effective rate: <strong>{backRates.allIn !== null ? formatNumber(backRates.allIn, 4) : "\u2013"}</strong> USD
+                per EUR
+              </>
+            )}
           </p>
         )}
         {!back && (<p className="conversion-form__rate" data-testid="rate-line">
@@ -421,7 +449,7 @@ export function ConversionDialog({ open, onOpenChange, editing, prefill }: Conve
                   reference.data.ecb_rate_date && reference.data.ecb_rate_date !== form.date
                     ? `ECB ${formatNumber(ecb, 4)} (${weekdayDate(reference.data.ecb_rate_date)}, the last fixing before this day)`
                     : `ECB on ${formatDate(form.date)}: ${formatNumber(ecb, 4)}`,
-                  offEcbText(back ? preview.convertedRate : preview.allInRate, ecb),
+                  offEcbText(back ? backRates.allIn : preview.allInRate, ecb),
                 ]
                   .filter(Boolean)
                   .join(" · ")

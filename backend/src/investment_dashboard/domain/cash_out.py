@@ -60,6 +60,12 @@ class CashOut:
     draws: tuple[Draw, ...]
     #: Some units fell back to ECB, or the conversion date has no ECB rate.
     flagged: bool
+    #: Native USD fee (7.4): inside ``usd_sent``, so already part of ``conversion_cost_eur``
+    #: (``eur_received - usd_sent / ecb``); never taken off ``eur_received``.
+    fees_usd: Decimal = ZERO
+    #: That fee in EUR at the conversion's own fixing (the obtained rate without one); for
+    #: display only, never subtracted again.
+    fees_usd_eur: Decimal = ZERO
 
 
 def _grid(x: Decimal) -> Decimal:
@@ -80,6 +86,12 @@ def cash_out(back: ConversionBack, draws: Sequence[Draw], ecb_rate: EcbRate) -> 
     ecb_eur = _grid(back.eur_received) if rate is None or rate <= 0 else _grid(back.sent / rate)
     currency = ecb_eur - (orig + market)
     cost = net - ecb_eur
+    if back.fees_usd > 0:
+        net_usd = back.sent - back.fees_usd
+        fee_rate = rate if not missing and rate is not None else net_usd / back.eur_received
+        fee_eur = back.fees_usd / fee_rate if fee_rate > 0 else ZERO
+    else:
+        fee_eur = ZERO
     return CashOut(
         conversion_id=back.id,
         date=back.date,
@@ -93,6 +105,8 @@ def cash_out(back: ConversionBack, draws: Sequence[Draw], ecb_rate: EcbRate) -> 
         xirr_eur=_xirr(draws, back.date, net),
         draws=tuple(draws),
         flagged=missing or any(d.flagged for d in draws),
+        fees_usd=back.fees_usd,
+        fees_usd_eur=_grid(fee_eur),
     )
 
 

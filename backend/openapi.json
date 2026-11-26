@@ -2677,6 +2677,12 @@
             "title": "Fees Eur",
             "type": "string"
           },
+          "fees_usd": {
+            "default": "0",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Fees Usd",
+            "type": "string"
+          },
           "usd_sent": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Usd Sent",
@@ -8054,6 +8060,23 @@
             ],
             "title": "Fees Eur"
           },
+          "fees_usd": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Native dollar fee of a conversion back (USD to EUR), paid out of the dollars sent; not together with fees_eur.",
+            "title": "Fees Usd"
+          },
           "from_ccy": {
             "default": "EUR",
             "maxLength": 3,
@@ -8217,6 +8240,22 @@
             "title": "Eur Sent",
             "type": "string"
           },
+          "fee_ccy": {
+            "anyOf": [
+              {
+                "enum": [
+                  "EUR",
+                  "USD"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Currency the fee was entered in: EUR (fees_eur) or USD (the native dollar fee of a conversion back, paid out of the dollars sent); null without a fee.",
+            "title": "Fee Ccy"
+          },
           "fees_eur": {
             "anyOf": [
               {
@@ -8239,7 +8278,7 @@
                 "type": "null"
               }
             ],
-            "description": "fees_eur at that conversion's own fixing.",
+            "description": "fees_eur at that conversion's own fixing; for a conversion back with a fee in dollars (fee_ccy USD) the native fee, always present.",
             "title": "Fees Usd"
           },
           "from_ccy": {

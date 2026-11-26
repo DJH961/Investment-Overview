@@ -20,6 +20,14 @@ class FxConversionIn(ApiModel):
     eur_sent: Decimal = Field(gt=0)
     usd_received: Decimal = Field(gt=0)
     fees_eur: Decimal | None = Field(default=None, ge=0)
+    fees_usd: Decimal | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Native dollar fee of a conversion back (USD to EUR), paid out of the dollars "
+            "sent; not together with fees_eur."
+        ),
+    )
     note: str | None = Field(default=None, max_length=512)
     provider: Provider | None = None
     kept_usd: Decimal = Field(
@@ -93,7 +101,18 @@ class FxConversionOut(ApiModel):
         default=None, description="spread_eur + fees_eur; positive = paid more than the ECB."
     )
     fees_usd: DecStr | None = Field(
-        default=None, description="fees_eur at that conversion's own fixing."
+        default=None,
+        description=(
+            "fees_eur at that conversion's own fixing; for a conversion back with a fee "
+            "in dollars (fee_ccy USD) the native fee, always present."
+        ),
+    )
+    fee_ccy: Literal["EUR", "USD"] | None = Field(
+        default=None,
+        description=(
+            "Currency the fee was entered in: EUR (fees_eur) or USD (the native dollar fee "
+            "of a conversion back, paid out of the dollars sent); null without a fee."
+        ),
     )
     cost_usd: DecStr | None = Field(
         default=None,

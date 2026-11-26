@@ -3121,6 +3121,11 @@ export interface components {
              * @default 0
              */
             fees_eur: string;
+            /**
+             * Fees Usd
+             * @default 0
+             */
+            fees_usd: string;
             /** Usd Sent */
             usd_sent: string;
             /** Withdrawal Id */
@@ -4936,6 +4941,11 @@ export interface components {
             /** Fees Eur */
             fees_eur?: number | string | null;
             /**
+             * Fees Usd
+             * @description Native dollar fee of a conversion back (USD to EUR), paid out of the dollars sent; not together with fees_eur.
+             */
+            fees_usd?: number | string | null;
+            /**
              * From Ccy
              * @default EUR
              */
@@ -5001,11 +5011,16 @@ export interface components {
             effective_rate: string;
             /** Eur Sent */
             eur_sent: string;
+            /**
+             * Fee Ccy
+             * @description Currency the fee was entered in: EUR (fees_eur) or USD (the native dollar fee of a conversion back, paid out of the dollars sent); null without a fee.
+             */
+            fee_ccy?: ("EUR" | "USD") | null;
             /** Fees Eur */
             fees_eur: string | null;
             /**
              * Fees Usd
-             * @description fees_eur at that conversion's own fixing.
+             * @description fees_eur at that conversion's own fixing; for a conversion back with a fee in dollars (fee_ccy USD) the native fee, always present.
              */
             fees_usd?: string | null;
             /** From Ccy */
