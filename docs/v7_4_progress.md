@@ -49,15 +49,33 @@ plus its last `Next:` line.
   Known open issues list: bottom of this file.
 - 2026-11-26: owner: P18 (broker cash in the Overview total) is not core; it moves to a later release. Focus stays on the currency journey.
 
-## Known open issues (not fixed for 7.4.0)
+## Known open issues (not fixed in 7.4.0)
 
-- P18 broker cash in the Overview total: later release.
+Still open:
+- Date inputs show the browser locale (dd.mm.yyyy), not en-US.
+- Holding page Value chart with the realistic (`--nice`) fixtures: ~€313K invested vs a €26.5K
+  header value, "This range -112.88%". Probably the chart series comes from the stress set
+  (fixture bug, not app); not confirmed.
+- Conversions shows "In the pool $0" next to 11 conversions; check it is intended.
+- Phone layouts for Conversions, Activity and Transactions apply below 640 px only;
+  640-767 px keeps the old layouts.
+- Phone conversion detail: kept-in-USD and all-in lines not seen in shots (no fixture row has them).
+- Recurring setup step 3 note ("buys exceed deposits") has no test.
 - B2 follow-up: direction filters in fx_cost, recurring, currency_deposits, conversions API.
-- Diagnostics _check_frozen_legs still reads frozen legs (drop at release).
-- Date inputs show the browser locale (dd.mm.yyyy) not en-US.
-- Flaky hypothesis test test_tiingo_fallback_backoff (pre-existing).
-- Add conversion dialog is EUR→USD only: USD→EUR ("Back to euros") rows come only from statement import; no manual entry (owner asked 2026-11-26).
-- Owner has NOT reviewed 7.4 shots yet (beyond antigravity dialogs): full shot review of all 7.4 views is still to do before release.
+- Diagnostics `_check_frozen_legs` still reads the frozen legs (drop with the legs).
+- Flaky hypothesis test `test_tiingo_fallback_backoff` (pre-existing).
+- Periods column sorting was removed with the redesign.
+
+Moved to later releases (see docs/v7_plan.md push 10, 7.6):
+- Cash-out journey end to end, Cash out page refinement, linking withdrawals to conversions.
+- Fees in either currency for either direction; incl./excl. fees for both directions.
+- Activity links to each conversion that paid for a deposit.
+- P18 broker cash in the Overview total.
+
+Done in 7.4.0 (were open earlier today): manual USD→EUR entry, USD fees on USD→EUR,
+owner shot review of all changed pages.
+
+## Session log 2026-11-26
 - 2026-11-26: owner REJECTED Periods pass 1 (b99b8a38 merged; whitespace on phone and desktop untouched). Lane G redoing it to a concrete spec: one dense table for all years on desktop (year = header row, months indented 36-40 px rows), 2-3 line text rows on phone. Lane I (`lane/v7.4-i-back-to-eur`): manual USD→EUR entry in Add conversion (owner: important).
 - Shot review scope (owner 2026-11-26): ONLY pages changed in 7.4 — Overview (recap, journey card, market chip), Holdings tile, Holding page journey + peek, Periods, Currency, Conversions (+ add dialog both directions), Cash out, Activity, Transactions, Recurring setup. EUR+USD, 390 and 1440.
 - 2026-11-26: merged F (5a851e00), I USD→EUR entry (6e50a7d3), H plan flex (2d049493; backend needed no change, step-3 note untested). Waiting: G Periods redo. Then: CHANGELOG 7.4.0 (no 7.4 feature entries yet!), version bump, openapi, shots of changed pages, PR.
