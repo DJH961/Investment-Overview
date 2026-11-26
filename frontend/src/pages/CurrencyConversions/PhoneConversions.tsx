@@ -5,10 +5,11 @@ import { CashOutCard } from "../../components/CashOutCard";
 import { Money } from "../../components/Money";
 import { TrailPanel } from "../../components/MoneyTrail";
 import type { CashOutOut } from "../../lib/journey-types";
-import { formatDate, formatNumber } from "../../lib/format";
+import { Link } from "react-router";
+import { formatDate, formatNumber, getFormatPrefs } from "../../lib/format";
 import type { FxConversion } from "../../lib/queries/manage";
 import { EstChip } from "../Transactions/EstChip";
-import { directionOf, PaidChips } from "./ConversionRow";
+import { directionOf } from "./ConversionRow";
 import "./PhoneConversions.scss";
 import { ecbCell, offPctText, offPctWords, providerLabel } from "./matching";
 
@@ -51,9 +52,35 @@ export function PhoneFold({
   );
 }
 
-function Cell({ label, children, wide }: { label: string; children: ReactNode; wide?: boolean | 2 }) {
+/** "20 Oct": a deposit's short day. */
+function shortDay(iso: string): string {
+  return new Intl.DateTimeFormat(getFormatPrefs().locale, { day: "numeric", month: "short", timeZone: "UTC" }).format(
+    new Date(`${iso}T00:00:00Z`),
+  );
+}
+
+/** The deposits this conversion paid for as date links ("Oct 29 · Sep 30"). */
+function PaidDates({ c }: { c: FxConversion }) {
+  const n = c.used_by.length;
+  if (n === 0) return <>Not used yet</>;
   return (
-    <div className={clsx("phone-conv__cell", wide === true && "phone-conv__cell--wide", wide === 2 && "phone-conv__cell--span2")}>
+    <>
+      {c.used_by.slice(0, 4).map((u, i) => (
+        <span key={`${u.deposit_id}-${u.pinned}`}>
+          {i > 0 && " · "}
+          <Link to={{ hash: `#deposit-${u.deposit_id}` }} className="conv__paid-date">
+            {shortDay(u.date)}
+          </Link>
+        </span>
+      ))}
+      {n > 4 && ` +${n - 4} more`}
+    </>
+  );
+}
+
+function Cell({ label, children, span }: { label: string; children: ReactNode; span?: 2 | 3 }) {
+  return (
+    <div className={clsx("phone-conv__cell", span === 2 && "phone-conv__cell--span2", span === 3 && "phone-conv__cell--wide")}>
       <dt className="phone-conv__label">{label}</dt>
       <dd className="phone-conv__value">{children}</dd>
     </div>
@@ -132,31 +159,25 @@ function PhoneConversionRow({
             <Cell label="Fees">
               {fees > 0 ? <Money amount={fees} currency="EUR" /> : feesUsd > 0 ? <Money amount={feesUsd} currency="USD" /> : "–"}
             </Cell>
-            <Cell label="Rate">{formatNumber(Number(c.rate), 4)}</Cell>
-            <Cell label="All-in">
-              {allIn ? formatNumber(Number(c.all_in_rate), 4) : <span className="phone-conv__muted">= rate</span>}
+            <Cell label="Cost">{cost !== null ? <Money amount={cost} currency="EUR" signed /> : "–"}</Cell>
+            <Cell label="Rate">
+              {formatNumber(Number(c.rate), 4)}
+              {allIn && <span className="phone-conv__muted">all-in {formatNumber(Number(c.all_in_rate), 4)}</span>}
             </Cell>
             <Cell label="ECB that day">
-              <span title={e.title}>
-                {e.text}
-                {e.from && ` ${e.from}`}
-              </span>
+              <span title={e.title}>{e.text}</span>
+              {e.from && <span className="phone-conv__muted">{e.from}</span>}
             </Cell>
             <Cell label="vs ECB">
               <span title={offPctWords(c.off_pct) ?? undefined}>{offPctText(c.off_pct)}</span>
             </Cell>
-            {cost !== null && (
-              <Cell label="Cost">
-                <Money amount={cost} currency="EUR" signed />
-              </Cell>
-            )}
             {kept > 0 && (
-              <Cell label="Kept in your USD account">
+              <Cell label="Kept in USD">
                 <Money amount={kept} currency="USD" />
               </Cell>
             )}
-            <Cell label={back ? "Dollars from" : "Deposits"} wide={kept > 0 || cost === null ? true : 2}>
-              {back ? <span className="conv__paid-date conv__paid-date--pool">USD account</span> : <PaidChips c={c} />}
+            <Cell label={back ? "Dollars from" : "Paid for"} span={kept > 0 ? 2 : 3}>
+              {back ? "USD account" : <PaidDates c={c} />}
             </Cell>
           </dl>
           {note && <p className="phone-conv__note">{note}</p>}
