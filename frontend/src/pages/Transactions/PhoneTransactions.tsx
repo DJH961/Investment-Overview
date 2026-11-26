@@ -58,7 +58,7 @@ function TxRow({ row: r, currency, depositMap, kindLabel, trailKindOf, onEdit, o
   const main = num(currency === "EUR" ? r.cash_eur : r.cash_usd);
   const second = num(other === "EUR" ? r.cash_eur : r.cash_usd);
   const nativeOther = r.currency !== "EUR" && r.currency !== "USD";
-  const qty = r.quantity != null && num(r.quantity) ? formatQuantity(r.quantity) : null;
+  const qty = r.quantity != null && num(r.quantity) ? formatQuantity(r.quantity.replace(/^-/, "")) : null;
   const price = r.price_native != null ? formatPrice(r.price_native, r.currency) : null;
   const match = depositMap.get(r.id);
   const trail = trailKindOf(r);
