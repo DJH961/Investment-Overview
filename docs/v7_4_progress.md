@@ -71,3 +71,4 @@ plus its last `Next:` line.
 - 2026-11-26: all round-1 lanes merged (N 371f0fcb). CI fix aeee2b34: SetupFlow lint (refs in render) + regenerated fixtures (drift guard). Local frontend 1245/1245. Waiting: CI on aeee2b34, owner verdict on phone shots, DEPLOY_MODE question, then un-draft + merge #435.
 - 2026-11-26: owner APPROVED round-1 phone layouts except the opened Conversions row (too vertical) — lane L flattening it (3-col grid, ≤150 px). 7.6 plan: Activity links per paying conversion.
 - 2026-11-26: opened Conversions row flattened (e9b0fcda), owner approvals complete. PR #435 marked ready. Waiting: CI on e9b0fcda + DEPLOY_MODE answer, then merge.
+- 2026-11-26: opened Conversions row regrouped (b5e044e2; owner agreed the plan). CI on earlier commit: 9 pass, 0 fail. Waiting: CI on b5e044e2, DEPLOY_MODE answer, merge #435.
