@@ -51,9 +51,9 @@ export function PhoneFold({
   );
 }
 
-function Cell({ label, children, wide }: { label: string; children: ReactNode; wide?: boolean }) {
+function Cell({ label, children, wide }: { label: string; children: ReactNode; wide?: boolean | 2 }) {
   return (
-    <div className={clsx("phone-conv__cell", wide && "phone-conv__cell--wide")}>
+    <div className={clsx("phone-conv__cell", wide === true && "phone-conv__cell--wide", wide === 2 && "phone-conv__cell--span2")}>
       <dt className="phone-conv__label">{label}</dt>
       <dd className="phone-conv__value">{children}</dd>
     </div>
@@ -130,10 +130,12 @@ function PhoneConversionRow({
               <Money amount={Number(c.eur_sent)} currency="EUR" />
             </Cell>
             <Cell label="Fees">
-              {fees > 0 ? <Money amount={fees} currency="EUR" /> : feesUsd > 0 ? <Money amount={feesUsd} currency="USD" /> : "None"}
+              {fees > 0 ? <Money amount={fees} currency="EUR" /> : feesUsd > 0 ? <Money amount={feesUsd} currency="USD" /> : "–"}
             </Cell>
             <Cell label="Rate">{formatNumber(Number(c.rate), 4)}</Cell>
-            <Cell label="All-in rate">{allIn ? formatNumber(Number(c.all_in_rate), 4) : "Same"}</Cell>
+            <Cell label="All-in">
+              {allIn ? formatNumber(Number(c.all_in_rate), 4) : <span className="phone-conv__muted">= rate</span>}
+            </Cell>
             <Cell label="ECB that day">
               <span title={e.title}>
                 {e.text}
@@ -153,15 +155,11 @@ function PhoneConversionRow({
                 <Money amount={kept} currency="USD" />
               </Cell>
             )}
-            <Cell label={back ? "Dollars from" : "Deposits it paid for"} wide>
+            <Cell label={back ? "Dollars from" : "Deposits"} wide={kept > 0 || cost === null ? true : 2}>
               {back ? <span className="conv__paid-date conv__paid-date--pool">USD account</span> : <PaidChips c={c} />}
             </Cell>
-            {note && (
-              <Cell label="Note" wide>
-                {note}
-              </Cell>
-            )}
           </dl>
+          {note && <p className="phone-conv__note">{note}</p>}
           <div className="phone-conv__actions">
             <button
               type="button"
