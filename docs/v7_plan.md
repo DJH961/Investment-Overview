@@ -1289,6 +1289,9 @@ that push. The P numbers are labels other notes refer to.
   with the realized-in-euros result per cash-out; (c) the same view on the Deposits page,
   so withdrawals sit next to deposits with their onward conversion; (d) recurring/planned
   cash-outs if the owner wants them. Golden values by hand for the euros realized.
+  Owner on the 7.4 Cash out page: "super weird and odd within our journey and
+  conversions"; leave it in 7.4, but in 7.6 refine it and give it a proper place in the
+  journey (likely the last step after Conversions, not a separate island).
 - **Conversion fees, complete** (owner, 2026-11-26). Fees can be in either currency (EUR
   or USD, stored natively) for either direction (EUR → USD and USD → EUR); 7.4 only adds
   native USD fees on USD → EUR. Both directions get the "amount is excluding / including
