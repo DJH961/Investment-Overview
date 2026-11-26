@@ -191,9 +191,8 @@
 
   &__grid {
     display: grid;
-    // Content-sized columns spread edge to edge: the third column ends on the row's right edge.
-    grid-template-columns: repeat(3, auto);
-    justify-content: space-between;
+    // Three equal columns: left-aligned, centered, right-aligned (ends on the row's right edge).
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: var(--space-2) var(--space-4);
     margin: 0;
   }
@@ -226,6 +225,12 @@
       align-items: flex-end;
       text-align: right;
     }
+
+    // Middle column: centered in its third of the row.
+    &--mid {
+      align-items: center;
+      text-align: center;
+    }
   }
 
   &__label {
@@ -244,7 +249,7 @@
     align-items: center;
     justify-content: flex-end;
     gap: var(--space-2);
-    grid-column: 3;
+    grid-column: 2 / -1;
     align-self: end;
     justify-self: end;
   }

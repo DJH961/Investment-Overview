@@ -78,9 +78,9 @@ function PaidDates({ c }: { c: FxConversion }) {
   );
 }
 
-function Cell({ label, children, span, end }: { label: string; children: ReactNode; span?: 2 | 3; end?: boolean }) {
+function Cell({ label, children, span, end, mid }: { label: string; children: ReactNode; span?: 2 | 3; end?: boolean; mid?: boolean }) {
   return (
-    <div className={clsx("phone-conv__cell", span === 2 && "phone-conv__cell--span2", span === 3 && "phone-conv__cell--wide", end && "phone-conv__cell--end")}>
+    <div className={clsx("phone-conv__cell", span === 2 && "phone-conv__cell--span2", span === 3 && "phone-conv__cell--wide", end && "phone-conv__cell--end", mid && "phone-conv__cell--mid")}>
       <dt className="phone-conv__label">{label}</dt>
       <dd className="phone-conv__value">{children}</dd>
     </div>
@@ -156,7 +156,7 @@ function PhoneConversionRow({
             <Cell label={back ? "Received" : "Sent"}>
               <Money amount={Number(c.eur_sent)} currency="EUR" />
             </Cell>
-            <Cell label="Fees">
+            <Cell label="Fees" mid>
               {fees > 0 ? <Money amount={fees} currency="EUR" /> : feesUsd > 0 ? <Money amount={feesUsd} currency="USD" /> : "–"}
             </Cell>
             <Cell label="Cost" end>{cost !== null ? <Money amount={cost} currency="EUR" signed /> : "–"}</Cell>
@@ -164,7 +164,7 @@ function PhoneConversionRow({
               {formatNumber(Number(c.rate), 4)}
               {allIn && <span className="phone-conv__muted">all-in {formatNumber(Number(c.all_in_rate), 4)}</span>}
             </Cell>
-            <Cell label="ECB that day">
+            <Cell label="ECB that day" mid>
               <span title={e.title}>{e.text}</span>
               {e.from && <span className="phone-conv__muted">{e.from}</span>}
             </Cell>
@@ -176,7 +176,7 @@ function PhoneConversionRow({
                 <Money amount={kept} currency="USD" />
               </Cell>
             )}
-            <Cell label={back ? "Dollars from" : "Paid for"} span={kept > 0 ? undefined : 2}>
+            <Cell label={back ? "Dollars from" : "Paid for"} span={kept > 0 ? 2 : undefined}>
               {back ? "USD account" : <PaidDates c={c} />}
             </Cell>
             {/* The actions share the last row, in the third column. */}
