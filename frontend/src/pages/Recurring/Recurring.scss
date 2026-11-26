@@ -44,6 +44,10 @@
     display: flex;
     align-items: flex-start;
     gap: var(--space-3);
+
+    @include m.desktop {
+      align-self: stretch;
+    }
   }
 
   &__plan-icon {
@@ -94,6 +98,11 @@
   // The status never shrinks or truncates (icon + word stay whole).
   &__plan-status {
     flex: none;
+
+    // Desktop: the status sits on the actions' center line, just left of them.
+    @include m.desktop {
+      align-self: center;
+    }
   }
 
   // Edit / Pause / End / Delete on one line, even at 360 px: compact buttons share the row.
