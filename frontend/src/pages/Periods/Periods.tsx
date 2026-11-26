@@ -20,9 +20,10 @@ import { type PeriodRowOut, toNum, usePeriods } from "../../lib/queries/reports"
 import { useShellStatus } from "../../lib/shell";
 import { useIsPhone } from "../../lib/useMediaQuery";
 import { usePersistentState, type Validator } from "../../lib/usePersistentState";
-import { groupByYear, yearOf } from "./groupByYear";
+import { groupByYear } from "./groupByYear";
 import { Maybe } from "./Maybe";
 import { PhoneYears } from "./PhoneYears";
+import { YearsTable } from "./YearsTable";
 import "./Periods.scss";
 import "./PhoneYears.scss";
 
@@ -254,7 +255,7 @@ export function Periods() {
           />
           {view === "year" && recent.length > 1 && (
             <div className="periods-page__stage">
-              <Card variant="plain" title="Growth per month" subtitle="Last 24 months" collapsibleId="periods.bars">
+              <Card variant="plain" title="Growth per month" meta="Last 24 months" collapsibleId="periods.bars">
                 <GrowthBars
                   ariaLabel="Monthly growth, last 24 months"
                   bars={recent.map((r) => ({ id: r.label, label: periodLabel(r.label), value: toNum(r.growth_pct) }))}
@@ -265,29 +266,7 @@ export function Periods() {
           {view === "year" && phone ? (
             <PhoneYears groups={groups} currency={currency} monthsOther={mOther} yearOther={yOther} />
           ) : view === "year" ? (
-            groups.map((g) => (
-              <Card
-                key={g.year}
-                className="periods-page__year"
-                collapsibleId={`periods.year.${g.year}`}
-                defaultOpen={g.isCurrent}
-                title={
-                  <>
-                    <span className="periods-page__year-title">{g.year}</span>
-                    {g.isCurrent && <span className="periods-page__pill"> current</span>}
-                  </>
-                }
-                subtitle={g.summary && <YearSummary row={g.summary} currency={currency} other={yOther.get(g.summary.label)} />}
-                flush
-              >
-                <DataTable
-                  caption={`${g.year} months`}
-                  columns={buildColumns(currency, mOther, { yearly: false, withLabel: true, withCashOut: hasCashOut(g.months) })}
-                  rows={g.months}
-                  rowKey={(r) => r.label}
-                />
-              </Card>
-            ))
+            <YearsTable groups={groups} currency={currency} monthsOther={mOther} yearOther={yOther} />
           ) : (
             <>
               <div className="periods-page__stage">
@@ -300,6 +279,7 @@ export function Periods() {
               </div>
               <Card title={view === "monthly" ? "Monthly" : "Yearly"} flush>
                 <DataTable
+                  className="periods-page__table"
                   caption={`${view} periods`}
                   columns={buildColumns(currency, view === "monthly" ? mOther : yOther, {
                     yearly: view === "yearly",
@@ -324,78 +304,5 @@ export function Periods() {
         </div>
       )}
     </div>
-  );
-}
-
-/**
- * A year's figures in one row next to its year-end value (wide screens), a
- * two-column grid on a phone (spans: it sits in the card's subtitle line, so it
- * stays visible while the year is folded): value, TWR, XIRR, net flow, contributions and
- * dividends, each labelled. Server figures only.
- */
-function YearSummary({
-  row,
-  currency,
-  other,
-}: {
-  row: PeriodRowOut;
-  currency: ReportingCurrency;
-  other: PeriodRowOut | undefined;
-}) {
-  const second = otherCcy(currency);
-  const o = toNum(other?.closing_value);
-  const money = (v: string | null) => (
-    <Maybe present={toNum(v) !== null} ccy={currency}>
-      <Money amount={toNum(v)} currency={currency} digits={0} />
-    </Maybe>
-  );
-  const pct = (v: string | null) => (
-    <Maybe present={toNum(v) !== null} ccy={currency}>
-      <Percent ratio={toNum(v)} signed colored />
-    </Maybe>
-  );
-  const cashOutRow = row as PeriodRowWithCashOut;
-  const cashOutVal = toNum(cashOutRow.cashed_out);
-  const cashOutEur = toNum(cashOutRow.cashed_out_eur);
-  const cashOutShown = cashOutVal !== null && cashOutVal > 0 ? cashOutVal : cashOutEur !== null && cashOutEur > 0 ? cashOutEur : null;
-  const cashOutCcy: ReportingCurrency = cashOutVal !== null && cashOutVal > 0 ? currency : "EUR";
-  return (
-    <span className="periods-page__summary" data-year={yearOf(row.label)}>
-      <span className="periods-page__stat periods-page__stat--lead">
-        <span className="periods-page__stat-label">{row.is_current ? "Value now" : "Year-end value"}</span>
-        <span className="periods-page__stat-value">{money(row.closing_value)}</span>
-        {o !== null && (
-          <span className="periods-page__stat-sub">
-            <Money amount={o} currency={second} />
-          </span>
-        )}
-      </span>
-      <span className="periods-page__stat periods-page__stat--growth">
-        <span className="periods-page__stat-label">Growth (TWR)</span>
-        <span className="periods-page__stat-value">{pct(row.growth_pct)}</span>
-      </span>
-      <span className="periods-page__stat periods-page__stat--growth">
-        <span className="periods-page__stat-label">XIRR</span>
-        <span className="periods-page__stat-value">{pct(row.period_growth_xirr)}</span>
-      </span>
-      <span className="periods-page__stat">
-        <span className="periods-page__stat-label">Net flow</span>
-        <span className="periods-page__stat-value">{money(row.net_flow)}</span>
-      </span>
-      <span className="periods-page__stat">
-        <span className="periods-page__stat-label">Contributions</span>
-        <span className="periods-page__stat-value">{money(row.contributions)}</span>
-      </span>
-      <span className="periods-page__stat">
-        <span className="periods-page__stat-label">Cashed out</span>
-        <span className="periods-page__stat-value">
-          {cashOutShown !== null ? <Money amount={cashOutShown} currency={cashOutCcy} digits={0} /> : MISSING}
-        </span>
-      </span>
-      <span className="periods-page__stat">
-        <span className="periods-page__stat-label">Dividends</span>
-        <span className="periods-page__stat-value">{money(row.dividends)}</span>
-      </span>
-    </span>
   );
 }

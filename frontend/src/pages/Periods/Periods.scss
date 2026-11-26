@@ -31,6 +31,11 @@
     }
   }
 
+  // Compact chart: a shorter plot, so the table is what the page shows.
+  &__stage .growth-bars__frame {
+    height: calc(var(--space-8) * 2);
+  }
+
   // Year sections: the year in the serif display, its figures a calm row under it.
   &__year-title {
     @include m.display(var(--font-size-2xl));
@@ -83,7 +88,7 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-2) var(--space-4);
-  margin: var(--space-1) 0 0;
+  margin: 0;
 
   @include m.tablet-up {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -142,4 +147,58 @@
   color: var(--color-muted);
   font-size: var(--font-size-xs);
   font-variant-numeric: tabular-nums;
+}
+
+// Lead figure: label on its own line, then the value with its second-currency
+// figure beside it, so a collapsed year card is two lines tall like its neighbors.
+.periods-page__stat--lead {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-2);
+}
+
+.periods-page__stat--lead .periods-page__stat-label {
+  flex-basis: 100%;
+}
+
+// Month tables: Holdings-style rows, never wrapping, so the table scrolls
+// rather than breaking a label.
+.periods-page__table {
+  .data-table__th,
+  .data-table__td {
+    padding: var(--space-2) var(--space-2);
+    white-space: nowrap;
+
+    @include m.wide {
+      padding: var(--space-2) var(--space-3);
+    }
+  }
+
+  // Below wide the eight columns must fit without sideways scrolling.
+  @media (max-width: 1279px) {
+    .data-table__table {
+      font-size: var(--font-size-xs);
+    }
+
+    .data-table__th {
+      letter-spacing: 0;
+    }
+  }
+
+  // Wide: the second-currency value sits beside the first, one line per row.
+  .periods-page__second {
+    @include m.wide {
+      display: inline;
+      margin-left: var(--space-2);
+    }
+  }
+}
+
+// Months under a year: the Period column starts under the year title, not the card edge.
+.periods-page__table--nested {
+  .data-table__th:first-child,
+  .data-table__td:first-child {
+    padding-left: calc(var(--card-pad-x) + var(--icon-sm) + var(--space-2));
+  }
 }
