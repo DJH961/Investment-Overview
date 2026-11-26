@@ -78,8 +78,8 @@
   }
 
   // Room check: the hero head row (label, optional "≈ est." chip, this chip).
-  // Tier 1: full ("Closed · opens Fri 3:30 PM") when there is ample room.
-  // Tier 2: compact ("Opens Fri 3:30 PM" / "Holiday · Fri 3:30 PM") on mid-phones.
+  // Tier 1: full ("Closed until Fri 3:30 PM") when there is ample room.
+  // Tier 2: compact ("Closed until Fri" / "Holiday until Fri") on mid-phones.
   // Tier 3: one word ("Closed" / "Holiday" / "Open") on tight 360px rows with "≈ est.".
   &__short,
   &__word {

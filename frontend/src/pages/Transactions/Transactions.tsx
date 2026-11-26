@@ -27,6 +27,7 @@ import {
   type TransactionOut,
   type TransactionWrite,
 } from "../../lib/queries/ledger";
+import { pageByMonth, pageBySize } from "./paging";
 import { filterLedger, monthTotals, sortLedger, summarizeLedger, useLedgerAll } from "../../lib/queries/ledgerAll";
 import { useFxConversions, useFxPool, type DepositMatch } from "../../lib/queries/manage";
 import { depositsById } from "../CurrencyConversions/matching";
@@ -235,7 +236,12 @@ export function Transactions() {
   const remove = useDeleteTransaction();
 
   // A delete (or a narrower filter) can leave the current page past the end.
-  const lastPage = Math.max(0, Math.ceil(view.sorted.length / PAGE_SIZE) - 1);
+  // Date sort groups by month, so a page holds whole months (never a month split in two).
+  const pageList = useMemo(
+    () => (f.sort === "date" ? pageByMonth(view.sorted, PAGE_SIZE) : pageBySize(view.sorted, PAGE_SIZE)),
+    [view.sorted, f.sort],
+  );
+  const lastPage = Math.max(0, pageList.length - 1);
   if (page > lastPage) setPage(lastPage);
 
   const { refetch } = list;
@@ -341,9 +347,8 @@ export function Transactions() {
   ];
 
   const summary = list.data ? view.summary : undefined;
-  const total = view.sorted.length;
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const pageRows = useMemo(() => view.sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [view.sorted, page]);
+  const pages = Math.max(1, pageList.length);
+  const pageRows = pageList[page] ?? [];
   const activeFilters = [f.account !== ALL, f.kind !== ALL, Boolean(f.symbol), Boolean(dates.start || dates.end), f.sweeps].filter(
     Boolean,
   ).length;

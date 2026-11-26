@@ -33,7 +33,7 @@ export function MarketChip({ freshness, live = false, currency, now }: MarketChi
   const span = remaining != null ? formatChipSpan(remaining) : rung ? "bell rang" : null;
   // From the bell until the server's next word the chip says what is happening.
   // Three responsive tiers let phones show as much as fits without clipping:
-  // full ("Closed · opens Fri 3:30 PM"), compact ("Opens Fri 3:30 PM" / "Holiday · Fri 3:30 PM"),
+  // full ("Closed until Fri 3:30 PM"), compact ("Closed until Fri", time dropped),
   // and single-word ("Closed" / "Holiday") on the tightest rows with "≈ est.".
   const text =
     phase === "closing"
@@ -41,7 +41,7 @@ export function MarketChip({ freshness, live = false, currency, now }: MarketChi
       : phase === "opening"
         ? "Opening"
         : remaining != null && !marketOpen && bellTime
-          ? `${view.state} · opens ${bellTime}`
+          ? `${view.state} until ${bellTime}`
           : remaining != null
             ? `${view.state} for ${span}`
             : span
@@ -51,9 +51,7 @@ export function MarketChip({ freshness, live = false, currency, now }: MarketChi
     phase === "closing" || phase === "opening"
       ? text
       : !marketOpen && bellTime
-        ? phase === "holiday"
-          ? `Holiday · ${bellTime}`
-          : `Opens ${bellTime}`
+        ? `${view.state} until ${bellTime.match(/^[A-Za-z]{3,}\.?(?=\s)/)?.[0] ?? bellTime}`
         : remaining != null && span
           ? `${view.state} · ${span}`
           : view.state;
