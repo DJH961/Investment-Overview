@@ -47,6 +47,25 @@ describe("MarketChip", () => {
     // 13:30 -> 20:00 is 6.5 h; 16:45 is 3.25 h in.
     expect(screen.getByTestId("market-chip-fill")).toHaveStyle({ width: "50.0%" });
   });
+
+  it("holidays and multi-day closures omit the fill bar and expose concise + word labels", () => {
+    const qc = new QueryClient();
+    const holiday: ClockFreshness = {
+      market_state: "holiday",
+      last_close_at: "2026-11-25T21:00:00Z",
+      next_open_at: "2026-11-27T14:30:00Z",
+      next_close_at: "2026-11-27T18:00:00Z",
+    };
+    const { container } = render(
+      <QueryClientProvider client={qc}>
+        <MarketChip freshness={holiday} currency="EUR" now={new Date("2026-11-26T16:00:00Z")} />
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByTestId("market-chip-fill")).toBeNull();
+    expect(container.querySelector(".market-chip__text")).toHaveTextContent("Holiday · opens Fri 14:30");
+    expect(container.querySelector(".market-chip__short")).toHaveTextContent("Holiday · Fri 14:30");
+    expect(container.querySelector(".market-chip__word")).toHaveTextContent("Holiday");
+  });
 });
 
 describe("MarketClock near variant", () => {

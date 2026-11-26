@@ -690,6 +690,8 @@ def _bucket_out(b: Bucket, *, eur: bool, invested: bool = False) -> dict[str, An
     }
     if invested:
         out["market_eur"] = _m(b.market_eur) if eur else None
+        out["usd_cost"] = _m(b.cost_native)
+        out["market_usd"] = _m(b.usd - b.cost_native)
     return out
 
 
@@ -753,7 +755,7 @@ def empty_journey_both() -> dict[str, Any]:
         "stats": {
             "usd_account": dict(empty),
             "broker_cash": dict(empty),
-            "invested": {**empty, "market_eur": None},
+            "invested": {**empty, "market_eur": None, "usd_cost": None, "market_usd": None},
             "your_rate": {"rate": None, "ecb_avg": None, "now": None},
         },
         "bridge": None,

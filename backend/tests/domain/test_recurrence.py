@@ -107,6 +107,38 @@ def test_estimated_conversion_pushes_ecb_by_offset() -> None:
     )
 
 
+def test_estimated_conversion_eur_golden() -> None:
+    assert rec.estimated_conversion_eur(
+        usd_received=D("603"), ecb_rate=D("1.20"), avg_off_pct=D("0.005")
+    ) == (D("1.206"), D("500"))
+    assert rec.estimated_conversion_eur(
+        usd_received=D("600"), ecb_rate=D("1.20"), avg_off_pct=None
+    ) == (D("1.20"), D("500"))
+    with pytest.raises(ValueError, match=r"."):
+        rec.estimated_conversion_eur(usd_received=D("0"), ecb_rate=D("1.20"), avg_off_pct=None)
+    with pytest.raises(ValueError, match=r"."):
+        rec.estimated_conversion_eur(usd_received=D("100"), ecb_rate=D("0"), avg_off_pct=None)
+
+
+@settings(max_examples=100, deadline=None)
+@given(
+    st.decimals(min_value=1, max_value=100000, places=2),
+    st.decimals(min_value="0.5", max_value="2.5", places=4),
+    st.none() | st.decimals(min_value="-0.05", max_value="0.05", places=4),
+)
+def test_estimated_conversion_eur_round_trips_with_estimated_conversion(
+    eur_sent: Decimal, ecb_rate: Decimal, avg_off_pct: Decimal | None
+) -> None:
+    rate, usd_received = rec.estimated_conversion(
+        eur_sent=eur_sent, ecb_rate=ecb_rate, avg_off_pct=avg_off_pct
+    )
+    rate_back, eur_back = rec.estimated_conversion_eur(
+        usd_received=usd_received, ecb_rate=ecb_rate, avg_off_pct=avg_off_pct
+    )
+    assert rate_back == rate
+    assert abs(eur_back - eur_sent) < D("0.0000000001")
+
+
 def test_cadence_validation() -> None:
     with pytest.raises(ValueError, match=r"."):
         Cadence("fortnights", 1)

@@ -134,6 +134,25 @@ def test_conversion_estimate_is_the_ecb_rate_less_the_fee_in_whole_dollars(
     assert got.usd == D("1157")  # (1000 - 2.50) x 1.16 = 1157.10
 
 
+def test_conversion_estimate_with_fixed_usd_computes_eur_and_cadence(session: Session) -> None:
+    assert recurring_setup.conversion_estimate(session, usd=D("1000"), provider="revolut") is None
+    session.add(FxHistory(date=exchange_today(), base="EUR", quote="USD", rate=D("1.2500")))
+    session.flush()
+    got = recurring_setup.conversion_estimate(
+        session,
+        usd=D("1000"),
+        provider="revolut",
+        fee_eur=D("2.50"),
+        conversion=("months", 1),
+        deposit=("weeks", 2),
+    )
+    assert got is not None
+    assert got.rate == D("1.2500")
+    assert got.usd == D("1000")
+    assert got.eur == D("803")  # 1000 / 1.25 + 2.50 = 802.50 -> 803
+    assert got.deposit_usd == D("462")  # 1000 * 12 / 26 = 461.538... -> 462
+
+
 def test_a_monthly_deposit_is_spread_over_the_buy_runs(
     session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:

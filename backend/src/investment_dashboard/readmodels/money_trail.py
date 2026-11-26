@@ -63,6 +63,7 @@ def _step(
     ccy: str | None,
     detail: str | None = None,
     link: str | None = None,
+    change: str | None = None,
 ) -> dict[str, Any]:
     return {
         "key": key,
@@ -72,6 +73,7 @@ def _step(
         "figure_ccy": ccy,
         "detail": _detail(detail),
         "link": link,
+        "change": change,
     }
 
 
@@ -195,6 +197,7 @@ class _Trail:
         if co is None or co.usd_sent <= 0:
             return _step("back", None, "Back in euros", None, "EUR")
         eur = co.eur_received * usd / co.usd_sent
+        realised = co.realised_eur * usd / co.usd_sent
         rate = co.usd_sent / co.eur_received if co.eur_received > 0 else None
         return _step(
             "back",
@@ -204,9 +207,12 @@ class _Trail:
             "EUR",
             f"at {_r(rate)}",
             f"/conversions?highlight={conversion_id}",
+            _money(realised),
         )
 
-    def worth_now(self, txn_id: int, usd: Decimal) -> dict[str, Any] | None:
+    def worth_now(
+        self, txn_id: int, usd: Decimal, orig_eur: Decimal | None = None
+    ) -> dict[str, Any] | None:
         t = self.inputs.txns.get(txn_id)
         rate = self.inputs.rate_now
         if t is None or t.instrument_id is None:
@@ -216,14 +222,16 @@ class _Trail:
         if h is None or h.shares <= 0 or value is None or h.cost_native <= 0 or rate is None:
             return None
         part = value * min(usd / h.cost_native, Decimal(1))
+        eur_now = part / rate
         return _step(
             "worth_now",
             self.inputs.today,
             "Worth now",
-            _money(part / rate),
+            _money(eur_now),
             "EUR",
             f"${_money(part)}",
             f"/holdings/{t.instrument_id}",
+            _money(eur_now - orig_eur) if orig_eur is not None else None,
         )
 
     def bought_step(self, txn_id: int, usd: Decimal) -> dict[str, Any]:
@@ -258,7 +266,7 @@ class _Trail:
                 continue
             if t.kind == kinds.BUY:
                 steps = [self.bought_step(t.id, d.amount)]
-                now = self.worth_now(t.id, d.amount)
+                now = self.worth_now(t.id, d.amount, d.orig_eur)
                 if now is not None:
                     steps.append(now)
                 out.append((d.amount, steps))
@@ -378,9 +386,10 @@ def _buy(tr: _Trail, id_: int) -> dict[str, Any] | None:
     if not draws:
         return None
 
-    def tail(_d: Draw, usd: Decimal) -> list[dict[str, Any]]:
+    def tail(d: Draw, usd: Decimal) -> list[dict[str, Any]]:
         steps = [tr.bought_step(id_, usd)]
-        now = tr.worth_now(id_, usd)
+        orig = d.orig_eur * usd / d.amount if d.amount > 0 else None
+        now = tr.worth_now(id_, usd, orig)
         if now is not None:
             steps.append(now)
         return steps

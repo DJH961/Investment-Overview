@@ -31,23 +31,36 @@ export function MarketChip({ freshness, live = false, currency, now }: MarketChi
   if (!model || !freshness) return null;
   const { view, remaining, rung, sentence, progress, open: marketOpen, bellTime } = model;
   const span = remaining != null ? formatChipSpan(remaining) : rung ? "bell rang" : null;
-  // From the bell until the server's next word the chip says what is happening, in a word.
+  // From the bell until the server's next word the chip says what is happening.
+  // Three responsive tiers let phones show as much as fits without clipping:
+  // full ("Closed · opens Fri 3:30 PM"), compact ("Opens Fri 3:30 PM" / "Holiday · Fri 3:30 PM"),
+  // and single-word ("Closed" / "Holiday") on the tightest rows with "≈ est.".
   const text =
     phase === "closing"
       ? "Closing…"
       : phase === "opening"
         ? "Opening"
         : remaining != null && !marketOpen && bellTime
-          ? // Shut: as informative as the desktop clock: when it opens, in the owner's zone.
-            `${view.state} · opens ${bellTime}`
+          ? `${view.state} · opens ${bellTime}`
           : remaining != null
-          ? `${view.state} for ${span}`
-          : span
-            ? `${view.state} · ${span}`
-            : view.state;
-  // The chip is the session's progress bar: its fill is the share of the session (or of
-  // the overnight wait) already gone.
-  const fill = progress != null ? `${(Math.min(1, Math.max(0, progress)) * 100).toFixed(1)}%` : null;
+            ? `${view.state} for ${span}`
+            : span
+              ? `${view.state} · ${span}`
+              : view.state;
+  const shortText =
+    phase === "closing" || phase === "opening"
+      ? text
+      : !marketOpen && bellTime
+        ? phase === "holiday"
+          ? `Holiday · ${bellTime}`
+          : `Opens ${bellTime}`
+        : remaining != null && span
+          ? `${view.state} · ${span}`
+          : view.state;
+  const wordText = phase === "closing" || phase === "opening" ? text : view.state;
+  // The mini progress bar is for the open intraday session only (a half-shaded fill behind
+  // closed/holiday text splits the label in two).
+  const fill = marketOpen && progress != null ? `${(Math.min(1, Math.max(0, progress)) * 100).toFixed(1)}%` : null;
   return (
     <>
       <button
@@ -68,13 +81,12 @@ export function MarketChip({ freshness, live = false, currency, now }: MarketChi
         <span className="market-chip__text" aria-hidden>
           {text}
         </span>
-        {/* No room for the span: one word, never a bare dot (state is not colour alone). */}
+        <span className="market-chip__short" aria-hidden>
+          {shortText}
+        </span>
+        {/* Tightest widths: one word, never a bare dot (state is not colour alone). */}
         <span className="market-chip__word" aria-hidden>
-          {phase === "closing" || phase === "opening"
-            ? text
-            : remaining != null && !marketOpen && bellTime && bellTime.length <= 5
-              ? `Opens ${bellTime}`
-              : view.state}
+          {wordText}
         </span>
       </button>
       <Sheet open={open} onOpenChange={setOpen} title="Market clock">

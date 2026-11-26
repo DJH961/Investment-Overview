@@ -388,6 +388,7 @@ def _memo_after_rollback(session: Session) -> None:
 _CACHE_TABLES = frozenset(
     {
         "fx_history",
+        "hicp_index",
         "intraday_value",
         "position_snapshots",
         "price_cache_metadata",

@@ -22,6 +22,7 @@ function initialOf(s: PlanSuggestion): Initial {
     amount: s.amount,
     account_id: s.account_id,
     legs: (s.legs ?? []).map((l) => ({ instrument_id: l.instrument_id, amount: l.amount })),
+    currency: s.currency,
     provider: s.provider,
   };
 }
@@ -75,7 +76,8 @@ export function SetupFlow({ open, onClose }: { open: boolean; onClose: () => voi
   const convCadence: Cadence | null = conv ? asCad(conv) : null;
   const depositNow: Cadence = cad[1] ?? (history.deposit ? asCad(history.deposit) : (convCadence ?? { unit: "months", every: 1, anchor: null }));
   const flow2 = useSetupPlan({
-    eur: conv?.amount ? String(conv.amount) : undefined,
+    eur: conv?.currency !== "USD" && conv?.amount ? String(conv.amount) : undefined,
+    usd: conv?.currency === "USD" && conv?.amount ? String(conv.amount) : undefined,
     provider: conv?.provider ?? undefined,
     fee: conv?.expected_fee != null ? String(conv.expected_fee) : undefined,
     conversionCadence: convCadence,

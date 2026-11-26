@@ -12,6 +12,7 @@ from investment_dashboard.api.schemas.common import ApiModel, DecStr
 
 PlanKind = Literal["buy", "deposit", "conversion"]
 Unit = Literal["days", "weeks", "months"]
+ConversionCurrency = Literal["EUR", "USD"]
 Provider = Literal["wise", "revolut", "other"]
 PlanStatus = Literal["active", "paused", "ended"]
 RowType = Literal["transaction", "fx_conversion"]
@@ -43,11 +44,17 @@ class PlanIn(ApiModel):
     end_date: date_type | None = None
     account_id: int | None = Field(default=None, description="Buy plans.")
     amount: Decimal | None = Field(
-        default=None, gt=0, description="Deposit: USD per run; conversion: EUR sent."
+        default=None,
+        gt=0,
+        description="Deposit: USD per run; conversion: EUR sent or USD arriving.",
     )
     legs: list[LegIn] = Field(
         default_factory=list,
         description="Buy plans: the holdings bought together on every due date (same account).",
+    )
+    currency: ConversionCurrency | None = Field(
+        default=None,
+        description="Conversion plans: which side amount fixes ('EUR' converted or 'USD' arriving; defaults to 'EUR').",
     )
     provider: Provider | None = Field(default=None, description="Conversion plans.")
     expected_fee: Decimal | None = Field(
@@ -74,6 +81,10 @@ class PlanOut(ApiModel):
     account: str | None
     legs: list[LegOut]
     amount: DecStr | None
+    currency: ConversionCurrency | None = Field(
+        default=None,
+        description="Conversion plans: which side amount fixes ('EUR' converted or 'USD' arriving; defaults to 'EUR').",
+    )
     provider: Provider | None
     expected_fee: DecStr | None
     next_due: str | None = Field(description="Next due date still to be handled; null if none.")
@@ -155,6 +166,10 @@ class SuggestionOut(ApiModel):
     occurrences: int = Field(description="How many past rows the suggestion is based on.")
     account_id: int | None = None
     account: str | None = None
+    currency: ConversionCurrency | None = Field(
+        default=None,
+        description="Conversion plans: which side amount fixes ('EUR' converted or 'USD' arriving; defaults to 'EUR').",
+    )
     provider: Provider | None = None
     legs: list[SuggestedLegOut] = Field(default_factory=list, description="Buy plans.")
 

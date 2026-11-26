@@ -76,6 +76,7 @@ export function useSettle() {
  */
 export function useSetupPlan(params: {
   eur?: string;
+  usd?: string;
   provider?: string;
   fee?: string;
   total?: string;
@@ -87,8 +88,9 @@ export function useSetupPlan(params: {
   buyCadence?: { unit: string; every: number } | null;
 }) {
   const q = new URLSearchParams();
-  if (params.eur) {
-    q.set("eur_amount", params.eur);
+  if (params.eur || params.usd) {
+    if (params.usd) q.set("usd_amount", params.usd);
+    else if (params.eur) q.set("eur_amount", params.eur);
     if (params.provider) q.set("provider", params.provider);
     if (params.fee) q.set("expected_fee", params.fee);
     if (params.conversionCadence && params.depositCadence) {
@@ -108,7 +110,7 @@ export function useSetupPlan(params: {
       q.set("buy_every", String(params.buyCadence.every));
     }
   }
-  const enabled = Boolean(params.eur) || Boolean(params.total && params.accountId);
+  const enabled = Boolean(params.eur || params.usd) || Boolean(params.total && params.accountId);
   return useQuery({
     queryKey: ["recurring", "setup-plan", q.toString()],
     queryFn: ({ signal }) => api<SetupPlan>(`/api/recurring/setup-plan?${q.toString()}`, { signal }),

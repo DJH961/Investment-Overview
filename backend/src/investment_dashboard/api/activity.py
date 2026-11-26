@@ -192,6 +192,11 @@ _LABELS: dict[tuple[str, str], tuple[str, str]] = {
         "currency what-if read",
         "currency what-if failed",
     ),
+    # v7.4 Follow your dollars + period recap.
+    ("GET", "/api/currency/journey"): ("currency journey read", "currency journey failed"),
+    ("GET", "/api/trail/{kind}/{item_id}"): ("money trail read", "money trail failed"),
+    ("GET", "/api/recap"): ("period recap read", "period recap failed"),
+    ("POST", "/api/recap/ack"): ("recap acknowledged", "recap ack failed"),
 }
 
 

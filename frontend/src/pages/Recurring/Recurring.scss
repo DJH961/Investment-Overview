@@ -1,3 +1,5 @@
+@use "../../styles/mixins" as m;
+
 .recurring-page {
   display: grid;
   gap: var(--page-gap);
@@ -125,6 +127,18 @@
   &__form {
     display: grid;
     gap: var(--space-3);
+  }
+
+  &__conv-mode {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+  }
+
+  &__conv-mode-label {
+    @include m.eyebrow(var(--font-size-xs));
   }
 
   &__form-kind {

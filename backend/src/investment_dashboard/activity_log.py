@@ -37,6 +37,7 @@ READ_ONLY_POSTS = frozenset(
         "/api/transactions/reconcile",
         "/api/maintenance/probe",
         "/api/auth/passkey/login/options",
+        "/api/cash-out/preview",
     }
 )
 _FORMAT = "%(asctime)s %(levelname)-7s %(name)s — %(message)s"
@@ -50,6 +51,7 @@ SUBJECTS: dict[str, tuple[str, ...]] = {
         f"{_PKG}.adapters",
         f"{_PKG}.services.prices_service",
         f"{_PKG}.services.fx_service",
+        f"{_PKG}.services.hicp_service",
         f"{_PKG}.services.benchmark_service",
         f"{_PKG}.services.dividend_history_service",
         f"{_PKG}.services.auto_refresh",

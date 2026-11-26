@@ -392,6 +392,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/cash-out/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Cash Out */
+        post: operations["preview_cash_out_api_cash_out_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/currency/both": {
         parameters: {
             query?: never;
@@ -435,6 +452,23 @@ export interface paths {
         };
         /** Get Currency Effect Both */
         get: operations["get_currency_effect_both_api_currency_effect_both_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/currency/journey": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Journey */
+        get: operations["get_journey_api_currency_journey_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -636,7 +670,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Conversions */
+        /**
+         * List Conversions
+         * @description Every conversion, newest first; ``direction`` keeps one way only (default both).
+         */
         get: operations["list_conversions_api_fx_conversions_get"];
         put?: never;
         /** Create Conversion */
@@ -1700,6 +1737,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/recap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Recap */
+        get: operations["get_recap_api_recap_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/recap/ack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ack Recap */
+        post: operations["ack_recap_api_recap_ack_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/recurring/estimates": {
         parameters: {
             query?: never;
@@ -2066,6 +2137,23 @@ export interface paths {
         };
         /** Get System */
         get: operations["get_system_api_system_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/trail/{kind}/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Trail */
+        get: operations["get_trail_api_trail__kind___item_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2977,6 +3065,83 @@ export interface components {
             /** Total Value */
             total_value: string | null;
         };
+        /** CashOutEur */
+        CashOutEur: {
+            /** Conversion Cost */
+            conversion_cost?: string | null;
+            /** Currency */
+            currency?: string | null;
+            /** Market */
+            market?: string | null;
+            /** Put In */
+            put_in?: string | null;
+            /** Realised */
+            realised?: string | null;
+            /** Realised Pct */
+            realised_pct?: string | null;
+            /** Xirr */
+            xirr?: string | null;
+        };
+        /** CashOutOut */
+        CashOutOut: {
+            /** Conversion Id */
+            conversion_id?: number | null;
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            eur: components["schemas"]["CashOutEur"];
+            /** Eur Received */
+            eur_received: string;
+            /** Fees Eur */
+            fees_eur: string;
+            /**
+             * Flagged
+             * @default false
+             */
+            flagged: boolean;
+            /** Note */
+            note: string;
+            usd: components["schemas"]["CashOutUsd"];
+            /** Usd Sent */
+            usd_sent: string;
+        };
+        /** CashOutPreviewIn */
+        CashOutPreviewIn: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Eur Received */
+            eur_received: string;
+            /**
+             * Fees Eur
+             * @default 0
+             */
+            fees_eur: string;
+            /** Usd Sent */
+            usd_sent: string;
+            /** Withdrawal Id */
+            withdrawal_id?: number | null;
+        };
+        /**
+         * CashOutUsd
+         * @description Dollars only, from native USD flows (never euros times a rate).
+         */
+        CashOutUsd: {
+            /** Market */
+            market?: string | null;
+            /** Put In */
+            put_in?: string | null;
+            /** Realised */
+            realised?: string | null;
+            /** Realised Pct */
+            realised_pct?: string | null;
+            /** Xirr */
+            xirr?: string | null;
+        };
         /**
          * CategoryDriftRow
          * @description The active target's drift summed per category (its funds' rows added up).
@@ -3166,6 +3331,12 @@ export interface components {
             conversion_id: number;
             /** Date */
             date: string;
+            /**
+             * Direction
+             * @default to_usd
+             * @enum {string}
+             */
+            direction: "to_usd" | "to_eur";
             /** From Ccy */
             from_ccy: string;
             /** Kind */
@@ -3268,6 +3439,12 @@ export interface components {
             cost: string | null;
             /** Date */
             date: string;
+            /**
+             * Direction
+             * @default to_usd
+             * @enum {string}
+             */
+            direction: "to_usd" | "to_eur";
             /** Ecb Rate */
             ecb_rate: string | null;
             /** Ecb Rate Date */
@@ -3393,6 +3570,8 @@ export interface components {
         };
         /** CostsOut */
         CostsOut: {
+            /** @description The same figures for the conversions back to EUR (7.4), in that direction: eur_sent = euros received, usd_received = dollars sent. Null without one. */
+            back_to_eur?: components["schemas"]["CostsOut"] | null;
             best: components["schemas"]["CostRowOut"] | null;
             /** By Month */
             by_month: components["schemas"]["CostMonthOut"][];
@@ -3530,8 +3709,12 @@ export interface components {
             avg_invest_rate?: string | null;
             /** Breakeven Rate */
             breakeven_rate?: string | null;
+            /** Conversion Cost Eur */
+            conversion_cost_eur?: string | null;
             /** Current Rate */
             current_rate?: string | null;
+            /** Ecb Avg */
+            ecb_avg?: string | null;
             /** Fx Pnl Eur */
             fx_pnl_eur?: string | null;
             /**
@@ -3539,8 +3722,14 @@ export interface components {
              * @description Current rate vs average invest rate (fraction, 0.01 = 1%)
              */
             rate_change_pct?: string | null;
+            /** Realised Eur */
+            realised_eur?: string | null;
             /** Repatriation Value Eur */
             repatriation_value_eur?: string | null;
+            /** Vs Impact Note */
+            vs_impact_note?: string | null;
+            /** Your Rate */
+            your_rate?: string | null;
         };
         /**
          * CurrencyOneCent
@@ -3909,6 +4098,11 @@ export interface components {
              * @description Of the filtered rows, newest year first
              */
             by_year: components["schemas"]["DepositYearOut"][];
+            /**
+             * Cashed Out Eur
+             * @default 0
+             */
+            cashed_out_eur: string;
             /**
              * Ccy
              * @enum {string}
@@ -4784,6 +4978,13 @@ export interface components {
             /** Date */
             date: string;
             /**
+             * Direction
+             * @description Derived from from_ccy/to_ccy. to_eur = a conversion back: eur_sent holds the euros received and usd_received the dollars sent; the cost figures are in that direction (positive cost = it cost you).
+             * @default to_usd
+             * @enum {string}
+             */
+            direction: "to_usd" | "to_eur";
+            /**
              * Ecb Rate
              * @description Settled fixing dated that day; on a weekend or holiday the last settled fixing before it (up to a week back). Null when there is none.
              */
@@ -5390,6 +5591,8 @@ export interface components {
             tranches: components["schemas"]["PeekTranches"];
             /** @description Null for a NAV fund (no intraday) */
             week?: components["schemas"]["PeekWeek"] | null;
+            /** Your Rate */
+            your_rate?: string | null;
         };
         /**
          * HoldingPeeksResponse
@@ -5447,11 +5650,15 @@ export interface components {
              * @description Lifetime dividends of this holding (cash and reinvested)
              */
             dividends?: string | null;
+            /** Ecb Buy Avg */
+            ecb_buy_avg?: string | null;
             /**
              * Expense Ratio
              * @description Annual fee (fraction, 0.01 = 1%)
              */
             expense_ratio?: string | null;
+            /** Fx Effect Pp */
+            fx_effect_pp?: string | null;
             /** Instrument Id */
             instrument_id: number;
             /** Is Money Market */
@@ -5522,6 +5729,8 @@ export interface components {
              * @description Annualised return (fraction, 0.01 = 1%)
              */
             xirr?: string | null;
+            /** Your Rate */
+            your_rate?: string | null;
             /**
              * Ytd Growth
              * @description Year to date (fraction, 0.01 = 1%)
@@ -5637,6 +5846,8 @@ export interface components {
             fx?: components["schemas"]["HoldingsFx"] | null;
             /** Fx Eur Usd */
             fx_eur_usd?: string | null;
+            /** Fx Your Rate */
+            fx_your_rate?: string | null;
             /**
              * Group By
              * @default none
@@ -6491,6 +6702,135 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** JourneyBackInEuros */
+        JourneyBackInEuros: {
+            /** Count */
+            count: number;
+            /** Eur Received */
+            eur_received: string;
+            /** Orig Eur */
+            orig_eur: string;
+            /** Realised Eur */
+            realised_eur: string;
+        };
+        /** JourneyBoth */
+        JourneyBoth: {
+            eur: components["schemas"]["JourneyView"];
+            usd: components["schemas"]["JourneyView"];
+        };
+        /**
+         * JourneyBridge
+         * @description Where the currency effect came from (EUR view only); the lines add up to the total.
+         */
+        JourneyBridge: {
+            /** Lines */
+            lines: components["schemas"]["JourneyBridgeLine"][];
+            /** Total Eur */
+            total_eur: string;
+        };
+        /** JourneyBridgeLine */
+        JourneyBridgeLine: {
+            /** Eur */
+            eur: string;
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "conversion_cost" | "waiting" | "cash" | "holdings" | "realised";
+        };
+        /**
+         * JourneyBucket
+         * @description One place the dollars are now: native dollars, their EUR cost and EUR value now.
+         */
+        JourneyBucket: {
+            /** Currency Eur */
+            currency_eur?: string | null;
+            /** Eur Cost */
+            eur_cost?: string | null;
+            /** Eur Now */
+            eur_now?: string | null;
+            /** Usd */
+            usd: string;
+            /** Usd Cost */
+            usd_cost?: string | null;
+        };
+        /** JourneyFlagged */
+        JourneyFlagged: {
+            /**
+             * Ecb Fallback Deposits
+             * @default 0
+             */
+            ecb_fallback_deposits: number;
+            /**
+             * Uncovered Buys
+             * @default 0
+             */
+            uncovered_buys: number;
+        };
+        /**
+         * JourneyIdle
+         * @description Dollars a conversion delivered that no deposit took, waiting over 30 days.
+         */
+        JourneyIdle: {
+            /** Conversion Id */
+            conversion_id: number;
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Days */
+            days: number;
+            /** Usd */
+            usd: string;
+        };
+        /** JourneyInvested */
+        JourneyInvested: {
+            /** Currency Eur */
+            currency_eur?: string | null;
+            /** Eur Cost */
+            eur_cost?: string | null;
+            /** Eur Now */
+            eur_now?: string | null;
+            /** Market Eur */
+            market_eur?: string | null;
+            /** Market Usd */
+            market_usd?: string | null;
+            /** Usd */
+            usd: string;
+            /** Usd Cost */
+            usd_cost?: string | null;
+        };
+        /**
+         * JourneyStats
+         * @description Always four tiles.
+         */
+        JourneyStats: {
+            broker_cash: components["schemas"]["JourneyBucket"];
+            invested: components["schemas"]["JourneyInvested"];
+            usd_account: components["schemas"]["JourneyBucket"];
+            your_rate: components["schemas"]["JourneyYourRate"];
+        };
+        /** JourneyView */
+        JourneyView: {
+            back_in_euros?: components["schemas"]["JourneyBackInEuros"] | null;
+            bridge?: components["schemas"]["JourneyBridge"] | null;
+            /** Cash Outs */
+            cash_outs?: components["schemas"]["CashOutOut"][];
+            flagged: components["schemas"]["JourneyFlagged"];
+            /** Idle */
+            idle?: components["schemas"]["JourneyIdle"][];
+            stats: components["schemas"]["JourneyStats"];
+        };
+        /** JourneyYourRate */
+        JourneyYourRate: {
+            /** Ecb Avg */
+            ecb_avg?: string | null;
+            /** Now */
+            now?: string | null;
+            /** Rate */
+            rate?: string | null;
+        };
         /**
          * LastSessionMove
          * @description The day split into day (``move``) and night (``overnight_currency``).
@@ -7196,6 +7536,11 @@ export interface components {
          * @description One period in the requested reporting currency (``null`` = not available).
          */
         PeriodRowOut: {
+            /**
+             * Cashed Out Eur
+             * @description Euros back from cash-outs dated in the period (received minus fees)
+             */
+            cashed_out_eur?: string | null;
             /** Closing Value */
             closing_value: string | null;
             /** Contributions */
@@ -7222,6 +7567,16 @@ export interface components {
              * @description Period XIRR (fraction, 0.01 = 1%)
              */
             period_growth_xirr: string | null;
+            /**
+             * Real Return
+             * @description Real (inflation-adjusted) EUR growth: growth_pct deflated by euro-area HICP over the same months (fraction). EUR only; null in USD, for a running month or without an index.
+             */
+            real_return?: string | null;
+            /**
+             * Real To
+             * @description Last HICP month (YYYY-MM) the real return covers.
+             */
+            real_to?: string | null;
             /**
              * Total Growth Compounded
              * @description Cumulative compounded growth (fraction, 0.01 = 1%)
@@ -7278,7 +7633,7 @@ export interface components {
             account_id?: number | null;
             /**
              * Amount
-             * @description Deposit: USD per run; conversion: EUR sent.
+             * @description Deposit: USD per run; conversion: EUR sent or USD arriving.
              */
             amount?: number | string | null;
             /**
@@ -7286,6 +7641,11 @@ export interface components {
              * @description Weekday 0-6 (Monday = 0) for weeks, day of month 1-31 for months.
              */
             anchor?: number | null;
+            /**
+             * Currency
+             * @description Conversion plans: which side amount fixes ('EUR' converted or 'USD' arriving; defaults to 'EUR').
+             */
+            currency?: ("EUR" | "USD") | null;
             /** End Date */
             end_date?: string | null;
             /** Every */
@@ -7331,6 +7691,11 @@ export interface components {
             amount: string | null;
             /** Anchor */
             anchor: number | null;
+            /**
+             * Currency
+             * @description Conversion plans: which side amount fixes ('EUR' converted or 'USD' arriving; defaults to 'EUR').
+             */
+            currency?: ("EUR" | "USD") | null;
             /** End Date */
             end_date: string | null;
             /** Every */
@@ -7981,6 +8346,130 @@ export interface components {
             target_id: number;
             /** Target Name */
             target_name: string;
+        };
+        /** RecapAckIn */
+        RecapAckIn: {
+            /**
+             * Period
+             * @description The period dismissed (default: the current default period)
+             */
+            period?: string | null;
+        };
+        /** RecapAckOut */
+        RecapAckOut: {
+            /** Last Ack */
+            last_ack: string;
+        };
+        /**
+         * RecapDirectionCost
+         * @description One direction's share of the period's conversion cost.
+         */
+        RecapDirectionCost: {
+            /**
+             * Cost
+             * @description null when there was no conversion that way
+             */
+            cost: string | null;
+            /** Count */
+            count: number;
+        };
+        /** RecapOut */
+        RecapOut: {
+            EUR: components["schemas"]["RecapSide"];
+            USD: components["schemas"]["RecapSide"];
+            /** Default Period */
+            default_period: string;
+            /**
+             * Due
+             * @description Show on the Overview: a new period not yet dismissed
+             */
+            due: boolean;
+            /** End */
+            end: string;
+            /**
+             * Granularity
+             * @enum {string}
+             */
+            granularity: "month" | "year";
+            /** Has Data */
+            has_data: boolean;
+            /** Is Complete */
+            is_complete: boolean;
+            /** Last Ack */
+            last_ack: string | null;
+            /**
+             * Period
+             * @description YYYY-MM or YYYY
+             */
+            period: string;
+            /** Start */
+            start: string;
+        };
+        /**
+         * RecapSide
+         * @description One period in one reporting currency (``null`` = not available).
+         */
+        RecapSide: {
+            /**
+             * Cashed Out
+             * @description Received back in euros (0 until cash-outs exist)
+             */
+            cashed_out: string;
+            /** Closing Value */
+            closing_value: string | null;
+            /**
+             * Contributed
+             * @description The Periods row's contributions
+             */
+            contributed: string | null;
+            /**
+             * Conversion Cost
+             * @description Fees + spread against the ECB fixing of the period's conversions, both directions (conversions back to EUR included, 7.4)
+             */
+            conversion_cost: string | null;
+            /**
+             * Conversion Cost By Direction
+             * @description conversion_cost and conversions split by direction
+             */
+            conversion_cost_by_direction?: {
+                [key: string]: components["schemas"]["RecapDirectionCost"];
+            };
+            /**
+             * Conversions
+             * @description Conversions dated in the period, both directions
+             */
+            conversions: number;
+            /**
+             * Currency
+             * @description Currency part of the bridge
+             */
+            currency: string | null;
+            /** Dividends */
+            dividends: string | null;
+            /** Interest */
+            interest: string | null;
+            /**
+             * Market
+             * @description Market part of the bridge (incl. dividends)
+             */
+            market: string | null;
+            /**
+             * Nominal Return
+             * @description The Periods row's growth (fraction, 0.01 = 1%)
+             */
+            nominal_return: string | null;
+            /** Opening Value */
+            opening_value: string | null;
+            /**
+             * Real Return
+             * @description Nominal EUR return deflated by euro-area HICP (fraction, 0.01 = 1%); EUR only
+             */
+            real_return: string | null;
+            /**
+             * Real To
+             * @description Last HICP month (YYYY-MM) the real return covers
+             */
+            real_to: string | null;
         };
         /**
          * ReconcileRequest
@@ -8890,6 +9379,11 @@ export interface components {
             amount: string;
             /** Anchor */
             anchor: number | null;
+            /**
+             * Currency
+             * @description Conversion plans: which side amount fixes ('EUR' converted or 'USD' arriving; defaults to 'EUR').
+             */
+            currency?: ("EUR" | "USD") | null;
             /** Every */
             every: number;
             /**
@@ -9223,6 +9717,76 @@ export interface components {
             /** Title */
             title: string;
         };
+        /** TrailOut */
+        TrailOut: {
+            /** Ecb Rate */
+            ecb_rate?: string | null;
+            /**
+             * Flagged
+             * @default false
+             */
+            flagged: boolean;
+            /** Id */
+            id: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "deposit" | "buy" | "sell" | "withdrawal" | "conversion";
+            /**
+             * More Paths
+             * @default 0
+             */
+            more_paths: number;
+            /** Paths */
+            paths: components["schemas"]["TrailPath"][];
+            split?: components["schemas"]["TrailSplit"] | null;
+            /** Your Rate */
+            your_rate?: string | null;
+        };
+        /** TrailPath */
+        TrailPath: {
+            /** Steps */
+            steps: components["schemas"]["TrailStep"][];
+            /** Usd Share */
+            usd_share?: string | null;
+        };
+        /**
+         * TrailSplit
+         * @description For a buy: its value now; for a cash-out: what was realised.
+         */
+        TrailSplit: {
+            /** Conversion Cost Eur */
+            conversion_cost_eur: string;
+            /** Currency Eur */
+            currency_eur: string;
+            /** Market Eur */
+            market_eur: string;
+            /** Total Eur */
+            total_eur: string;
+        };
+        /** TrailStep */
+        TrailStep: {
+            /** Change */
+            change?: string | null;
+            /** Date */
+            date?: string | null;
+            /** Detail */
+            detail?: string | null;
+            /** Figure */
+            figure?: string | null;
+            /** Figure Ccy */
+            figure_ccy?: ("EUR" | "USD") | null;
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "sent" | "converted" | "waited" | "deposited" | "bought" | "sold" | "withdrawn" | "back" | "worth_now";
+            /** Label */
+            label: string;
+            /** Link */
+            link?: string | null;
+        };
         /** TrancheGroupOut */
         TrancheGroupOut: {
             /** Account Id */
@@ -9268,6 +9832,16 @@ export interface components {
             /** Age Days */
             age_days: number;
             /**
+             * Back In Euros
+             * @description Null while still in dollars (an open tranche is always null)
+             */
+            back_in_euros?: boolean | null;
+            /**
+             * Cost Eur
+             * @description EUR cost (book) of the shares still held: the holding's cash-pool EUR shared out over its open tranches by native cost (FIFO view of an average-cost figure); under eur_basis buy_date, the native cost at the ECB fixing of the acquisition date. Null when not available.
+             */
+            cost_eur?: string | null;
+            /**
              * Cost Native
              * @description Cost of the shares still held, native
              */
@@ -9275,10 +9849,20 @@ export interface components {
             /** Cost Per Share Native */
             cost_per_share_native: string;
             /**
+             * Currency Eur
+             * @description Part of gain_eur from the rate move (gain - market)
+             */
+            currency_eur?: string | null;
+            /**
              * Days To Long Term
              * @description Null once long-term
              */
             days_to_long_term: number | null;
+            /**
+             * Gain Eur
+             * @description Value now in EUR minus cost_eur; null without a price
+             */
+            gain_eur?: string | null;
             /**
              * Gain Native
              * @description Against today's price; null without a price
@@ -9300,6 +9884,16 @@ export interface components {
              */
             long_term_on: string;
             /**
+             * Market Eur
+             * @description Part of gain_eur from the price, at today's rate
+             */
+            market_eur?: string | null;
+            /**
+             * Orig Eur
+             * @description Your original euros behind those shares (book minus market EUR)
+             */
+            orig_eur?: string | null;
+            /**
              * Quantity Bought
              * @description Shares bought, on today's split basis
              */
@@ -9317,6 +9911,11 @@ export interface components {
              * @enum {string}
              */
             status: "long" | "soon" | "short";
+            /**
+             * Your Rate
+             * @description USD per EUR your dollars cost for this holding (pool blend)
+             */
+            your_rate?: string | null;
         };
         /** TrancheTotalsOut */
         TrancheTotalsOut: {
@@ -9339,6 +9938,13 @@ export interface components {
             as_of: string;
             /** Currency */
             currency: string;
+            /**
+             * Eur Basis
+             * @description Setting fx.holding_cost_basis behind cost_eur / orig_eur
+             * @default pool
+             * @enum {string}
+             */
+            eur_basis: "pool" | "buy_date";
             /**
              * Groups
              * @description Open reinvested tranches per account
@@ -9425,6 +10031,11 @@ export interface components {
             date: string;
             /** Description */
             description?: string | null;
+            /**
+             * Eur Basis
+             * @description 7.4: where the EUR figure comes from (null before the cash pool).
+             */
+            eur_basis?: ("your_rate" | "pool" | "ecb" | "native") | null;
             /** External Id */
             external_id?: string | null;
             /** Fees Native */
@@ -9470,6 +10081,11 @@ export interface components {
             source?: string | null;
             /** Symbol */
             symbol: string;
+            /**
+             * Trail Kind
+             * @description 7.4: the money trail this row opens (GET /trail/{kind}/{id}).
+             */
+            trail_kind?: ("deposit" | "buy" | "sell" | "withdrawal") | null;
         };
         /** TransactionPage */
         TransactionPage: {
@@ -10861,6 +11477,39 @@ export interface operations {
             };
         };
     };
+    preview_cash_out_api_cash_out_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CashOutPreviewIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CashOutOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_currency_both_api_currency_both_get: {
         parameters: {
             query?: never;
@@ -10939,6 +11588,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_journey_api_currency_journey_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JourneyBoth"];
                 };
             };
         };
@@ -11226,7 +11895,9 @@ export interface operations {
     };
     list_conversions_api_fx_conversions_get: {
         parameters: {
-            query?: never;
+            query?: {
+                direction?: ("to_usd" | "to_eur") | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -11240,6 +11911,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FxConversionOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -13302,6 +13982,71 @@ export interface operations {
             };
         };
     };
+    get_recap_api_recap_get: {
+        parameters: {
+            query?: {
+                /** @description YYYY-MM or YYYY */
+                period?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecapOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ack_recap_api_recap_ack_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecapAckIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecapAckOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     estimates_api_recurring_estimates_get: {
         parameters: {
             query?: never;
@@ -13570,6 +14315,8 @@ export interface operations {
             query?: {
                 /** @description Step 1: EUR converted. */
                 eur_amount?: number | string | null;
+                /** @description Step 1: USD arriving. */
+                usd_amount?: number | string | null;
                 provider?: "wise" | "revolut" | "other";
                 expected_fee?: number | string | null;
                 /** @description Step 3: the dollars to buy with (step 2's deposit). */
@@ -14264,6 +15011,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SystemInfo"];
+                };
+            };
+        };
+    };
+    get_trail_api_trail__kind___item_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: "deposit" | "buy" | "sell" | "withdrawal" | "conversion";
+                item_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

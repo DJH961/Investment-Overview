@@ -29,11 +29,15 @@ class JourneyBucket(ApiModel):
     eur_now: DecStr | None = None
     #: The rate's part: ``eur_now - eur_cost`` (minus the market part for holdings).
     currency_eur: DecStr | None = None
+    #: Original dollar cost in the USD view (rate-free native dollars), if applicable.
+    usd_cost: DecStr | None = None
 
 
 class JourneyInvested(JourneyBucket):
     #: ``(value - native cost) / rate_now``.
     market_eur: DecStr | None = None
+    #: Native dollar gain ``(value - native cost)``.
+    market_usd: DecStr | None = None
 
 
 class JourneyYourRate(ApiModel):
@@ -157,6 +161,8 @@ class TrailStep(ApiModel):
     #: At most 24 characters (the trail's aligned rows never wrap).
     detail: str | None = Field(default=None, max_length=24)
     link: str | None = None
+    #: Signed change shown with the figure ("worth now" gain, "back" realised), or null.
+    change: DecStr | None = None
 
 
 class TrailPath(ApiModel):

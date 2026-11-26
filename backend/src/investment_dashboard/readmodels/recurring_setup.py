@@ -66,33 +66,59 @@ class BuySplit:
 def conversion_estimate(
     session: Session,
     *,
-    eur: Decimal,
+    eur: Decimal | None = None,
+    usd: Decimal | None = None,
     provider: str,
     fee_eur: Decimal | None = None,
     conversion: tuple[str, int] | None = None,
     deposit: tuple[str, int] | None = None,
 ) -> ConversionEstimate | None:
-    """What converting ``eur`` with ``provider`` yields in whole dollars; ``None`` without an ECB rate."""
+    """What converting ``eur`` (or targeting ``usd``) with ``provider`` yields in whole dollars; ``None`` without an ECB rate."""
     ecb = fx_service.get_settled_rate(session, exchange_today(), base="EUR", quote="USD")
-    if ecb is None or eur <= 0:
+    if ecb is None:
         return None
     avg = fx_cost_service.provider_avg_off_pct(session, provider)
-    rate, _ = recurrence.estimated_conversion(eur_sent=eur, ecb_rate=ecb, avg_off_pct=avg)
     fee = (
         fee_eur
         if fee_eur is not None
         else recurring_service.last_fee_for_provider(session, provider)
     )
     fee = fee or Decimal(0)
+    if usd is not None:
+        if usd <= 0:
+            return None
+        rate, eur_converted = recurrence.estimated_conversion_eur(
+            usd_received=usd, ecb_rate=ecb, avg_off_pct=avg
+        )
+        exact = usd
+        usd_whole = exact.quantize(_ONE, rounding=ROUND_HALF_UP)
+        eur_whole = (eur_converted + fee).quantize(_ONE, rounding=ROUND_HALF_UP)
+        per_deposit = (
+            exact
+            if conversion is None or deposit is None
+            else recurrence.per_run_amount(exact, paid=conversion, spent=deposit)
+        )
+        return ConversionEstimate(
+            eur_whole,
+            fee,
+            ecb,
+            avg,
+            rate,
+            usd_whole,
+            per_deposit.quantize(_ONE, rounding=ROUND_HALF_UP),
+        )
+    if eur is None or eur <= 0:
+        return None
+    rate, _ = recurrence.estimated_conversion(eur_sent=eur, ecb_rate=ecb, avg_off_pct=avg)
     exact = (eur - fee) * rate
-    usd = exact.quantize(_ONE, rounding=ROUND_HALF_UP)
+    usd_whole = exact.quantize(_ONE, rounding=ROUND_HALF_UP)
     per_deposit = (
         exact
         if conversion is None or deposit is None
         else recurrence.per_run_amount(exact, paid=conversion, spent=deposit)
     )
     return ConversionEstimate(
-        eur, fee, ecb, avg, rate, usd, per_deposit.quantize(_ONE, rounding=ROUND_HALF_UP)
+        eur, fee, ecb, avg, rate, usd_whole, per_deposit.quantize(_ONE, rounding=ROUND_HALF_UP)
     )
 
 
