@@ -83,13 +83,14 @@ export function SetupFlow({ open, onClose }: { open: boolean; onClose: () => voi
   // was prefilled: once edited, a changing suggestion never restarts (and so never overwrites) it.
   const [typed, setTyped] = useState<Record<number, number>>({});
   const [edited, setEdited] = useState<Record<number, boolean>>({});
-  const seen = useRef<Record<number, { cad?: string; total?: number }>>({});
-  const keyRef = useRef("");
-  const frozen = useRef<Record<number, string>>({});
+  // Keyed by the form's remount key, so a remounted form starts with a clean slate.
+  const seen = useRef<Record<string, { cad?: string; total?: number }>>({});
+  const [frozen, setFrozen] = useState<Record<number, string>>({});
+  // Called from the form's callbacks (after render), so the latest remountKey is in scope.
   const touch = (i: number, part: "cad" | "total", v: string | number) => {
-    const prev = seen.current[i] ?? {};
+    const prev = seen.current[remountKey] ?? {};
     if (part in prev && prev[part] !== v) setEdited((e) => (e[i] ? e : { ...e, [i]: true }));
-    seen.current[i] = { ...prev, [part]: v };
+    seen.current[remountKey] = { ...prev, [part]: v };
   };
 
   const history = useMemo(() => {
@@ -279,12 +280,9 @@ export function SetupFlow({ open, onClose }: { open: boolean; onClose: () => voi
   const flowPart = [followsFlow ? (flowUsd ?? "") : "", index === 2 && split ? `${split.method}${split.legs.map((l) => l.amount).join("-")}` : ""].join("/");
   // Once the user has edited this step, later suggestions (from another step's cadence or
   // amount) never restart the form: what was typed stays.
-  if (!edited[index]) frozen.current[index] = flowPart;
-  const remountKey = [index, suggestions ? "s" : "w", isCleared ? "c" : "p", useFlow[1] ? "f" : "", frozen.current[index] ?? flowPart].join("|");
-  if (keyRef.current !== remountKey) {
-    keyRef.current = remountKey;
-    delete seen.current[index];
-  }
+  if (!edited[index] && frozen[index] !== flowPart) setFrozen((f) => ({ ...f, [index]: flowPart }));
+  const keyPart = edited[index] ? (frozen[index] ?? flowPart) : flowPart;
+  const remountKey = [index, suggestions ? "s" : "w", isCleared ? "c" : "p", useFlow[1] ? "f" : "", keyPart].join("|");
   return (
     <FormShell open={open} onClose={onClose} title="Set up your routine" footer={footer}>
       <div className="recurring-page__setup">
