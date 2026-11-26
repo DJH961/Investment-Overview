@@ -18,7 +18,7 @@ import { formatDate, formatMonth, MISSING } from "../../lib/format";
 import { type ReportingCurrency, usePrefs } from "../../lib/prefs";
 import { type PeriodRowOut, toNum, usePeriods } from "../../lib/queries/reports";
 import { useShellStatus } from "../../lib/shell";
-import { useIsPhone } from "../../lib/useMediaQuery";
+import { useIsPhone, useMediaQuery } from "../../lib/useMediaQuery";
 import { usePersistentState, type Validator } from "../../lib/usePersistentState";
 import { groupByYear } from "./groupByYear";
 import { Maybe } from "./Maybe";
@@ -177,6 +177,8 @@ function index(rows: PeriodRowOut[] | undefined): Map<string, PeriodRowOut> {
 export function Periods() {
   const { currency } = usePrefs();
   const phone = useIsPhone();
+  // The all-years table needs about 1,150 px; narrower screens get the list.
+  const tableTooWide = useMediaQuery("(max-width: 1279px)");
   const [view, setView] = usePersistentState<View>("periods.view", "year", isView);
   const second = otherCcy(currency);
   const needMonthly = view !== "yearly";
@@ -263,7 +265,7 @@ export function Periods() {
               </Card>
             </div>
           )}
-          {view === "year" && phone ? (
+          {view === "year" && (phone || tableTooWide) ? (
             <PhoneYears groups={groups} currency={currency} monthsOther={mOther} yearOther={yOther} />
           ) : view === "year" ? (
             <YearsTable groups={groups} currency={currency} monthsOther={mOther} yearOther={yOther} />

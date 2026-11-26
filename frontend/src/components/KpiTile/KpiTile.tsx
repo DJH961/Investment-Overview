@@ -57,7 +57,7 @@ export function KpiTile({
           <div className="kpi-tile__value" ref={valueRef}>
             {value}
           </div>
-          {secondary && <div className="kpi-tile__secondary">{secondary}</div>}
+          {secondary && <div className="kpi-tile__secondary" data-truncate-ok>{secondary}</div>}
           {(delta || hint) && (
             <div className="kpi-tile__meta">
               {delta}

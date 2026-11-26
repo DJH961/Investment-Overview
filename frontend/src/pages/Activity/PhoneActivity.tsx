@@ -58,7 +58,7 @@ function Row({
         <span className="phone-act-row__title">{item.title}</span>
         <span className="phone-act-row__main">{main !== null && <Money amount={main} currency={currency} />}</span>
         <span className="phone-act-row__pill">{item.pill}</span>
-        <span className="phone-act-row__sub">{item.sub}</span>
+        <span className="phone-act-row__sub" data-truncate-ok title={typeof item.sub === "string" ? item.sub : undefined}>{item.sub}</span>
         <span className="phone-act-row__second">
           {second !== null && <Money amount={second} currency={otherCcy(currency)} />}
         </span>

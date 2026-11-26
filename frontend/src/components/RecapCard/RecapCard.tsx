@@ -162,7 +162,7 @@ function RecapBody({
       <dl className={`recap-card__facts recap-card__facts--n${facts.length}`}>
         {facts.map((f) => (
           <div key={f.key} className="recap-card__fact" data-testid={`recap-${f.key}`}>
-            <dt className="recap-card__label">{f.label}</dt>
+            <dt className="recap-card__label" data-truncate-ok title={f.label}>{f.label}</dt>
             <dd className="recap-card__value">{f.value}</dd>
           </div>
         ))}

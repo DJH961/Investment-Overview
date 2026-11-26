@@ -69,7 +69,7 @@ function TxRow({ row: r, currency, depositMap, kindLabel, trailKindOf, onEdit, o
       <button type="button" className="phone-tx__row" aria-expanded={open} aria-label={`${r.symbol || r.account} ${formatDate(r.date)}`} onClick={onToggle}>
         <span className="phone-tx__name">
           <ChevronDown className="phone-tx__chevron" aria-hidden />
-          <span className="phone-tx__title">{r.symbol || r.account}</span>
+          <span className="phone-tx__title" data-truncate-ok title={r.symbol || r.account}>{r.symbol || r.account}</span>
         </span>
         <span className="phone-tx__main">
           {main === null ? <span title="No exchange rate on file for this date">–</span> : <Money amount={main} currency={currency} signed colored />}

@@ -37,7 +37,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 - Periods: one compact table for all years on desktop (a year is a header row with its
-  months indented under it); on phones a native list with aligned month rows that open
+  months indented under it, from 1280 px); narrower screens get a native list with aligned month rows that open
   on tap. Column sorting on Periods is gone.
 - Transaction cashflow legs are derived from the native amounts; the frozen EUR legs are
   no longer read for matched deposits (P19).

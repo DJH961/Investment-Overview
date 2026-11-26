@@ -185,6 +185,7 @@ export function Treemap({
               item.accent && "treemap__cell--accent",
             )}
             data-testid={`cell-${r.id}`}
+            data-truncate-ok
             style={{
               left: r.x,
               top: r.y,
