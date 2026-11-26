@@ -38,4 +38,21 @@ plus its last `Next:` line.
 - 2026-11-25: usage limit stopped B2, C, D and E mid-work. Lane A merged. All four resumed with SendMessage (same agents, same context). E re-points 0030 to d9b3f1a7c2e5.
 - 2026-11-25: PR #434 (overflow at 768-1440 px, fixtures deploy gate) merged into 7.4 and closed. Fixed the date-dependent openClose.moments test; main keeps failing that test until 7.4 merges. Lane C merged.
 - 2026-11-26: B2 and E merged (95c66c1b). Open: owner decision on P18 totals; B2 direction filters; C hooks; D UI. Flaky hypothesis test_tiingo_fallback_backoff seen by B2 (pre-existing).
+- 2026-11-26 (late, token-limited session): antigravity's uncommitted work committed as 39d29c9c
+  (conversion plan "USD arriving" mode + migration 0031 e3c7a1f5b9d4, fee-mode toggle in Add conversion,
+  market chip lost the word "Closed"). Its shots: `.claude/ui-shots/v7.4-review/` (no overflow in dom-audit).
+  Four owner issues sent to Sonnet lanes from 39d29c9c, each in its own agent worktree:
+  F `lane/v7.4-f-chip-months` ("Closed until Fri 3:30 PM" → "Closed until Fri"; Transactions pages keep whole months),
+  G `lane/v7.4-g-periods` (compact Periods, indent back), H `lane/v7.4-h-plan-flex` (independent cadences and
+  amounts per step, buys > deposits allowed, neutral note). Scratch/shots: session scratchpad `lane-f|g|h`.
+  Resume: `git log --format='%h %s%n%b' <lane>`; merge F, G, H into the integration branch, shots to owner, PR.
+  Known open issues list: bottom of this file.
 - 2026-11-26: owner: P18 (broker cash in the Overview total) is not core; it moves to a later release. Focus stays on the currency journey.
+
+## Known open issues (not fixed for 7.4.0)
+
+- P18 broker cash in the Overview total: later release.
+- B2 follow-up: direction filters in fx_cost, recurring, currency_deposits, conversions API.
+- Diagnostics _check_frozen_legs still reads frozen legs (drop at release).
+- Date inputs show the browser locale (dd.mm.yyyy) not en-US.
+- Flaky hypothesis test test_tiingo_fallback_backoff (pre-existing).
