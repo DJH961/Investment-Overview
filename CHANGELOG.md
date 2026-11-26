@@ -18,6 +18,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- Recurring › Set up your routine: each step keeps the cadence and amount you chose. Changing
+  one step's rhythm (say monthly conversion, biweekly deposit, weekly buys) no longer
+  restarts or overwrites the others; figures derived from the step before are hints, and
+  conflicting totals (buys above deposits) show a short neutral note instead of a constraint.
 - Currency › Exposure, "The same rate, from each side": two by two whenever the card
   itself is narrow (tablets included), not only on phones, so "-7.3% Headwind" never
   spills out of its cell at 768–1440 px.

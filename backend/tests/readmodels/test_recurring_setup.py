@@ -219,3 +219,16 @@ def test_mixed_cadences_chain_per_run(session: Session, monkeypatch: pytest.Monk
         deposit=monthly,
     )
     assert same is not None and same.deposit_usd == D("1157")
+
+
+def test_buys_above_deposits_are_a_plain_figure_not_an_error(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    acct, _a, _b = _account(session)
+    _no_plan(monkeypatch)
+    # $300 deposited every 2 weeks, spent weekly: $150 a run uses the deposit up; the owner
+    # may then type more per run (buying down cash) and the server just computes.
+    got = recurring_setup.buy_split(
+        session, account_id=acct.id, total=D("300"), deposit=("weeks", 2), buy=("weeks", 1)
+    )
+    assert (got.total, got.deposit_total) == (D("150"), D("300"))

@@ -671,3 +671,42 @@ def test_same_rhythm_buys_are_suggested_as_one_multi_leg_plan(session: Session) 
         ("VOO", D("100")),
     ]
     assert (found.cadence.unit, found.cadence.anchor) == ("weeks", 0)
+
+
+def test_monthly_conversion_biweekly_deposit_weekly_buys_are_independent(session: Session) -> None:
+    acct, inst = _world(session)
+    _fund(session, acct)
+    _fx(session, {date(2026, 3, 2): "1.10"})
+    conv = _conv_plan(session, "revolut", anchor=2, start_date=date(2026, 3, 1), end_date=None)
+    dep = svc.create_plan(
+        session,
+        svc.PlanInput(
+            kind="deposit",
+            unit="weeks",
+            every=2,
+            anchor=0,
+            start_date=date(2026, 3, 2),
+            account_id=acct.id,
+            amount=D("300"),
+        ),
+    ).id
+    # Buys of $400 a week against $300 a fortnight deposited: nothing forces them to match.
+    buy = _buy_plan(
+        session,
+        acct,
+        inst,
+        amount=D("400"),
+        unit="weeks",
+        every=1,
+        anchor=4,
+        start_date=date(2026, 3, 2),
+    )
+    got = {p.id: (p.kind, p.unit, p.every) for p in svc.list_plans(session)}
+    assert got == {
+        conv: ("conversion", "months", 1),
+        dep: ("deposit", "weeks", 2),
+        buy: ("buy", "weeks", 1),
+    }
+    svc.generate_due_estimates(session, today=date(2026, 3, 31), settled=date(2026, 3, 31))
+    deposits = sorted(t.date for t in _estimates(session) if t.kind == "deposit")
+    assert deposits == [date(2026, 3, 2), date(2026, 3, 16), date(2026, 3, 30)]

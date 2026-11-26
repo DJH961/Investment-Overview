@@ -57,12 +57,14 @@ export interface PlanFormProps {
   depositTotal?: number;
   /** Reports the cadence as it is edited (the setup flow re-splits the buys when it changes). */
   onCadenceChange?: (c: { unit: string; every: number; anchor: number | null }) => void;
+  /** The per-run dollar amount as typed (deposit amount, or the buy legs summed). */
+  onTotalChange?: (total: number) => void;
   onSaved: (body?: RecurringPlanInput) => void;
   onSkip?: () => void;
 }
 
 /** One form for the three plan kinds (the setup flow and the edit sheet both use it). */
-export function PlanForm({ kind, id, initial, hideKind, hideActions, formId, depositTotal, onCadenceChange, saveLabel = "Save plan", skipLabel, onSaved, onSkip }: PlanFormProps) {
+export function PlanForm({ kind, id, initial, hideKind, hideActions, formId, depositTotal, onCadenceChange, onTotalChange, saveLabel = "Save plan", skipLabel, onSaved, onSkip }: PlanFormProps) {
   const accounts = useAccounts();
   const instruments = useInstruments();
   const save = useSavePlan();
@@ -93,6 +95,11 @@ export function PlanForm({ kind, id, initial, hideKind, hideActions, formId, dep
     // eslint-disable-next-line react-hooks/exhaustive-deps -- report only when the cadence itself changes
   }, [unit, every, anchorNum]);
   const legsTotal = legs.reduce((sum, l) => sum + (l.mode === "amount" ? Number(l.value) || 0 : 0), 0);
+  const typedTotal = kind === "buy" ? legsTotal : Number(amount) || 0;
+  useEffect(() => {
+    onTotalChange?.(typedTotal);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- report only when the amount changes
+  }, [typedTotal]);
   const fmtUsd = (n: number) => formatMoney(n, "USD", { digits: Number.isInteger(n) ? 0 : 2 });
 
   const accountOptions = (accounts.data ?? []).map((a) => ({ value: String(a.id), label: `${brokerName(a.broker)} ${a.account_label}` }));
