@@ -58,6 +58,7 @@ const serve = args.includes("--serve");
 const wantPair = args.includes("--pair");
 const wantTiles = args.includes("--tiles");
 const el = flag("el", null);
+const steps = (flag("steps", "") ?? "").split(";;").map((s) => s.trim()).filter(Boolean);
 const fullPage = !args.includes("--viewport") && !el;
 
 mkdirSync(outDir, { recursive: true });
@@ -177,6 +178,16 @@ for (const route of routes) {
         }
         await page.waitForTimeout(2000);
         await page.evaluate(() => window.scrollTo(0, 0));
+        // --steps "click:<selector> ;; fill:<label>=><value> ;; wait:<ms>": drive a dialog or form first.
+        for (const step of steps) {
+          const [kind, rest] = [step.slice(0, step.indexOf(":")), step.slice(step.indexOf(":") + 1)];
+          if (kind === "click") await page.locator(rest).first().click();
+          else if (kind === "fill") {
+            const [label, value] = rest.split("=>");
+            await page.getByLabel(label, { exact: false }).first().fill(value);
+          } else if (kind === "wait") await page.waitForTimeout(Number(rest));
+          await page.waitForTimeout(300);
+        }
         if (fullPage) {
           // Screenshot-only: Chromium's full-page capture mis-draws fixed and sticky
           // chrome (the sidebar drops and the page slides under it; the phone nav

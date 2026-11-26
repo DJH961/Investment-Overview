@@ -245,3 +245,17 @@ def test_per_run_amount_uses_up_the_deposit_over_a_year(
     # A year of buys uses up a year of deposits (exact in rational arithmetic; tiny Decimal rounding).
     assert abs(run * rec.runs_per_year(unit, every) - total * 12) < D("0.0001")
     assert rec.per_run_amount(total, paid=(unit, every), spent=(unit, every)) == total
+
+
+def test_independent_cadences_run_on_their_own_schedules() -> None:
+    lo, hi = date(2026, 3, 1), date(2026, 3, 31)
+    conversion = _dates(Cadence("months", 1, 2), date(2026, 1, 1), lo, hi)
+    deposit = _dates(Cadence("weeks", 2, 0), date(2026, 3, 2), lo, hi)  # Mondays, fortnightly
+    buy = _dates(Cadence("weeks", 1, 4), date(2026, 3, 2), lo, hi)  # Fridays, weekly
+    assert conversion == [date(2026, 3, 2)]
+    assert deposit == [date(2026, 3, 2), date(2026, 3, 16), date(2026, 3, 30)]
+    assert buy == [date(2026, 3, 6), date(2026, 3, 13), date(2026, 3, 20), date(2026, 3, 27)]
+    # Totals may conflict: $300 a fortnight deposited, $400 a week bought draws cash down.
+    deposited = D("300") * rec.runs_per_year("weeks", 2)
+    bought = D("400") * rec.runs_per_year("weeks", 1)
+    assert bought > deposited

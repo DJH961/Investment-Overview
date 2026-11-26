@@ -8,6 +8,7 @@ import { ToastProvider } from "../../components/Toast";
 import type { EstimateRow } from "../../lib/queries/recurring";
 import { PlanForm } from "./PlanForm";
 import { Recurring } from "./Recurring";
+import { SetupFlow } from "./SetupFlow";
 
 const plan = (over: Record<string, unknown>) => ({
   id: 1,
@@ -168,5 +169,36 @@ describe("SettleSheet", () => {
     await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init?.method === "POST")).toBe(true));
     const post = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
     expect(JSON.parse(String(post?.[1]?.body)).rows[0]).toMatchObject({ price: "259.9035", quantity: "0.7695", total: "200.00" });
+  });
+});
+
+describe("SetupFlow totals", () => {
+  it("notes (never blocks) deposits above the conversion", async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      const u = String(url);
+      if (init?.method === "POST") {
+        return new Response(JSON.stringify(plan({ kind: "conversion", currency: "USD", amount: "2400" })), { status: 201 });
+      }
+      if (u.startsWith("/api/recurring/setup-plan")) {
+        return new Response(JSON.stringify({ conversion: { usd: "2400", deposit_usd: "2400", eur: "2200", fee_eur: "0", ecb_rate: "1.09", off_pct: null, rate: "1.09" }, split: null }), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    wrap(<SetupFlow open onClose={() => undefined} />);
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => String(u).includes("suggestions"))).toBe(true));
+    await new Promise((r) => setTimeout(r, 50));
+    await userEvent.click(await screen.findByRole("radio", { name: "USD arriving" }));
+    await userEvent.type(await screen.findByLabelText("USD arriving per run"), "2400");
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+
+    await screen.findByText(/Starts from your conversion/);
+    const dep = await screen.findByLabelText("USD amount per deposit");
+    expect(dep).toHaveValue("2400");
+    await userEvent.clear(dep);
+    await userEvent.type(dep, "3000");
+    expect(await screen.findByText(/Deposits exceed your conversion by ≈ \$600\/month/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next" })).toBeEnabled();
   });
 });

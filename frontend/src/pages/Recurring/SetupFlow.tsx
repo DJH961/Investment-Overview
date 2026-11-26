@@ -1,4 +1,5 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
+import { Info } from "lucide-react";
 import { Link } from "react-router";
 import { Button } from "../../components/Button";
 import { formatMoney } from "../../lib/format";
@@ -45,7 +46,20 @@ function adjective(c: { unit: string; every: number }): string {
   return c.every === 1 ? ADJ[c.unit]! : `every ${c.every} ${ONE[c.unit]}s`;
 }
 
-const TITLES = ["Your EUR to USD conversion", "Your monthly deposit", "Your regular buys"];
+/** Runs per month of a cadence (a presentation sum, not a return). */
+function perMonth(c: { unit: string; every: number }): number {
+  const base = c.unit === "months" ? 1 : c.unit === "weeks" ? 52 / 12 : 365 / 12;
+  return base / Math.max(c.every, 1);
+}
+
+/** A short neutral note when two steps' monthly totals differ (never a blocker). */
+function gapNote(a: number, b: number, more: string, less: string, tailMore: string, tailLess: string): string | null {
+  const d = a - b;
+  if (!Number.isFinite(d) || Math.abs(d) < 1) return null;
+  return `${d > 0 ? more : less} by ≈ ${usd(Math.abs(d))}/month${d > 0 ? tailMore : tailLess}`;
+}
+
+const TITLES = ["Your EUR to USD conversion", "Your regular deposit", "Your regular buys"];
 
 /**
  * "Set up your routine": the conversion, the monthly deposit and the regular buys, one step
@@ -64,6 +78,19 @@ export function SetupFlow({ open, onClose }: { open: boolean; onClose: () => voi
   const [cad, setCad] = useState<Record<number, Cadence>>({});
   // What each step created (undefined when skipped): the next step inherits from it.
   const [saved, setSaved] = useState<Record<number, RecurringPlanInput | undefined>>({});
+
+  // What was last typed per step (per run), and whether the user has changed the form since it
+  // was prefilled: once edited, a changing suggestion never restarts (and so never overwrites) it.
+  const [typed, setTyped] = useState<Record<number, number>>({});
+  const [edited, setEdited] = useState<Record<number, boolean>>({});
+  const seen = useRef<Record<number, { cad?: string; total?: number }>>({});
+  const keyRef = useRef("");
+  const frozen = useRef<Record<number, string>>({});
+  const touch = (i: number, part: "cad" | "total", v: string | number) => {
+    const prev = seen.current[i] ?? {};
+    if (part in prev && prev[part] !== v) setEdited((e) => (e[i] ? e : { ...e, [i]: true }));
+    seen.current[i] = { ...prev, [part]: v };
+  };
 
   const history = useMemo(() => {
     const of = (kind: PlanKind) => (suggestions ?? []).filter((s) => s.kind === kind);
@@ -207,6 +234,22 @@ export function SetupFlow({ open, onClose }: { open: boolean; onClose: () => voi
     }
   }
 
+  // Neutral totals notes: conflicting totals are allowed, this only says what they mean.
+  let totals: string | null = null;
+  const convMonthly = convUsd && convCadence ? Number(convUsd) * perMonth(convCadence) : null;
+  if (index === 1 && convMonthly != null && typed[1] != null) {
+    totals = gapNote(typed[1] * perMonth(depositNow), convMonthly, "Deposits exceed your conversion", "Deposits are below your conversion", "", "");
+  } else if (index === 2 && deposit?.amount != null && typed[2] != null) {
+    totals = gapNote(
+      typed[2] * perMonth(buyNow),
+      Number(deposit.amount) * perMonth(depositCadence),
+      "Buys exceed deposits",
+      "Buys are below deposits",
+      ": draws down your cash",
+      ": cash builds up",
+    );
+  }
+
   const advance = () => {
     if (last) {
       setIndex(0);
@@ -214,6 +257,9 @@ export function SetupFlow({ open, onClose }: { open: boolean; onClose: () => voi
       setUseFlow({});
       setCad({});
       setSaved({});
+      setTyped({});
+      setEdited({});
+      seen.current = {};
       onClose();
     } else setIndex(index + 1);
   };
@@ -230,7 +276,15 @@ export function SetupFlow({ open, onClose }: { open: boolean; onClose: () => voi
   // The form restarts only when what it is prefilled from changes (never on a typed edit): the
   // deposit amount follows the conversion only when it is the flow that fills it.
   const followsFlow = index === 1 && (Boolean(useFlow[1]) || !history.deposit);
-  const remountKey = [index, suggestions ? "s" : "w", isCleared ? "c" : "p", useFlow[1] ? "f" : "", followsFlow ? (flowUsd ?? "") : "", index === 2 && split ? `${split.method}${split.legs.map((l) => l.amount).join("-")}` : ""].join("|");
+  const flowPart = [followsFlow ? (flowUsd ?? "") : "", index === 2 && split ? `${split.method}${split.legs.map((l) => l.amount).join("-")}` : ""].join("/");
+  // Once the user has edited this step, later suggestions (from another step's cadence or
+  // amount) never restart the form: what was typed stays.
+  if (!edited[index]) frozen.current[index] = flowPart;
+  const remountKey = [index, suggestions ? "s" : "w", isCleared ? "c" : "p", useFlow[1] ? "f" : "", frozen.current[index] ?? flowPart].join("|");
+  if (keyRef.current !== remountKey) {
+    keyRef.current = remountKey;
+    delete seen.current[index];
+  }
   return (
     <FormShell open={open} onClose={onClose} title="Set up your routine" footer={footer}>
       <div className="recurring-page__setup">
@@ -258,6 +312,11 @@ export function SetupFlow({ open, onClose }: { open: boolean; onClose: () => voi
             )}
           </p>
         )}
+        {totals && (
+          <p className="recurring-page__setup-totals" role="note">
+            <Info aria-hidden className="recurring-page__setup-totals-icon" /> Note: {totals}
+          </p>
+        )}
         {hint && !isCleared && <p className="recurring-page__setup-hint">{hint}</p>}
         <PlanForm
           key={remountKey}
@@ -267,7 +326,15 @@ export function SetupFlow({ open, onClose }: { open: boolean; onClose: () => voi
           formId={FORM_ID}
           initial={isCleared ? undefined : initial}
           depositTotal={isCleared ? undefined : depositTotal}
-          onCadenceChange={index > 0 ? (c) => setCad((p) => (p[index] && p[index]!.unit === c.unit && p[index]!.every === c.every && p[index]!.anchor === c.anchor ? p : { ...p, [index]: c })) : undefined}
+          onTotalChange={
+            index > 0
+              ? (t) => {
+                  touch(index, "total", t);
+                  setTyped((p) => (p[index] === t ? p : { ...p, [index]: t }));
+                }
+              : undefined
+          }
+          onCadenceChange={index > 0 ? (c) => { touch(index, "cad", `${c.unit}|${c.every}|${c.anchor}`); setCad((p) => (p[index] && p[index]!.unit === c.unit && p[index]!.every === c.every && p[index]!.anchor === c.anchor ? p : { ...p, [index]: c })); } : undefined}
           onSaved={(body) => {
             setSaved({ ...saved, [index]: body });
             advance();
