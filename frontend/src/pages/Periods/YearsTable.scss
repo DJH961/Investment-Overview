@@ -1,0 +1,155 @@
+@use "../../styles/mixins" as m;
+
+// Tablet/desktop "By year": one card, one dense table. Years are tinted header
+// rows in the same columns as the months, so nothing sits between the figures.
+.years-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+
+  @include m.desktop {
+    font-size: var(--font-size-sm);
+  }
+
+  &__wrap {
+    overflow-x: auto;
+    background: var(--color-surface);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-1);
+  }
+
+  &__col {
+    padding: var(--space-2) var(--space-1);
+    border-bottom: var(--border-width) solid var(--color-border);
+    color: var(--color-faint);
+    font-weight: var(--font-weight-medium);
+    text-align: right;
+    vertical-align: bottom;
+
+    @include m.desktop {
+      white-space: nowrap;
+    }
+
+    &--left {
+      padding-left: var(--space-3);
+      text-align: left;
+    }
+
+    @include m.desktop {
+      padding: var(--space-2) var(--space-3);
+    }
+  }
+
+  &__td {
+    padding: var(--space-1) var(--space-1);
+    text-align: right;
+    white-space: nowrap;
+
+    @include m.desktop {
+      padding: var(--space-1) var(--space-3);
+    }
+  }
+
+  &__th {
+    padding: var(--space-1) var(--space-2);
+    text-align: left;
+    white-space: nowrap;
+    font-weight: var(--font-weight-regular, 400);
+
+    &--year {
+      padding-left: var(--space-3);
+    }
+
+    // Months sit right of the year title, with a quiet rule down the left edge.
+    &--month {
+      padding-left: calc(var(--space-3) + var(--icon-sm) + var(--space-2));
+      box-shadow: inset var(--space-1) 0 0 var(--color-surface-2);
+    }
+  }
+
+  &__row {
+    border-bottom: var(--border-width) solid var(--color-border);
+
+    &--month {
+      height: 2.25rem;
+
+      &:hover {
+        background: var(--color-surface-2);
+      }
+    }
+
+    &--year {
+      height: 2.5rem;
+      background: var(--color-surface-2);
+      font-weight: var(--font-weight-semibold);
+    }
+  }
+
+  &__year:last-child &__row:last-child {
+    border-bottom: 0;
+  }
+
+  &__toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+
+    &:focus-visible {
+      @include m.focus-ring;
+    }
+  }
+
+  &__chevron {
+    width: var(--icon-sm);
+    height: var(--icon-sm);
+    color: var(--color-muted);
+    transform: rotate(-90deg);
+    transition: transform 0.15s ease;
+
+    @include m.reduced-motion {
+      transition: none;
+    }
+  }
+
+  &__year--open &__chevron {
+    transform: none;
+  }
+
+  &__year-title {
+    font-size: var(--font-size-md);
+  }
+
+  &__tag {
+    color: var(--color-accent);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-regular, 400);
+  }
+
+  &__mini {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-regular, 400);
+  }
+
+  // The other currency: small, muted, right after the value; desktop only
+  // (below that it stays in the cell's tooltip).
+  &__second {
+    display: none;
+    margin-left: var(--space-2);
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-regular, 400);
+
+    @include m.desktop {
+      display: inline;
+    }
+  }
+}
