@@ -221,7 +221,7 @@ export function Activity() {
         sub: r.account,
         amount: r.amount,
         amountOther: r.amount_other,
-        pill: r.kind.replace("_", " "),
+        pill: KIND_LABEL[r.kind] ?? r.kind.replace("_", " ").replace(/^\w/, (c) => c.toUpperCase()),
         pillSub: r.rate_source ? (r.rate_source === "ecb" ? "ECB rate" : "Converted") : undefined,
         details: [
           ...(r.description ? [{ label: "Description", value: r.description }] : []),
