@@ -559,7 +559,7 @@ def cash_out_out(ctx: _Ctx, co: CashOut) -> dict[str, Any]:
         "date": co.date.isoformat(),
         "usd_sent": _m(co.usd_sent),
         "eur_received": _m(co.eur_received),
-        "fees_eur": _m(fees),
+        "fees_eur": _m(fees + co.fees_usd_eur),
         "eur": {
             "put_in": _m(co.orig_eur),
             "market": _m(co.market_eur),
@@ -668,9 +668,10 @@ def build_preview(
     fees_eur: Decimal,
     on: date,
     withdrawal_id: int | None = None,
+    fees_usd: Decimal = ZERO,
 ) -> dict[str, Any]:
     """``POST /cash-out/preview``: the cash-out card for a conversion back, not saved."""
-    back = ConversionBack(0, on, USD, usd_sent, eur_received, fees_eur)
+    back = ConversionBack(0, on, USD, usd_sent, eur_received, fees_eur, fees_usd)
     draws = preview_draws(inputs, usd_sent=usd_sent, on=on, withdrawal_id=withdrawal_id)
     co = cash_out_domain.cash_out(back, draws, inputs.ecb_rate)
     out = cash_out_out(_context(inputs), co)

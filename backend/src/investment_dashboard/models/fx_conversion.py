@@ -43,6 +43,12 @@ class FxConversion(Base):
         CheckConstraint("kept_usd >= 0", name="ck_fx_conversions_kept_nonneg"),
         CheckConstraint("kept_usd <= usd_received", name="ck_fx_conversions_kept_le_received"),
         UniqueConstraint("external_id", name="uq_fx_conversions_external_id"),
+        CheckConstraint(
+            "fees_usd IS NULL OR fees_usd >= 0", name="ck_fx_conversions_fees_usd_nonneg"
+        ),
+        CheckConstraint(
+            "fees_eur IS NULL OR fees_usd IS NULL", name="ck_fx_conversions_one_fee_ccy"
+        ),
         Index("ix_fx_conversions_date", "date"),
     )
 
@@ -51,6 +57,8 @@ class FxConversion(Base):
     eur_sent: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
     usd_received: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
     fees_eur: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+    #: Native USD fee of a conversion back (7.4); at most one of fees_eur / fees_usd is set.
+    fees_usd: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
     note: Mapped[str | None] = mapped_column(String(512))
     #: 7.3 generic pair (matching only knows EUR -> USD for now).
     from_ccy: Mapped[str] = mapped_column(String(3), nullable=False, server_default="EUR")

@@ -66,14 +66,16 @@ describe("ConversionDialog numbers", () => {
     );
     fireEvent.click(screen.getByRole("radio", { name: "USD → EUR" }));
     fireEvent.change(screen.getByLabelText("USD sent"), { target: { value: "1100" } });
-    fireEvent.change(screen.getByLabelText("EUR received (before fees)"), { target: { value: "1000" } });
-    fireEvent.change(screen.getByLabelText("Fees (EUR, optional)"), { target: { value: "2,50" } });
+    fireEvent.change(screen.getByLabelText("EUR received"), { target: { value: "1000" } });
+    fireEvent.change(screen.getByLabelText("Fees (USD, optional)"), { target: { value: "2,50" } });
+    expect(screen.getByTestId("rate-line")).toHaveTextContent(/Converted rate: 1\.0975.*All-in rate: 1\.1000/);
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(bodies).toHaveLength(1));
     expect(bodies[0]).toMatchObject({
       eur_sent: "1000",
       usd_received: "1100",
-      fees_eur: "2.50",
+      fees_eur: null,
+      fees_usd: "2.50",
       kept_usd: "0",
       from_ccy: "USD",
       to_ccy: "EUR",

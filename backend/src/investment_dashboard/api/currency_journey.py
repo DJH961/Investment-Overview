@@ -68,13 +68,19 @@ def preview_cash_out(body: CashOutPreviewIn, session: SessionDep) -> CashOutOut:
     if inputs is None:
         raise HTTPException(status_code=409, detail="the cash pool is not available yet")
     usd, eur, fees = Decimal(body.usd_sent), Decimal(body.eur_received), Decimal(body.fees_eur)
-    if usd <= 0 or eur <= 0 or fees < 0:
+    fees_usd = Decimal(body.fees_usd)
+    if usd <= 0 or eur <= 0 or fees < 0 or fees_usd < 0:
         raise HTTPException(status_code=422, detail="amounts must be positive")
+    if fees > 0 and fees_usd > 0:
+        raise HTTPException(status_code=422, detail="give the fee in euros or in dollars")
+    if fees_usd >= usd:
+        raise HTTPException(status_code=422, detail="the fee must be below the dollars sent")
     out = journey_readmodel.build_preview(
         inputs,
         usd_sent=usd,
         eur_received=eur,
         fees_eur=fees,
+        fees_usd=fees_usd,
         on=body.date,
         withdrawal_id=body.withdrawal_id,
     )
